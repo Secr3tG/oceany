@@ -2,7 +2,7 @@
 
 Run:  python -I simulate_swell.py
 Reads  data/raw/590_HR_Lidar_Centro.nc           (2011 lidar, the same grid export_reefs.py uses)
-       data/surf_zones.json                       (Benn's marks and the camera)
+       data/surf_zones.json                       (observer marks and the camera)
 Writes simulate_swell.png                         (headline plot, two panels)
        ../01-seafloor/viewer/data/swell_sim.json  (one value per reef point, same order as reefs.json)
 
@@ -63,14 +63,14 @@ NORMAL_SMOOTH_M = 100       # the shore direction is averaged over about this ma
 REGIONAL_SMOOTH_M = 600     # WRAPPED mode: the coast's general direction, averaged over about this many metres
 EDGE_DEPTH_M = 12.0         # WRAPPED mode: water depth at the outer edge of the lidar strip (8-11 m + tide)
 SET_FACTORS = [1.0, 1.2, 1.4]   # set waves: individual waves this many times the average height (numbers only)
-# Where things happened on 17 Sep at Porto Batel. All points are Benn's own Google Earth pins (2026-11-12/13),
+# Where things happened on 17 Sep at Porto Batel. All points are observer marks from Google Earth (2026-11-12/13),
 # checked against the lidar, so each is good to a few metres. (lat, lon)
 # There is no outer-break pin yet: the old one (39.3183, -9.3591) was scaled from a sketch and was ~220 m out.
-# The foot hit rock in the take-off zone (user, 2026-11-14), so it shares the "where I sat" pin. The footage puts the
-# take-off at the outer break, about 115 m (90-145 m) from the camera. Old foot pin (39.3192267, -9.3562366) was on the
+# Rock contact was observed in the take-off zone (2026-11-14), so it shares the take-off pin. The footage puts the
+# take-off at the outer break, about 115 m (90-145 m) from the camera. Old rock-contact pin (39.3192267, -9.3562366) was on the
 # dry shelf and is removed.
-USER_SKETCH = {"house / filming (user, exact)": (39.319506, -9.355772),
-               "where I sat = take-off zone, foot hit rock (user)": (39.318870, -9.356829)}
+USER_SKETCH = {"filming position (13 m above water)": (39.319506, -9.355772),
+               "take-off zone, where the observer sat; rock contact here (observed)": (39.318870, -9.356829)}
 MAX_THETA0_DEG = 80         # waves meeting the coast at more than this angle: "not reachable by this model"
 WET_MIN_M = 0.05            # cells with less water than this are treated as dry
 # =====================================================================================================
@@ -353,10 +353,10 @@ for f_ in SET_FACTORS:
     print(f"  H0 {H0 * f_:.2f} m: " + first_onsets(rs))
 
 # -----------------------------------------------------------------------------------------------------
-# 7b. BENN'S SKETCH OF 17 SEP: what the lidar and the model say at the outer break, take-off and rock
+# 7b. OBSERVER MARKS, 17 SEP: what the lidar and the model say at the outer break, take-off and rock
 # -----------------------------------------------------------------------------------------------------
 sketch = {name: tuple(float(v) for v in to_metres(lo, la)) for name, (la, lo) in USER_SKETCH.items()}
-print("\n== Benn's sketch, 17 Sep (Google Earth pins, a few metres) ==")
+print("\n== Observer marks, 17 Sep (Google Earth, a few metres) ==")
 for name, (sx_, sy_) in sketch.items():
     near30 = valid & (np.hypot(X - sx_, Y - sy_) <= 30)
     r_, c_ = cell_of(sx_, sy_)
@@ -372,16 +372,16 @@ for name, (sx_, sy_) in sketch.items():
         state = (f"water {res['d'][r_, c_]:.2f} m, H {res['H'][r_, c_]:.2f} m, {'broken' if res['broken'][r_, c_] else 'unbroken'}"
                  if cell else ("not reachable" if inside and res["wet"][r_, c_] else "not drawn"))
         print(f"    {'WRAPPED' if mode else 'STRICT '} {cname}: {state}; {where}")
-# Lidar profile from the house out through where Benn sat, to 250 m (the line his waves came in along)
-hx, hy = sketch["house / filming (user, exact)"]
-sx2, sy2 = sketch["where I sat = take-off zone, foot hit rock (user)"]
+# Lidar profile from the filming position out through the take-off mark, to 250 m (the line the waves came in along)
+hx, hy = sketch["filming position (13 m above water)"]
+sx2, sy2 = sketch["take-off zone, where the observer sat; rock contact here (observed)"]
 ux, uy = (sx2 - hx) / np.hypot(sx2 - hx, sy2 - hy), (sy2 - hy) / np.hypot(sx2 - hx, sy2 - hy)   # unit step, 1 m
 prof = []
 for dist in range(40, 251, 10):
     r_, c_ = cell_of(hx + dist * ux, hy + dist * uy)
     ok = 0 <= r_ < lidar.shape[0] and 0 <= c_ < lidar.shape[1] and valid[r_, c_]
     prof.append(f"{dist}m:{lidar[r_, c_]:.1f}" if ok else f"{dist}m:gap")
-print(f"  lidar depth below LAT along the line house -> where I sat -> 250 m (distance from the house):")
+print(f"  lidar depth below LAT along the line filming position -> take-off mark -> 250 m (distance from the filming position):")
 print("   ", " ".join(prof))
 
 # -----------------------------------------------------------------------------------------------------
@@ -445,10 +445,10 @@ for ax, (spot, (sx, sy, ms)) in zip(axes, SPOTS.items()):
                     color="#3dffa0", fontsize=9)
     if spot == "Porto Batel":
         ax.plot(cam_x, cam_y, "^", ms=10, color="#ffd36b")
-        for nm, (ux_, uy_) in sketch.items():                    # Benn's pins: dashed circles = 10 m
+        for nm, (ux_, uy_) in sketch.items():                    # observer marks: dashed circles = 10 m
             ax.add_patch(plt.Circle((ux_, uy_), 10, fill=False, ls="--", lw=1.4, ec="#ff9f43"))
             ax.plot(ux_, uy_, "D", ms=6, color="#ff9f43")
-            off, ha = {"house": ((8, 6), "left"), "where": ((6, -30), "left"), "foot ": ((-10, 12), "right")}.get(nm[:5], ((6, 6), "left"))
+            off, ha = {"filmi": ((8, 6), "left"), "take-": ((6, -30), "left")}.get(nm[:5], ((6, 6), "left"))
             ax.annotate(nm.replace(" with whitewater", ""), (ux_, uy_), xytext=off, textcoords="offset points",
                         color="#ff9f43", fontsize=8.5, ha=ha)
         ax.annotate("camera", (cam_x, cam_y), xytext=(6, -12), textcoords="offset points", color="#ffd36b", fontsize=9)

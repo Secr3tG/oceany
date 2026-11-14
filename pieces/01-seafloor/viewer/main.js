@@ -30,12 +30,19 @@ const LAYERS = {
              near: { pos: v3(-130000, 70000, 90000), target: v3(0, -2000, 0) } } },
   // Portugal, ~4 km box (x,z in metres from the box middle; z = south). reef: true switches on the title, labels,
   // button names and tooltip wording for this layer.
-  'Reef maps: Consolação and Porto Batel': { file: 'data/reefs.json', size: 14, exag: 5, deepAt: 12, landCap: 15, mark: 1, reef: true,
+  'Reef maps: Consolação and Porto Batel': { file: 'data/reefs.json', size: 14, exag: 5, deepAt: 12, landCap: 15, mark: 1, reef: true, portugal: true,
     title: 'Peniche reefs, Portugal', zoomIn: 'Zoom to the two spots', zoomOut: 'Whole box',
     views: { far: { pos: v3(-1500, 1100, 2000), target: v3(-100, -30, 0) },
              // near = the two spots: target is the midpoint of Consolação (103, -278) and Porto Batel (662, 267); camera sits
              // ~1.4 km out on the perpendicular to the line joining them, so both spots and the reef between sit mid-screen.
              near: { pos: v3(-594, 700, 997), target: v3(383, -20, -6) } } },
+  // Oahu North Shore, ~4 x 5 km box (x east, z south, metres from the Pipeline origin). reef: true (spot buttons, labels, shift-click marks);
+  // no portugal flag, so the Portuguese-only extras (swell, breaking-wave slice, break line, sketch pins) stay off. Datum is LMSL, not LAT.
+  // seaDir: unit vector (x, z) from the spot towards open sea (north-west here); the close-up camera sits on that side.
+  'Reef map: Pipeline, Oahu': { file: 'data/pipeline.json', size: 14, exag: 5, deepAt: 25, landCap: 15, mark: 1, reef: true,
+    title: 'Pipeline, Oahu North Shore', zoomIn: 'Zoom to Pipeline', zoomOut: 'Whole box', datumLabel: 'LMSL', seaDir: [-0.707, -0.707],
+    views: { far: { pos: v3(-3600, 2600, -3200), target: v3(-300, -20, 300) },
+             near: { pos: v3(-800, 600, -750), target: v3(-60, -20, -60) } } },
 };
 const material = new THREE.ShaderMaterial({
   // uDim: brightness (below 1 while the swell is on, so the bed reads through the water); uHideAbove: bed higher than this (m above LAT) is not drawn (the awash/land sets draw it while the swell is on)
@@ -69,11 +76,12 @@ cloud.frustumCulled = false;   // the shader moves points, so the stored bounds 
 scene.add(cloud);
 
 // Loading line: shows what is loading while the big JSON files download; an error stays on screen if a fetch fails.
+const DATA_VERSION = 's9';
 const loadingEl = document.getElementById('loading'), loadingNow = new Set();
 async function loadJSON(url, what) {
   loadingNow.add(what); loadingEl.className = ''; loadingEl.textContent = 'Loading data\u2026 ' + [...loadingNow].join(', '); loadingEl.style.display = 'block';
   try {
-    const r = await fetch(url);
+    const r = await fetch(url + '?v=' + DATA_VERSION);   // cache tag: bump DATA_VERSION when a data file changes
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const j = await r.json(); loadingNow.delete(what);
     if (!loadingNow.size && loadingEl.className !== 'err') loadingEl.style.display = 'none';
@@ -121,9 +129,9 @@ async function showLayer(label) {
     // Named spots (reef layer only): one HTML label each, placed every frame in animate().
     const spotTags = Object.entries(d.meta.spots || {}).map(([name, s]) => {
       const el = document.createElement('div');
-      el.className = 'tag'; el.textContent = name; el.style.color = '#ff6b6b'; el.style.display = 'none';
+      el.className = 'tag'; el.textContent = s.label || name; el.style.color = '#ff6b6b'; el.style.display = 'none';
       document.body.appendChild(el);
-      return { el, x: s.x_m, z: -s.y_m };
+      return { el, name, x: s.x_m, z: -s.y_m };
     });
     cache[label] = { meta: d.meta, N, pos, depth, kilde: d.kilde, aar: d.aar, shoreCells, colorAttr, g, lines, lineTags, spotTags };
   }
@@ -149,12 +157,12 @@ async function showLayer(label) {
   document.getElementById('zoom-in').innerHTML = L.zoomIn || 'Zoom to Klitm&oslash;ller';
   document.getElementById('zoom-out').textContent = L.zoomOut || 'Zoom out';
   marksBox.style.display = L.reef ? '' : 'none';
-  document.getElementById('brk').style.display = L.reef ? '' : 'none';
-  document.getElementById('swl').style.display = L.reef ? '' : 'none';
+  document.getElementById('brk').style.display = L.portugal ? '' : 'none';
+  document.getElementById('swl').style.display = L.portugal ? '' : 'none';
   if (L.reef && !marksLoaded) loadMarks();
-  [0, 1].forEach(i => {                          // reef layer: one close-up button per named spot
+  [0, 1, 2].forEach(i => {                       // reef layer: one close-up button per named spot
     const b = document.getElementById('spot-' + i), t = L.reef && cur.spotTags[i];
-    b.style.display = t ? '' : 'none'; if (t) b.textContent = t.el.textContent;
+    b.style.display = t ? '' : 'none'; if (t) b.textContent = t.name;
   });
   document.getElementById('caption').innerHTML = m.caption ? m.caption : (
     `${m.source}, ${m.resolution}, depths relative to ${m.datum}. ${m.reef_note} ` +
@@ -193,7 +201,7 @@ BREAK.centre = BREAK.waveHeight * BREAK.factor - BREAK.tideAboveLAT;            
 BREAK.lo = BREAK.waveHeight * BREAK.range[0] - BREAK.tideAboveLAT;                   // band edges, lidar depth
 BREAK.hi = BREAK.waveHeight * BREAK.range[1] - BREAK.tideAboveLAT;
 function applyBreak() {
-  if (!cur || !cur.cfg.reef || !BREAK.on) return;
+  if (!cur || !cur.cfg.portugal || !BREAK.on) return;
   const { depth, N, colorAttr } = cur, a = colorAttr.array;
   for (let i = 0; i < N; i++) {
     const d = depth[i];
@@ -321,7 +329,7 @@ canvas.addEventListener('pointerdown', e => {
     if (TOUCH.size === 2) { FLY.drag = null; const [a, b] = [...TOUCH.values()]; FLY.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; return; }
     if (TOUCH.size > 2) return;
   }
-  fly = null; FLY.drag = { id: e.pointerId, x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId);
+  fly = null; FLY.drag = { id: e.pointerId, x: e.clientX, y: e.clientY }; try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
 });
 canvas.addEventListener('pointermove', e => {
   if (e.pointerType === 'touch' && TOUCH.has(e.pointerId)) {
@@ -394,17 +402,17 @@ function pairView() {
   const tx = (a.x + b.x) / 2 - r[0] * shift, tz = (a.z + b.z) / 2 - r[1] * shift;
   return { pos: v3(tx + n[0] * Dh, Dh / 2, tz + n[1] * Dh), target: v3(tx, -20, tz) };
 }
-document.getElementById('zoom-in').onclick = () => flyTo(cur.cfg.reef ? pairView() : cur.cfg.views.near);
+document.getElementById('zoom-in').onclick = () => flyTo(cur.cfg.portugal ? pairView() : cur.cfg.views.near);
 // Close-up on one reef spot: ~360 m from it, seen from the sea side (same bearing as the near view), and the target
 // is shifted so the spot lands in the middle of the part of the screen the left panel does not cover.
 function spotView(t) {
-  const n = [-0.698, 0.716], r = [0.716, 0.698], D = Math.hypot(300, 200);
+  const sd = cur.cfg.seaDir || [-0.698, 0.716], n = sd, r = [sd[1], -sd[0]], D = Math.hypot(300, 200);   // r = sideways, as before
   const halfW = D * Math.tan(camera.fov / 2 * Math.PI / 180) * camera.aspect;
   const shift = document.getElementById('panel').getBoundingClientRect().right / window.innerWidth * halfW;
   const tx = t.x - r[0] * shift, tz = t.z - r[1] * shift;
   return { pos: v3(tx + n[0] * 300, 200, tz + n[1] * 300), target: v3(tx, -20, tz) };
 }
-[0, 1].forEach(i => { document.getElementById('spot-' + i).onclick = () => flyTo(spotView(cur.spotTags[i])); });
+[0, 1, 2].forEach(i => { document.getElementById('spot-' + i).onclick = () => flyTo(spotView(cur.spotTags[i])); });
 document.getElementById('zoom-out').onclick = () => flyTo(cur.cfg.views.far);
 controls.addEventListener('start', () => { fly = null; });   // grabbing the scene cancels a flight
 
@@ -471,12 +479,12 @@ function pick() {
   const d = depth[best];
   // Reef layer: the box is only ~4 km, so distances are in metres and measured from the nearest shoreline cell.
   const dist = cur.cfg.reef ? `${Math.round(near)} m from the nearest shoreline cell` : `${(near / 1000).toFixed(2)} km from the nearest coast`;
-  let text = d > 0 ? `depth ${d.toFixed(1)} m (below LAT), ${dist}`
+  let text = d > 0 ? `depth ${d.toFixed(1)} m (below ${cur.cfg.datumLabel || 'LAT'}), ${dist}`
                    : `land ${(-d).toFixed(1)} m high, ${dist.replace('coast', 'shore')}`;
   if (cur.cfg.wide) { const ex = pos[3 * best] / 1000, ez = pos[3 * best + 2] / 1000;   // z points south
     text += ` (dot ${Math.abs(ex).toFixed(0)} km ${ex < 0 ? 'W' : 'E'}, ${Math.abs(ez).toFixed(0)} km ${ez < 0 ? 'N' : 'S'} of Klitmøller)`; }
   if (kilde) text += `, source: ${meta.kilde_codes[kilde[best]] || 'none'}${aar[best] ? ' ' + aar[best] : ''}`;
-  if (cur.cfg.reef && SWELL.on && SWELL.data) {
+  if (cur.cfg.portugal && SWELL.on && SWELL.data) {
     const st = SWELL.data.state ? SWELL.data.state[best] : undefined;
     const hv = SWELL.data.H ? SWELL.data.H[best] : undefined;   // guard: H or index may be missing
     text += (st === 1 || st === 2) && Number.isFinite(hv) ? `; model wave ${hv.toFixed(1)} m, ${st === 2 ? 'broken' : 'unbroken'}`
@@ -693,7 +701,8 @@ async function loadSwell() {
   if (SWELL.data || SWELL.loading) return;
   SWELL.loading = true;
   const d = await loadJSON(SWELL.file, 'swell model');
-  const reef = cache[Object.keys(LAYERS).find(k => LAYERS[k].reef)];
+  const reef = cache[Object.keys(LAYERS).find(k => LAYERS[k].portugal)];   // swell_sim.json belongs to the Portuguese reef layer only
+  if (!reef) throw new Error('Portuguese reef layer not loaded');
   if (d.H.length !== reef.N) throw new Error(`swell_sim.json has ${d.H.length} points, reefs.json ${reef.N}`);
   const tide = d.meta.config.tide_above_lat_m;
   // PLUMBING: put the model cells on a 2D grid (nx x nz), in the same row/column layout as the lidar.
@@ -759,7 +768,7 @@ async function loadSwell() {
 }
 // Every frame: surface height = tide + (H/2) cos(phase - omega t), times the vertical stretch. No allocations.
 function updateSwell(now) {
-  const show = SWELL.on && !!SWELL.data && !!cur && !!cur.cfg.reef;
+  const show = SWELL.on && !!SWELL.data && !!cur && !!cur.cfg.portugal;
   swellCloud.visible = show;
   awashPts.visible = landPts.visible = waterPts.visible = show;
   // The sea floor stays drawn under the water, dimmer (its depth colours still read) and only where the bed is below the
@@ -793,7 +802,7 @@ document.getElementById('swl-on').addEventListener('change', async e => {
 document.getElementById('swl-fast').addEventListener('change', e => { SWELL.speed = e.target.checked ? 4 : 1; });
 
 // ---------- 6e. Reef layer: breaking-wave slice (data from 03-breaking-wave, a 2D particle simulation along one line) ----------
-// Particles, free surface and bed along the 236 deg line from the house. Built in metres (y = height above LAT) and the
+// Particles, free surface and bed along the 236 deg line from the filming position. Built in metres (y = height above LAT) and the
 // group is scaled in y by the same vertical stretch as the sea floor, so the slice sits on the lidar. Illustrative, one wave.
 const BW = { file: 'data/porto_batel_slice.json', on: false, loading: false, data: null, t: 0, last: null };
 const bwGroup = new THREE.Group(); bwGroup.visible = false; scene.add(bwGroup);
@@ -822,7 +831,7 @@ bwSurf.frustumCulled = false; bwSurf.renderOrder = 12; bwGroup.add(bwSurf);
 const bwBed = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x4f6f8a, transparent: true, opacity: 0.55, depthTest: false }));
 bwBed.frustumCulled = false; bwBed.renderOrder = 12; bwGroup.add(bwBed);
 const bwLabel = document.createElement('div'); bwLabel.className = 'tag'; bwLabel.style.color = '#cfefff'; bwLabel.style.fontSize = '11px';
-bwLabel.style.display = 'none'; bwLabel.textContent = 'front goes vertical here (sim): 181 m from house'; document.body.appendChild(bwLabel);
+bwLabel.style.display = 'none'; bwLabel.textContent = 'front goes vertical here (sim): 181 m from filming position'; document.body.appendChild(bwLabel);
 async function loadBW() {
   if (BW.data || BW.loading) return;
   BW.loading = true;
@@ -853,7 +862,7 @@ async function loadBW() {
 function updateBW(now) {
   const dt = BW.last === null ? 0 : Math.min((now - BW.last) / 1000, 0.25);
   BW.last = now;
-  const show = BW.on && !!BW.data && !!cur && !!cur.cfg.reef;
+  const show = BW.on && !!BW.data && !!cur && !!cur.cfg.portugal;
   bwGroup.visible = show;
   if (!show) { bwLabel.style.display = 'none'; return; }
   const D = BW.data, exag = material.uniforms.uExag.value;
@@ -883,27 +892,27 @@ document.getElementById('bw-on').addEventListener('change', async e => {
   if (BW.on) await loadBW();
 });
 
-// ---------- 6d. Reef layer: Benn's Google Maps points for 17 Sep ----------
-// Benn's Google Earth pins: where he sat (= the take-off zone, where his foot hit rock) and the filming position
-// (the abandoned house). 2026-11-14: the separate foot-hit pin (39.3192267, -9.3562366, on the dry shelf) was
-// removed; the user says the foot hit in the take-off zone, and the footage puts the take-off at the outer
-// break about 115 m (90-145 m) from the camera, matching this pin.
+// ---------- 6d. Reef layer: observer marks, 17 Sep 2026 ----------
+// Observer marks (Google Earth): where the observer sat (= the take-off zone, rock contact observed here) and the
+// filming position. 2026-11-14: the separate rock-contact pin (39.3192267, -9.3562366, on the dry shelf) was
+// removed; the observer places the contact in the take-off zone, and the footage puts the take-off at the outer
+// break about 115 m (90-145 m) from the camera, matching this mark.
 // Orange diamonds at sea level (distinct from the green shift+click marks and the red spot names).
 const SKETCH_COL = 0xff9f43;
 const SKETCH = [
   // Moved 2026-11-12 from 39.3191039, -9.3565475 (placed on a high-tide image,
   // on the shelf). New point: 50 m past the keyhole line's end toward 223 deg.
-  { name: 'where I sat = take-off zone, foot hit rock here (user)', lat: 39.318870, lon: -9.356829,
+  { name: 'take-off zone, where the observer sat; rock contact here (observed)', lat: 39.318870, lon: -9.356829,
     note: 'lidar cell: 0.5 m above LAT, 1.6 m of water at tide 2.1 m; shelf (2.0 m) starts about 10 m inshore' },
-  { name: 'filming position, abandoned house (user, Google Earth)', lat: 39.319506, lon: -9.355772 },
+  { name: 'filming position (13 m above water)', lat: 39.319506, lon: -9.355772 },
 ];
-// Lines traced by eye from the user's Google Earth screenshot on 2026-11-12 (about +-5 m); points are [lat, lon], land to sea.
+// Lines traced by eye from an observer's Google Earth screenshot on 2026-11-12 (about +-5 m); points are [lat, lon], land to sea.
 const SKETCH_LINES = [
   { name: 'Keyhole + paddle-out (traced from photo, about \u00b15 m)', col: 0xff4d2e, pts: [
     [39.3194893, -9.3560076], [39.3194569, -9.3562320], [39.3193850, -9.3563331], [39.3193247, -9.3564412],
     [39.3192771, -9.3564842], [39.3192294, -9.3564412], [39.3191988, -9.3564330] ] },
 ];
-const KEYHOLE_WIDTH_M = 9;           // estimated from the user's photo
+const KEYHOLE_WIDTH_M = 9;           // estimated from the observer's photo
 const KEYHOLE_COL = 0x2ad4c4;
 const keyhole = {};                  // { ribbon, dash, el, mid }: built in buildSketch()
 const sketchTide = () => (SWELL.data && SWELL.data.tide != null) ? SWELL.data.tide : 2.1;
@@ -914,10 +923,10 @@ function buildSketch() {                              // inverse of toLatLon(): 
   SKETCH.forEach(s => {
     s.x = (s.lon - o.lon) * M * Math.cos(o.lat * Math.PI / 180); s.z = -(s.lat - o.lat) * M;
     const m = new THREE.Mesh(new THREE.OctahedronGeometry(9), mat); m.renderOrder = 11; s.mesh = m; sketchGroup.add(m);
-    s.house = /house/.test(s.name);                    // the filming position stays on the cliff top at the old fixed height
+    s.house = /filming/.test(s.name);                    // the filming position stays on the cliff top at the old fixed height
     let txt = s.name + (s.note && s.house ? '\n' + s.note : '');
     if (!s.house) {                                    // pin sits on the lidar bed (nearest cell); stick from bed to the water surface
-      const reef = cache[Object.keys(LAYERS).find(k => LAYERS[k].reef)];
+      const reef = cache[Object.keys(LAYERS).find(k => LAYERS[k].portugal)];
       let best = 1e18, bi = -1;
       for (let i = 0; i < reef.N; i++) { const dx = reef.pos[3 * i] - s.x, dz = reef.pos[3 * i + 2] - s.z, d = dx * dx + dz * dz; if (d < best && isFinite(reef.depth[i])) { best = d; bi = i; } }
       s.bed = bi >= 0 && best < 30 * 30 ? -reef.depth[bi] : 2.1;           // bed height above LAT (m); falls back to the tide if no cell within 30 m
@@ -950,7 +959,7 @@ function buildSketch() {                              // inverse of toLatLon(): 
     keyhole.dash.computeLineDistances(); keyhole.dash.renderOrder = 10; sketchGroup.add(keyhole.dash);
     keyhole.mid = P[P.length >> 1];
     keyhole.el = document.createElement('div'); keyhole.el.className = 'tag'; keyhole.el.style.color = '#2ad4c4'; keyhole.el.style.fontSize = '11px';
-    keyhole.el.textContent = "keyhole channel (from user's photo; not in the lidar, depth unknown)"; keyhole.el.style.display = 'none'; document.body.appendChild(keyhole.el);
+    keyhole.el.textContent = "keyhole channel (from observer's photo; not in the lidar, depth unknown)"; keyhole.el.style.display = 'none'; document.body.appendChild(keyhole.el);
   }
   sketchBuilt = true;
 }
@@ -1000,7 +1009,7 @@ function animate(now) {
   if (cur && cur.cfg.reef) {                       // reef layer: no Klitmoller labels, show the two spot labels instead
     labelShore.style.display = 'none'; labelVillage.style.display = 'none';
     cur.spotTags.forEach(t => placeLabel(t.el, t.x, 40, t.z));
-    placeMarks(true); placeSketch(true);
+    placeMarks(true); placeSketch(!!cur.cfg.portugal);
     renderer.render(scene, camera); return;
   }
   placeMarks(false); placeSketch(false);
