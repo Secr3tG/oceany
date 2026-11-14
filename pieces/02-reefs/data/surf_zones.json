@@ -1,0 +1,11 @@
+{
+  "note": "Surf zones marked by Benn in the viewer on 2026-11-12 (shift+click). Depths are below LAT from the 2011 lidar patch. Which mark is take-off and which is inside is not yet recorded.",
+  "marks": [
+    {"spot": "Consolação", "name": "Surf zone 1", "lat": 39.32324, "lon": -9.36126, "depth_m_below_lat": 1.6, "shore_dist_m": 18},
+    {"spot": "Consolação", "name": "Surf zone 2", "lat": 39.32311, "lon": -9.36048, "depth_m_below_lat": 1.8, "shore_dist_m": 18},
+    {"spot": "Consolação", "name": "Surf zone 3", "lat": 39.32311, "lon": -9.36217, "depth_m_below_lat": 2.9, "shore_dist_m": 29},
+    {"spot": "Porto Batel", "name": "Surf zone 4", "lat": 39.31842, "lon": -9.35749, "depth_m_below_lat": 1.2, "shore_dist_m": 29},
+    {"spot": "Porto Batel", "name": "Surf zone 5", "lat": 39.31842, "lon": -9.35697, "depth_m_below_lat": 1.0, "shore_dist_m": 27}
+  ],
+  "camera": {"spot": "Porto Batel", "name": "Surf zone 6 in the viewer", "what": "camera position for the 17 Sep 2026 footage, cliff above the abandoned house (my reading of Benn's mark; he has not confirmed that is what mark 6 is)", "lat": 39.31934, "lon": -9.35684, "land_height_m": 2.6, "shore_dist_m": 72}
+}

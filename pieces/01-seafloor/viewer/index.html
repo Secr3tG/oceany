@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Oceany - Klitmoller sea floor</title>
+  <link rel="stylesheet" href="style.css?v=s7b">
+  <!-- The import map tells the browser where "three" lives, so main.js and
+       OrbitControls.js can both say: import ... from 'three'. No bundler needed. -->
+  <script type="importmap">
+  { "imports": {
+      "three": "./vendor/three.module.js",
+      "three/addons/": "./vendor/addons/" } }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div id="panel">
+    <h1>Klitm&oslash;ller sea floor</h1>
+    <label>Vertical stretch
+      <input id="exag" type="range" min="1" max="200" step="1" value="60">
+    </label>
+    <div id="exag-text">depth stretched 60x</div>
+    <div class="row" id="layers"></div>
+    <div class="row" id="palettes"></div>
+    <div class="row"><button id="zoom-in">Zoom to Klitm&oslash;ller</button><button id="zoom-out">Zoom out</button><button id="spot-0" style="display:none"></button><button id="spot-1" style="display:none"></button></div>
+    <div class="row"><button id="cam-mode" title="Switch between the free-fly camera and the orbit camera">Orbit / Fly</button></div>
+    <div id="cam-hint" style="color:#9ab;font-size:12px;margin-top:3px"></div>
+    <div id="marks" style="display:none">
+      <div class="hint">Shift+click a point to mark where you surf</div>
+      <div id="marks-list"></div>
+    </div>
+    <div id="brk" style="display:none">
+      <label class="row"><input id="brk-on" type="checkbox"> <span id="brk-label"></span></label>
+      <div id="brk-cap" class="hint"></div>
+    </div>
+    <div id="swl" style="display:none">
+      <label class="row"><input id="swl-on" type="checkbox"> Simulated swell (illustrative), 17 Sep 2026 18:00</label>
+      <label class="row" id="swl-speed-row"><input id="swl-fast" type="checkbox"> x4 speed</label>
+      <label class="row"><input id="bw-on" type="checkbox"> Breaking wave slice (illustrative, 2D slice), 17 Sep 2026</label>
+      <div id="bw-note" class="hint" style="display:none">Breaking wave slice (illustrative, 2D slice). Simulated along one line from the house (236&deg;), 2.7 m / 7.8 s, tide 2.1 m. One representative wave, no refraction, bed interpolated from 11 &times; 14 m lidar. Break position good to about &plusmn;15&ndash;20 m.</div>
+      <div class="hint">Simple model: the swell slows and grows as it shallows, bends toward shore, and is marked broken where height reaches 0.78 x depth.<br>It does not simulate the shape of a breaking wave.<br>The surface is interpolated between 11 x 14 m model cells and smoothed for drawing, so it shows no detail finer than the cells. The sea floor stays drawn, dimmer, under the translucent water.</div>
+      <div id="swl-note" class="hint"></div>
+      <div id="swl-awash-note" class="hint" style="display:none">Pale band: rock within about 1 m of the tide level, wet by wave run-up (illustrative, not simulated)<br>Flat blue: still water at the tide level where the swell model draws nothing (not simulated)</div>
+    </div>
+    <label class="row"><input id="rotate" type="checkbox"> auto-rotate</label>
+  </div>
+
+  <div id="label-shore" class="tag">Klitm&oslash;ller (shoreline)</div>
+  <div id="label-village" class="tag dim">village</div>
+  <div id="tip"></div>
+  <div id="caption"></div>
+  <div id="status">loading...</div>
+  <div id="loading" style="display:none"></div>
+
+  <script type="module" src="main.js?v=s7b"></script>
+</body>
+</html>

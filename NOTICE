@@ -1,0 +1,11 @@
+Oceany
+Copyright 2026 Benn Hvidbjerg Asaraf
+
+Licensed under the Apache License, Version 2.0 (see LICENSE). This licence
+covers the code. Data licences are listed in DATA-LICENSES.md.
+
+Third-party software included in this repository:
+
+three.js (pieces/01-seafloor/viewer/vendor/)
+  MIT licence. Copyright 2010-2026 Three.js Authors. https://threejs.org
+  The licence header is kept at the top of the vendored files.

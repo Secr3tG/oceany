@@ -1,0 +1,14 @@
+# Pinned from the Oceany development environment (Python 3.9).
+numpy==2.0.2
+scipy==1.13.1
+xarray==2024.7.0
+netCDF4==1.7.2
+matplotlib==3.9.4
+requests==2.32.5
+rasterio==1.4.3
+numba==0.60.0
+# Only used by tasks/01-dispersion/prepare_data.py
+pandas==2.3.3
+# Only used by live-data/cmems_*.py. Version not recorded in the dev
+# environment (it lived in a separate venv); install the current release.
+copernicusmarine
