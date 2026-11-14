@@ -1,6 +1,6 @@
 """Extract the Porto Batel bed profile along a straight line from the house on bearing 236 deg.
 
-Run:  python -I profile_porto_batel.py
+Run:  python profile_porto_batel.py
 Reads  ../02-reefs/data/raw/590_HR_Lidar_Centro.nc   (2011 lidar in the EMODnet HR grid)
 Writes data/porto_batel_profile_236.csv, out/porto_batel/profile_236.png
 

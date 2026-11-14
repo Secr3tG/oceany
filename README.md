@@ -1,91 +1,85 @@
-> **DRAFT. Not published. Wording and licence status may change.**
-
 # Oceany
 
-Oceany is an ocean data project. It turns public bathymetry into a 3D browser
-viewer of the sea floor off Denmark and Portugal. It also holds a reef-scale
-wave model for Porto Batel, Peniche, and a 2D particle solver that shows a wave
-breaking.
+Oceany is an ocean data project. It turns open bathymetry into a 3D viewer in the
+browser and adds two small wave models on top: a simple swell model over the reef at
+Porto Batel (Peniche, Portugal), and a 2D particle solver that shows one wave breaking
+there. The viewer also has sea-floor maps of the Danish North Sea coast and a reef
+map of Pipeline, Oahu.
 
-The wave layers are illustrative models. They are not forecasts. Nothing here is
-for navigation.
+**Illustrative, not a forecast.** The wave layers show how waves could behave over the
+bottom shapes. They are not predictions. Nothing here is for navigation.
 
-Code is Apache-2.0. Data has its own licences: see `DATA-LICENSES.md`.
+Live viewer: https://secr3tg.github.io/oceany/ (available once the site is published)
+
+## What is in it
+
+| Folder | What |
+|---|---|
+| `pieces/01-seafloor/` | Bathymetry prep scripts and the three.js viewer (`viewer/`) |
+| `pieces/02-reefs/` | Linear swell model over the Peniche lidar (`simulate_swell.py`) |
+| `pieces/03-breaking-wave/` | 2D particle (SPH) solver for a breaking wave, flume test and Porto Batel case |
+| `pieces/05-pipeline/` | Reef map of Pipeline, Oahu, from NOAA/USACE topobathy |
+| `tasks/`, `live-data/` | Small side experiments (wave dispersion, Open-Meteo fetch, Copernicus buoys) |
 
 ## Run the viewer
 
-The viewer is a static page with no build step. Python 3.9 is enough to serve it.
+The viewer is a static page. No build step. The data it needs is already in
+`pieces/01-seafloor/viewer/data/`.
 
-    cd pieces/01-seafloor/viewer
     python -m http.server 8765
 
-Open http://localhost:8765. The data files are already in `viewer/data/`.
+Run that in the repository root and open http://localhost:8765 (the root page opens
+the viewer). Or run it inside `pieces/01-seafloor/viewer/`.
 
-## Set up Python
+## Run the Python
 
-Python 3.9.
+Python 3.9 or newer.
 
-    python3.9 -m venv .venv
+    python -m venv .venv
     .venv/bin/pip install -r requirements.txt
 
-The viewer data is included. You only need Python to reproduce it.
-
-## Manual downloads
-
-Two datasets cannot be fetched by script. Download them and put the files in
-`raw/` folders next to the code, creating the folders if needed.
-
-1. Denmark's Depth Model 50 m (DDM50), from https://dataforsyningen.dk/data/4817.
-   Put the extracted folder in `pieces/01-seafloor/data/raw/`. It must be named
-   `danmarks dybdemodel 50m 2024` (the name `prepare_ddm.py` expects).
-2. Portuguese coastal lidar, patch `590_HR_Lidar_Centro`, from EMODnet Bathymetry
-   high-resolution patches (https://emodnet.ec.europa.eu/en/bathymetry).
-   Put `590_HR_Lidar_Centro.nc` in `pieces/02-reefs/data/raw/`.
-
-The EMODnet DTM tiles are fetched by script (step 1 below).
-
-## Reproduce each piece
-
-Run each command from the folder named.
+Each command below is run from the folder named. Raw data is not in the repository:
+see `DATA.md` for what to download and where to put it.
 
 **01 Sea floor** (`pieces/01-seafloor/`)
 
-1. `python download_wide.py` and `python download_spots.py` (EMODnet, needs internet)
-2. `python prepare_bathymetry.py`, `python prepare_wide.py`, `python prepare_ddm.py`
-   (the last one needs the DDM50 download)
-3. `python export_points.py` writes `viewer/data/seafloor*.json`
+    python download_wide.py && python download_spots.py      # EMODnet, needs internet
+    python prepare_bathymetry.py && python prepare_wide.py && python prepare_ddm.py
+    python export_points.py                                  # writes viewer/data/seafloor*.json
 
-**02 Reefs** (`pieces/02-reefs/`, needs the lidar download)
+**02 Reefs** (`pieces/02-reefs/`, needs the Peniche lidar, see `DATA.md`)
 
-1. `python reef_check.py`
-2. `python simulate_swell.py`
-3. `python export_reefs.py` writes `viewer/data/reefs.json` and `swell_sim.json`
+    python reef_check.py
+    python simulate_swell.py
+    python export_reefs.py                                   # writes viewer/data/reefs.json and swell_sim.json
 
 **03 Breaking wave** (`pieces/03-breaking-wave/`, needs numba)
 
-1. `python run.py flume --res 20` (about 1 minute) or `--res 40` (about 6 minutes)
-2. `python diagnostics.py out/flume_r40`, then `python render.py out/flume_r40`
-3. `python profile_porto_batel.py` (reads the lidar, writes the bed profile)
-4. `python run_porto_batel.py --dp 0.1` (about 145,000 particles, 50 to 84 minutes)
-5. `python diagnostics_porto_batel.py out/porto_batel_dp0.1`
-6. `python render_porto_batel.py out/porto_batel_dp0.1`
+    python run.py flume --res 20                             # about 1 minute; --res 40 about 6 minutes
+    python diagnostics.py out/flume_r40 && python render.py out/flume_r40
+    python profile_porto_batel.py                            # reads the lidar, writes the bed profile
+    python run_porto_batel.py --dp 0.1                       # about 145,000 particles, 50 to 84 minutes
+    python diagnostics_porto_batel.py out/porto_batel_dp0.1
+    python render_porto_batel.py out/porto_batel_dp0.1
 
-See `pieces/03-breaking-wave/README.md` for the method and its limits.
+`render_porto_batel.py` writes `porto_batel_slice.json` into the run folder. Copy it to
+`pieces/01-seafloor/viewer/data/` to show it in the viewer. See
+`pieces/03-breaking-wave/README.md` for the method and its limits.
 
-## From solver output to the viewer
+**05 Pipeline** (`pieces/05-pipeline/`)
 
-`render_porto_batel.py` writes `porto_batel_slice.json` into the run folder you
-pass it (for example `out/porto_batel_dp0.1/`). Copy that file to
-`pieces/01-seafloor/viewer/data/porto_batel_slice.json`. There is no script for
-the copy step.
+    python export_pipeline.py                                # writes viewer/data/pipeline.json
 
-## Other folders
+## The observer marks
 
-- `tasks/`: small side experiments (wave dispersion, an Open-Meteo forecast fetch).
-- `live-data/`: test scripts for Copernicus Marine buoy data. These need
-  `copernicusmarine` and a free account.
+The pins on the Porto Batel layer are observer marks (one surfer, 17 Sep 2026). They
+are one person's reading of where things happen, not survey data.
 
-## Licence
+## Licences
 
-Code: Apache-2.0, Copyright 2026 Benn Hvidbjerg Asaraf. Data: see
-`DATA-LICENSES.md`. three.js (MIT) is vendored in `pieces/01-seafloor/viewer/vendor/`.
+- Code: Apache-2.0, see `LICENSE` and `NOTICE`.
+- The author's own text and plots: CC BY 4.0, see `CONTENT-LICENSE.md`.
+- Data: each dataset keeps its own licence and credit. See `DATA-LICENSES.md`.
+- three.js (MIT) is included in `pieces/01-seafloor/viewer/vendor/`.
+
+Copyright 2026 Benn Hvidbjerg Asaraf.

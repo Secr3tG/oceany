@@ -2,7 +2,7 @@
 
 Deep-water rule used: wavelength L = 1.56 * T^2 (metres, T = period in seconds);
 a wave starts to feel the bottom where depth < L / 2.
-Run: python -I profile_wide.py     (writes profile_wide.png and data/profile_wide.json)
+Run: python profile_wide.py     (writes profile_wide.png and data/profile_wide.json)
 """
 import json
 from pathlib import Path

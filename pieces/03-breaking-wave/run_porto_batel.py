@@ -1,7 +1,7 @@
 """Run case_porto_batel (illustrative 2D slice of the Porto Batel reef).
 
-    python -I run_porto_batel.py --dp 0.15
-    python -I run_porto_batel.py --dp 0.3 --tend 5 --tag _test   # quick check
+    python run_porto_batel.py --dp 0.15
+    python run_porto_batel.py --dp 0.3 --tend 5 --tag _test   # quick check
 
 Shoreward outflow (session 6, cfg shore_outflow=1, the default): there is no end wall; every fluid
 particle that crosses x_sink (s_shore from the house) is removed after the solver step: it is parked on

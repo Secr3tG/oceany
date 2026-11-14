@@ -5,7 +5,7 @@ Two datasets per spot:
   EMODnet DTM 2024 at native 1/16 arc-minute (~116 m N-S, ~65 m E-W), vertical datum LAT
 For each spot we cut three straight lines out to sea, at right angles to the coast: one through the spot
 and two 300 m to either side (alongshore). Then we read depth and data source along them.
-Run: python -I compare_spots.py     (needs download_spots.py to have run)
+Run: python compare_spots.py     (needs download_spots.py to have run)
 Writes compare_spots.png and data/compare_spots.json
 """
 import json, os

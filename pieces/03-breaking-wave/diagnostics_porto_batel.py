@@ -1,6 +1,6 @@
 """Diagnostics for case_porto_batel (illustrative 2D slice).
 
-    python -I diagnostics_porto_batel.py out/porto_batel_dp0.125
+    python diagnostics_porto_batel.py out/porto_batel_dp0.125
 
 Writes <run>/diagnostics.json and prints a short table. Distances are from the house along
 bearing 236 deg; heights are above LAT unless stated.

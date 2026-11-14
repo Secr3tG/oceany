@@ -1,5 +1,5 @@
 # fetch_forecast.py : download a 3-day wave forecast for Porto Batel and print it as a table.
-# Run it with:  .venv/bin/python tasks/02-open-meteo/fetch_forecast.py
+# Run it with:  python tasks/02-open-meteo/fetch_forecast.py
 
 # --- Section 1: IMPORTS (new idea: a library is code someone else wrote that you borrow) ---
 import json                      # lets us turn the server's text reply into Python data and save it back as text

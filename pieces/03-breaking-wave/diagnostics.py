@@ -1,6 +1,6 @@
 """Diagnostics for the flume validation case.
 
-    python -I diagnostics.py out/flume_r40
+    python diagnostics.py out/flume_r40
 
 Writes <run>/diagnostics.json and prints a table of measured values vs literature.
 Definitions (all from the particle snapshots, dt_out = 0.01 s):

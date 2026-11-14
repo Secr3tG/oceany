@@ -1,6 +1,6 @@
 """Stitch the 24 down-scaled EMODnet tiles into data/seafloor_wide.nc.
 
-depth is metres, POSITIVE DOWN (land negative). Run: python -I prepare_wide.py
+depth is metres, POSITIVE DOWN (land negative). Run: python prepare_wide.py
 """
 import glob
 from pathlib import Path

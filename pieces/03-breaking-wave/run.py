@@ -1,7 +1,7 @@
 """Run a case and save snapshots.
 
-    python -I run.py flume --res 20          # dp = h0/20 (development)
-    python -I run.py flume --res 40          # dp = h0/40 (final, ~30k particles)
+    python run.py flume --res 20          # dp = h0/20 (development)
+    python run.py flume --res 40          # dp = h0/40 (final, ~30k particles)
 
 Snapshots go to out/<case>_r<res>/snap_NNNN.npz (fluid x, z, u, w, rho as float32).
 """

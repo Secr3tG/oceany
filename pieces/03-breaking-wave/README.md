@@ -12,14 +12,14 @@ A physically based 2D simulation of a wave that overturns (plunges), built in tw
 
 From this folder, with the packages in the top-level requirements.txt:
 
-    python -I run.py flume --res 20        # development, ~1 min
-    python -I run.py flume --res 40        # final, ~38k particles, ~6 min
-    python -I diagnostics.py out/flume_r40 # table + out/flume_r40/diagnostics.json
-    python -I render.py out/flume_r40      # out/flume/breaking_wave.mp4, out/flume/frames/
-    python -I profile_porto_batel.py       # lidar profile CSV + plot
-    python -I run_porto_batel.py --dp 0.1  # reef run, ~145k particles, ~50 min
-    python -I diagnostics_porto_batel.py out/porto_batel_dp0.1
-    python -I render_porto_batel.py out/porto_batel_dp0.1   # mp4, frames, viewer slice
+    python run.py flume --res 20        # development, ~1 min
+    python run.py flume --res 40        # final, ~38k particles, ~6 min
+    python diagnostics.py out/flume_r40 # table + out/flume_r40/diagnostics.json
+    python render.py out/flume_r40      # out/flume/breaking_wave.mp4, out/flume/frames/
+    python profile_porto_batel.py       # lidar profile CSV + plot
+    python run_porto_batel.py --dp 0.1  # reef run, ~145k particles, ~50 min
+    python diagnostics_porto_batel.py out/porto_batel_dp0.1
+    python render_porto_batel.py out/porto_batel_dp0.1   # mp4, frames, viewer slice
 
 Snapshots (`out/*/snap_*.npz`) are large and can be deleted after rendering.
 

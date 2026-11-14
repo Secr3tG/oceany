@@ -4,7 +4,7 @@
 
 Run from the Oceany folder:
 
-    .venv/bin/python tasks/02-open-meteo/fetch_forecast.py
+    python tasks/02-open-meteo/fetch_forecast.py
 
 Read it top to bottom: each section introduces one Python idea in its comment.
 

@@ -1,7 +1,7 @@
 """Cut the Klitmoller box out of Danmarks Dybdemodel 50 m and save data/seafloor_ddm.nc.
 
 Reads only a small window of the big whole-Denmark GeoTIFFs. Run with:
-    python -I prepare_ddm.py
+    python prepare_ddm.py
 """
 from pathlib import Path
 import numpy as np

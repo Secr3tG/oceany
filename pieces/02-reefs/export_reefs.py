@@ -1,6 +1,6 @@
 """Export the Peniche lidar box (Consolacao + Porto Batel) as a viewer data file.
 
-Run:  python -I export_reefs.py
+Run:  python export_reefs.py
 Reads  data/raw/590_HR_Lidar_Centro.nc   (EMODnet high-resolution patch, 2011 lidar)
 Writes ../01-seafloor/viewer/data/reefs.json  in the same format as the other layers:
   x_m, y_m (metres east / north of the origin), depth_m (positive down, land negative), shore (0/1).

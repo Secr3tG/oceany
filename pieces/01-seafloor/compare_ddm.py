@@ -1,5 +1,5 @@
 """Compare EMODnet (115 m, LAT) with Danmarks Dybdemodel (50 m, MSL) at Klitmoller.
-Prints the numbers and writes compare_plot.png.  Run: python -I compare_ddm.py
+Prints the numbers and writes compare_plot.png.  Run: python compare_ddm.py
 """
 from pathlib import Path
 import numpy as np, xarray as xr, matplotlib

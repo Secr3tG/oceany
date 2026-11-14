@@ -1,6 +1,6 @@
 """Check the 2011 lidar depth grid around Consolacao and Porto Batel (Peniche, Portugal).
 
-Run:  python -I reef_check.py
+Run:  python reef_check.py
 Reads data/raw/590_HR_Lidar_Centro.nc (EMODnet high-resolution patch, same grid as the .emo text file).
 Prints a table of checks and writes reef_check.png.
 

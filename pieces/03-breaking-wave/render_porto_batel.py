@@ -1,8 +1,8 @@
 """Render case_porto_batel and export the viewer slice.
 
-    python -I render_porto_batel.py out/porto_batel_dp0.125
+    python render_porto_batel.py out/porto_batel_dp0.125
 
-    python -I render_porto_batel.py out/porto_batel_s6 --out out/porto_batel_s6 [--slice-v2]
+    python render_porto_batel.py out/porto_batel_s6 --out out/porto_batel_s6 [--slice-v2]
 
 With --out DIR (session 6) everything goes to DIR instead: DIR/porto_batel.mp4, DIR/frames/,
 DIR/porto_batel_slice.json, DIR/porto_batel_slice_v2<suffix>.bin/.json (suffix from --v2-suffix).

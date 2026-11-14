@@ -1,6 +1,6 @@
 """Wavemaker calibration (session 6, 2026-11-13): short runs on a truncated Porto Batel domain.
 
-    python -I calib_wavemaker.py --factor 0.99 --tend 33
+    python calib_wavemaker.py --factor 0.99 --tend 33
 
 Same dp, same paddle, same lidar bed as case_porto_batel for the first 85 m in front of the
 paddle (s = 390 -> 305 m from the house, depth 8.1 -> 7.3 m), closed wall at 85 m with a

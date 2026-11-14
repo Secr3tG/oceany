@@ -1,0 +1,118 @@
+{
+ "SW": {
+  "bearing": 235,
+  "open_km": 661.0,
+  "ended_by": "land",
+  "end_lat": 53.33,
+  "end_lon": 0.28,
+  "min_depth": 0,
+  "median_depth": 38,
+  "max_depth": 87,
+  "feel_bottom": {
+   "8": {
+    "half_wavelength_m": 49.9,
+    "km": 210.0
+   },
+   "10": {
+    "half_wavelength_m": 78.0,
+    "km": 534.0
+   },
+   "12": {
+    "half_wavelength_m": 112.3,
+    "km": null
+   },
+   "14": {
+    "half_wavelength_m": 152.9,
+    "km": null
+   }
+  },
+  "first_deeper_than_200m_km": null
+ },
+ "N": {
+  "bearing": 315,
+  "open_km": 1029.0,
+  "ended_by": "grid edge",
+  "end_lat": 62.88,
+  "end_lon": -5.99,
+  "min_depth": 2,
+  "median_depth": 252,
+  "max_depth": 1654,
+  "feel_bottom": {
+   "8": {
+    "half_wavelength_m": 49.9,
+    "km": 42.0
+   },
+   "10": {
+    "half_wavelength_m": 78.0,
+    "km": 55.0
+   },
+   "12": {
+    "half_wavelength_m": 112.3,
+    "km": 63.0
+   },
+   "14": {
+    "half_wavelength_m": 152.9,
+    "km": 67.5
+   }
+  },
+  "first_deeper_than_200m_km": 74.0
+ },
+ "W": {
+  "bearing": 270,
+  "open_km": 676.0,
+  "ended_by": "land",
+  "end_lat": 56.54,
+  "end_lon": -2.62,
+  "min_depth": 1,
+  "median_depth": 62,
+  "max_depth": 124,
+  "feel_bottom": {
+   "8": {
+    "half_wavelength_m": 49.9,
+    "km": 106.5
+   },
+   "10": {
+    "half_wavelength_m": 78.0,
+    "km": 374.0
+   },
+   "12": {
+    "half_wavelength_m": 112.3,
+    "km": 458.5
+   },
+   "14": {
+    "half_wavelength_m": 152.9,
+    "km": null
+   }
+  },
+  "first_deeper_than_200m_km": null
+ },
+ "NW": {
+  "bearing": 300,
+  "open_km": 910.0,
+  "ended_by": "grid edge",
+  "end_lat": 60.37,
+  "end_lon": -5.99,
+  "min_depth": 2,
+  "median_depth": 125,
+  "max_depth": 1108,
+  "feel_bottom": {
+   "8": {
+    "half_wavelength_m": 49.9,
+    "km": 39.5
+   },
+   "10": {
+    "half_wavelength_m": 78.0,
+    "km": 75.5
+   },
+   "12": {
+    "half_wavelength_m": 112.3,
+    "km": 81.5
+   },
+   "14": {
+    "half_wavelength_m": 152.9,
+    "km": 100.5
+   }
+  },
+  "first_deeper_than_200m_km": 147.5
+ }
+}

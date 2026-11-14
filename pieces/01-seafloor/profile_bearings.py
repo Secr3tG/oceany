@@ -7,7 +7,7 @@ SW and one N bearing, (3) work out where swell of 8-14 s "feels the bottom", (4)
 
 Deep-water rule (same as profile_wide.py): wavelength L = 1.56 * T^2 metres (T in seconds);
 a wave feels the bottom where depth < L / 2.
-Run: python -I profile_bearings.py
+Run: python profile_bearings.py
 Writes: profile_swell_bearings.png, data/profile_bearings.json, data/profile_lines_swell.json
 """
 import json

@@ -1,6 +1,6 @@
 """A simple, honest swell model over the Consolação and Porto Batel reefs (Peniche, Portugal).
 
-Run:  python -I simulate_swell.py
+Run:  python simulate_swell.py
 Reads  data/raw/590_HR_Lidar_Centro.nc           (2011 lidar, the same grid export_reefs.py uses)
        data/surf_zones.json                       (observer marks and the camera)
 Writes simulate_swell.png                         (headline plot, two panels)

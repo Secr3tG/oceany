@@ -3,7 +3,7 @@
 Same WCS and coverage as download_wide.py (emodnet__mean, axes Lat and Long, checked against the
 current GetCapabilities/DescribeCoverage), but WITHOUT scaleFactor, so we get every cell.
 Each box runs 0.22 deg west (~13 km offshore) to 0.05 deg east of the spot, 0.06 deg north and south.
-Run: python -I download_spots.py
+Run: python download_spots.py
 """
 import urllib.request
 from pathlib import Path

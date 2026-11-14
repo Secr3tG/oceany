@@ -1,0 +1,39 @@
+{
+ "house_lat": 39.319506,
+ "house_lon": -9.355772,
+ "bearing_deg": 236.0,
+ "tide_above_lat_m": 2.1,
+ "valid_to_m": 691.0,
+ "bed_at_valid_end_above_LAT_m": -10.85,
+ "n_lidar_cells_on_line_0_to_end": 76,
+ "n_lidar_cells_on_line_100_to_end": 65,
+ "cells_with_interpolation_flag": 0,
+ "grid_spacing_m": {
+  "east_west": 11.2,
+  "north_south": 14.5
+ },
+ "checks": {
+  "depth_at_132m": {
+   "expected": 1.0,
+   "got": 1.71
+  },
+  "depth_at_154m": {
+   "expected": 2.0,
+   "got": 2.29
+  },
+  "depth_at_209m": {
+   "expected": 3.5,
+   "got": 4.3
+  },
+  "depth_at_231m": {
+   "expected": 4.8,
+   "got": 5.11
+  },
+  "shelf_55_120m_above_LAT": {
+   "expected": "2.0-2.2",
+   "got_min": 1.32,
+   "got_max": 2.24,
+   "got_median": 2.11
+  }
+ }
+}

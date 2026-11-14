@@ -1,6 +1,6 @@
 """Render the flume validation run: animation + six key frames.
 
-    python -I render.py out/flume_r40
+    python render.py out/flume_r40
 
 Needs diagnostics.json in the run folder (run diagnostics.py first).
 Writes out/flume/breaking_wave.mp4 and out/flume/frames/*.png.
