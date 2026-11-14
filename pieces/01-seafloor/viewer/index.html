@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Oceany - sea floor and swell viewer</title>
-  <link rel="stylesheet" href="style.css?v=c2a">
+  <title>Oceany - how the North Sea hits the Danish coast</title>
+  <link rel="stylesheet" href="style.css?v=c2d">
   <!-- The import map tells the browser where "three" lives, so main.js and
        OrbitControls.js can both say: import ... from 'three'. No bundler needed. -->
   <script type="importmap">
@@ -25,6 +25,8 @@
     <div class="row" id="layers"></div>
     <div class="row" id="palettes"></div>
     <div class="row"><button id="zoom-in">Zoom to Klitm&oslash;ller</button><button id="zoom-out">Zoom out</button><button id="spot-0" style="display:none"></button><button id="spot-1" style="display:none"></button><button id="spot-2" style="display:none"></button></div>
+    <div class="row" id="view-row" style="display:none"><span style="color:#9ab;font-size:12px">Spot buttons open:</span><button id="view-beach" class="on" title="Stand on the shore at eye height and watch the swell come in">Beach view</button><button id="view-off" title="The surf-check view from above the water">Offshore view</button></div>
+    <div id="beach-note" class="hint" style="display:none;color:#9ab;font-size:12px;margin-top:3px">Beach view: on the shore at eye height, true vertical scale (1x), looking out against the incoming swell. The crests move at the model's wave speed in real time. Drag to look around.</div>
     <div class="row"><button id="cam-mode" title="Switch between the free-fly camera and the orbit camera">Orbit / Fly</button></div>
     <div id="cam-hint" style="color:#9ab;font-size:12px;margin-top:3px"></div>
     <div id="marks" style="display:none">
@@ -36,18 +38,39 @@
       <div id="brk-cap" class="hint"></div>
     </div>
     <div id="swl" style="display:none">
-      <label class="row"><input id="swl-on" type="checkbox"> <span id="swl-on-text">Simulated swell (illustrative), 17 Sep 2026 18:00</span></label>
-      <label class="row" id="swl-speed-row"><input id="swl-fast" type="checkbox"> x4 speed</label>
-      <label class="row" id="bw-row"><input id="bw-on" type="checkbox"> Breaking wave slice (illustrative, 2D slice), 17 Sep 2026</label>
+      <label class="row" id="bw-row" style="font-weight:600;color:#cfefff"><input id="bw-on" type="checkbox"> Breaking wave (illustrative 2D slice), 17 Sep 2026</label>
       <div id="bw-variant" class="hint" style="display:none"></div>
       <div id="bw-note" class="hint" style="display:none"></div>
+      <label class="row"><input id="swl-on" type="checkbox"> <span id="swl-on-text">Simulated swell (illustrative), 17 Sep 2026 18:00</span></label>
+      <label class="row" id="swl-speed-row"><input id="swl-fast" type="checkbox"> x4 speed</label>
       <div class="hint">Simple model: the swell slows and grows as it shallows, bends toward shore, and is marked broken where height reaches 0.78 x depth.<br>It does not simulate the shape of a breaking wave.<br>The surface is interpolated between 11 x 14 m model cells and smoothed for drawing, so it shows no detail finer than the cells. The sea floor stays drawn, dimmer, under the translucent water.</div>
       <div id="swl-note" class="hint"></div>
       <div id="play-only" class="hint" style="display:none">Play with the swell (sliders): Porto Batel only.</div>
       <div id="swl-awash-note" class="hint" style="display:none">Pale band: rock within about 1 m of the tide level, wet by wave run-up (illustrative, not simulated)<br>Flat blue: still water at the tide level where the swell model draws nothing (not simulated)</div>
     </div>
+    <details id="key" class="key">
+      <summary>Key: what the colours and layers mean</summary>
+      <ul>
+        <li><b>Colour = depth.</b> <span id="key-scale"></span></li>
+        <li><b>"Below LAT":</b> depth measured down from the lowest normal tide, so the real water is almost always a bit deeper. Pipeline uses mean sea level and the French spots IGN69, as shown on a point's tooltip.</li>
+        <li><b>North Sea window:</b> EMODnet and Danish 50 m data. Fine enough to show how the shelf turns the swell, too coarse for single reefs or sandbars.</li>
+        <li><b>Swell layer:</b> a simple model of one swell crossing the sea floor. Not a forecast.</li>
+        <li><b>Breaking-wave layer (Porto Batel):</b> an illustrative 2D slice of one typical wave on 17 Sep 2026 (about 1.5 m), along one line. Not a prediction of any real wave.</li>
+        <li><b>Pins (Porto Batel):</b> one surfer's marks from 17 Sep 2026: the filming position, the take-off zone (rock contact observed there) and the keyhole channel. Not survey points.</li>
+        <li><b>Other spots</b> (Supertubos, Pipeline, Gu&eacute;thary, Hossegor, Consola&ccedil;&atilde;o): the same sea floor and swell model, with a typical swell for the place. Illustrative, not a forecast.</li>
+      </ul>
+    </details>
     <label class="row"><input id="rotate" type="checkbox"> auto-rotate</label>
   </div>
+
+  <div id="intro" role="dialog" aria-label="About this viewer" style="display:none">
+    <h2>How the North Sea hits the Danish coast</h2>
+    <p>The sea floor of the North Sea off Denmark as a 3D point cloud, with swell arriving from the north-west, west and south-west. The bottom bends and slows the waves before they reach the beach, so the same swell lands differently on each stretch of coast. Zoom in to Porto Batel in Portugal to see one wave break on a real reef.</p>
+    <p>Swell and breaking waves are models drawn on real depth data, not a forecast.</p>
+    <p class="intro-ctl"><span class="intro-desk"><b>Controls:</b> drag to look, W/A/S/D to move, E/Space up, Q/C down, wheel to glide, Shift fast. The spot buttons put you on the shore for a beach view.</span><span class="intro-phone"><b>Controls:</b> one finger to look, pinch to move forward and back, two fingers to pan.</span></p>
+    <div class="intro-btns"><button id="intro-tour" class="on">Take the tour</button><button id="intro-go">Just explore</button></div>
+  </div>
+  <div id="credits">Bathymetry: EMODnet Bathymetry (CC BY 4.0); Danish depth model 50 m, Klimadatastyrelsen; Porto Batel and Supertubos lidar 2011, DGT and APA via EMODnet (CC BY 4.0); Pipeline: NOAA/USACE; Gu&eacute;thary and Hossegor: Shom - IGN Litto3D (Etalab 2.0). Not for navigation. 3D: three.js (MIT). Full list in DATA-LICENSES.md.</div>
 
   <div id="label-shore" class="tag">Klitm&oslash;ller (shoreline)</div>
   <div id="label-village" class="tag dim">village</div>
@@ -56,8 +79,8 @@
   <div id="status">loading...</div>
   <div id="loading" style="display:none"></div>
 
-  <script type="module" src="main.js?v=c4a"></script>
-  <script type="module" src="play.js?v=c2"></script>
-  <script type="module" src="tutorial.js?v=c2a"></script>
+  <script type="module" src="main.js?v=c6g"></script>
+  <script type="module" src="play.js?v=c5b"></script>
+  <script type="module" src="tutorial.js?v=c3d"></script>
 </body>
 </html>

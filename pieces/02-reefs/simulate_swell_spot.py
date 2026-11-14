@@ -92,6 +92,8 @@ SPOTS = {
         tide_note="0.0 m above IGN69 ~ mean sea level on this coast (IGN69 zero lies within ~0.2 m of mean level at Bayonne/Socoa); spring range ~4 m",
         datum="IGN69",
         takeoff=dict(lat=43.67562, lon=-1.443375, how="published La Graviere position (surf-guide source), approximate"),
+        profile_bridge_m=25,   # the 2020-22 lidar has 1-cell holes along this line (305-324 m out); bridge them so the
+                               # SPH profile reaches the outer bar and ~9 m of water (only the profile CSV changes)
         caveat="Litto3D lidar (Shom - IGN, 2025, NAQ 2020-2022) reaches only ~17-29 m depth near the spot; deeper refraction is not modelled. Spot position approximate. Illustrative.".replace("Spot position", "Sand beach break, seabed 2020-2022; the bars move. Spot position"),
     ),
 }
@@ -244,6 +246,22 @@ def main():
     sgrid = np.arange(-1500, 800.0, 1.0)                 # metres along travel, + = shoreward of take-off
     pxs, pys = kx + sgrid * ux, ky + sgrid * uy
     bed = -bilinear(lidar, X, Y, dx, dy, pxs, pys)       # height above datum (positive up)
+    bridge = S.get("profile_bridge_m", 0)                # opt-in: bridge short lidar gaps (NaN runs) along the line
+    if bridge:                                           # by linear interpolation, so the profile can reach deeper water
+        ok = np.isfinite(bed); idx = np.arange(bed.size)
+        filled = np.interp(idx, idx[ok], bed[ok])
+        k = 0
+        while k < bed.size:
+            if not ok[k]:
+                e = k
+                while e < bed.size and not ok[e]:
+                    e += 1
+                if k > 0 and e < bed.size and (e - k) <= bridge:   # interior run no longer than `bridge` m (1 m steps)
+                    bed[k:e] = filled[k:e]
+                    print(f"profile: bridged a {e - k} m lidar gap at sgrid {sgrid[k]:.0f}..{sgrid[e - 1]:.0f} m")
+                k = e
+            else:
+                k += 1
     water = -bed + S["tide"]
     i0 = int(np.argmin(np.abs(sgrid)))
     # shoreline: first sample shoreward of the take-off where the bed rises above the still water

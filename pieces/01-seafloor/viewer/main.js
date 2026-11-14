@@ -22,6 +22,8 @@ const camera = new THREE.PerspectiveCamera(FOV, 1, 10, 6000000); // units are me
 const v3 = (x, y, z) => new THREE.Vector3(x, y, z);
 const FINE_VIEWS = { far: { pos: v3(-14000, 8000, 7500), target: v3(0, 0, 0) },
                      near: { pos: v3(-2300, 1500, 1500), target: v3(0, -300, 0) } };
+// Porto Batel beach view: the filming position on the cliff (breaking-wave slice origin, porto_batel_slice meta house_x/y_m), eye 1.7 m, looking at the take-off.
+const PB_BEACH = { at: [578.74, -277.32], look: [488, -348], eye: 1.7 };
 const LAYERS = {
   'EMODnet ~115 m': { file: 'data/seafloor.json', size: 100, exag: 60, deepAt: 34, landCap: 1e9, mark: 1, views: FINE_VIEWS },
   'Danish model 50 m': { file: 'data/seafloor_ddm.json', size: 55, exag: 60, deepAt: 34, landCap: 1e9, mark: 1, views: FINE_VIEWS },
@@ -31,6 +33,8 @@ const LAYERS = {
   // Portugal, ~4 km box (x,z in metres from the box middle; z = south). reef: true switches on the title, labels,
   // button names and tooltip wording for this layer.
   'Reef maps: Consolação and Porto Batel': { file: 'data/reefs.json', size: 14, exag: 5, deepAt: 12, landCap: 15, mark: 1, reef: true, portugal: true, spot: 'porto_batel', swellFile: 'data/swell_sim.json',
+    // spotCams: surf-check viewpoint per spot button. sea = compass bearing from the break out to sea (waves travel the other way); at = [x_m, y_m north] break/take-off if not the label position (take-off 39.31887, -9.356829 = observer's take-off zone)
+    spotCams: { 'Porto Batel': { sea: 236, at: [488, -348], beach: PB_BEACH }, 'Consolação': { sea: 290 } },
     title: 'Peniche reefs, Portugal', zoomIn: 'Zoom to the two spots', zoomOut: 'Whole box',
     views: { far: { pos: v3(-1500, 1100, 2000), target: v3(-100, -30, 0) },
              // near = the two spots: target is the midpoint of Consolação (103, -278) and Porto Batel (662, 267); camera sits
@@ -41,6 +45,7 @@ const LAYERS = {
   // seaDir: unit vector (x, z) from the spot towards open sea (north-west here); the close-up camera sits on that side.
   'Reef map: Pipeline, Oahu': { file: 'data/pipeline.json', size: 14, exag: 5, deepAt: 25, landCap: 15, mark: 1, reef: true,
     title: 'Pipeline, Oahu North Shore', zoomIn: 'Zoom to Pipeline', zoomOut: 'Whole box', datumLabel: 'LMSL', seaDir: [-0.707, -0.707],
+    spotCams: { 'Pipeline': { sea: 310 }, 'Backdoor': { sea: 305 }, 'Waimea Bay': { sea: 285, D: 380, H: 110 } },
     // spot: key for data/<spot>_slice.json (listed in data/slices.json); swellFile: data/*_swell.json for this layer's points (same order and count)
     spot: 'pipeline', swellFile: 'data/pipeline_swell.json',
     views: { far: { pos: v3(-3600, 2600, -3200), target: v3(-300, -20, 300) },
@@ -49,6 +54,7 @@ const LAYERS = {
   // Supertubos, Peniche: the wide Portuguese box (reefs_wide.json, 2011 lidar). No portugal flag (Porto Batel pins, break line, play controls stay on the first Portuguese layer).
   'Reef map: Supertubos, Peniche': { file: 'data/reefs_wide.json', size: 14, exag: 5, deepAt: 14, landCap: 15, mark: 1, reef: true,
     title: 'Supertubos, Peniche (2011 seabed)', zoomIn: 'Zoom to Supertubos', zoomOut: 'Whole box', seaDir: [-1, 0],
+    spotCams: { 'Supertubos': { sea: 266, at: [50, 1977] }, 'Consolação': { sea: 290 }, 'Porto Batel': { sea: 236, at: [488, -348], beach: PB_BEACH } },
     spot: 'supertubos', swellFile: 'data/supertubos_swell.json',
     views: { far: { pos: v3(-5200, 4200, -1500), target: v3(0, -20, -800) },
              // near = take-off (50, 1977) seen from 500 m out along bearing 266, 200 m up: x -449, z (south) -1942
@@ -58,21 +64,23 @@ const LAYERS = {
   // x east, z south, metres from the spot (meta.origin). seaDir points to open sea (west).
   'Reef map: Guéthary / Parlementia, France': { file: 'data/guethary.json', size: 14, exag: 5, deepAt: 25, landCap: 15, mark: 1, reef: true,
     title: 'Guéthary / Parlementia, France', zoomIn: 'Zoom to Parlementia', zoomOut: 'Whole box', datumLabel: 'IGN69', seaDir: [-0.996, -0.087],
+    spotCams: { 'Parlementia': { sea: 332 }, 'Parlementia candidate take-off': { sea: 332 } },
     spot: 'guethary', swellFile: 'data/guethary_swell.json',
     views: { far: { pos: v3(-4200, 2800, 600), target: v3(-500, -20, 300) },
              near: { pos: v3(-598, 250, -52), target: v3(0, -20, 0) } } },
   'Reef map: Hossegor / La Gravière, France': { file: 'data/hossegor.json', size: 14, exag: 5, deepAt: 20, landCap: 15, mark: 1, reef: true,
     title: 'Hossegor / La Gravière, France', zoomIn: 'Zoom to La Gravière', zoomOut: 'Whole box', datumLabel: 'IGN69', seaDir: [-0.918, 0.396],
+    spotCams: { 'La Gravière': { sea: 275 }, 'La Gravière candidate take-off': { sea: 275, at: [-12.9, 5.2] } },
     spot: 'hossegor', swellFile: 'data/hossegor_swell.json',
     views: { far: { pos: v3(-3000, 2400, 1900), target: v3(150, -20, 500) },
              near: { pos: v3(-563, 250, 237), target: v3(-13, -20, -5) } } },
 };
 const material = new THREE.ShaderMaterial({
   // uDim: brightness (below 1 while the swell is on, so the bed reads through the water); uHideAbove: bed higher than this (m above LAT) is not drawn (the awash/land sets draw it while the swell is on)
-  uniforms: { uExag: { value: 60 }, uSize: { value: 100 }, uScale: { value: 1 }, uLandCap: { value: 1e9 }, uDim: { value: 1 }, uHideAbove: { value: 1e9 } },
+  uniforms: { uExag: { value: 60 }, uSize: { value: 100 }, uScale: { value: 1 }, uLandCap: { value: 1e9 }, uDim: { value: 1 }, uHideAbove: { value: 1e9 }, uMaxPx: { value: 1e5 } },   // uMaxPx: dot size cap (px), only lowered in beach view
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: `
-    uniform float uExag, uSize, uScale, uLandCap, uHideAbove;
+    uniform float uExag, uSize, uScale, uLandCap, uHideAbove, uMaxPx;
     attribute float aDepth, aShore; attribute vec3 aColor;
     varying vec3 vColor; varying float vShore;
     void main() {
@@ -81,7 +89,7 @@ const material = new THREE.ShaderMaterial({
       float z = aDepth < 0.0 ? -min(-aDepth, uLandCap) : aDepth;   // land height is capped for display
       p.y = -z * uExag;                            // depth down, stretched
       vec4 mv = modelViewMatrix * vec4(p, 1.0);
-      gl_PointSize = max(2.0, uSize * (1.0 + aShore * 0.7) * uScale / -mv.z);
+      gl_PointSize = min(uMaxPx, max(2.0, uSize * (1.0 + aShore * 0.7) * uScale / -mv.z));
       gl_Position = projectionMatrix * mv;
       vColor = aColor; vShore = aShore;
     }`,
@@ -99,7 +107,7 @@ cloud.frustumCulled = false;   // the shader moves points, so the stored bounds 
 scene.add(cloud);
 
 // Loading line: shows what is loading while the big JSON files download; an error stays on screen if a fetch fails.
-const DATA_VERSION = 's10';
+const DATA_VERSION = 's11';
 const loadingEl = document.getElementById('loading'), loadingNow = new Set();
 async function loadJSON(url, what) {
   loadingNow.add(what); loadingEl.className = ''; loadingEl.textContent = 'Loading data\u2026 ' + [...loadingNow].join(', '); loadingEl.style.display = 'block';
@@ -163,12 +171,13 @@ async function showLayer(label) {
   cur = cache[label];
   cur.cfg = L;
   cur.lines.visible = true;
-  document.title = 'Oceany - ' + (L.title || 'Klitmoller sea floor');
+  document.title = 'Oceany - ' + (L.title || 'how the North Sea hits the Danish coast');
   switchSwellLayer(label);
   cloud.geometry = cur.g;
   material.uniforms.uSize.value = L.size;
   material.uniforms.uLandCap.value = L.landCap;
   marker.scale.setScalar(L.mark); marker.visible = !L.reef;   // the gold Klitmoller marker is not drawn on the reef layer
+  if (BEACH.active) setBeachActive(false);
   exagInput.value = L.exag; setExag();           // each layer starts with its own vertical stretch
   applyPalette(currentPalette);
   if (prevViews && prevViews !== L.views) flyTo(L.views.far);   // different scale (own views): fly to this layer's overview
@@ -184,7 +193,11 @@ async function showLayer(label) {
   document.getElementById('brk').style.display = L.portugal ? '' : 'none';
   document.getElementById('swl').style.display = L.swellFile ? '' : 'none';
   setSwellUI(L);
+  if (L.spot === 'porto_batel' && !BW.auto) {      // Porto Batel: the breaking wave is on the first time you open the layer (the checkbox is far down the panel); untick to hide it
+    BW.auto = true; const cb = document.getElementById('bw-on'); cb.checked = true; cb.dispatchEvent(new Event('change'));
+  }
   if (L.reef && !marksLoaded) loadMarks();
+  document.getElementById('view-row').style.display = L.reef && cur.spotTags.length ? '' : 'none';
   [0, 1, 2].forEach(i => {                       // reef layer: one close-up button per named spot
     const b = document.getElementById('spot-' + i), t = L.reef && cur.spotTags[i];
     b.style.display = t ? '' : 'none'; if (t) b.textContent = t.name;
@@ -253,6 +266,12 @@ function applyPalette(name) {
   }
   colorAttr.needsUpdate = true;
   applyBreak();
+  const ks = document.getElementById('key-scale');     // legend line, from the same numbers as the loop above
+  if (ks) {
+    const nm = { Ocean: ['bright teal', 'blue', 'dark navy'], Ember: ['yellow', 'red', 'dark maroon'], Mono: ['white', 'grey', 'near black'] }[name] || ['light', 'mid', 'dark'];
+    const fm = v => Math.round(v * 10) / 10;
+    ks.textContent = `${nm[0]} at 0 m, ${nm[1]} at ${fm(DEEP_AT / 2)} m, ${nm[2]} at ${DEEP_AT} m and deeper (this layer). Land, above zero, is drawn dim.`;
+  }
 }
 
 // ---------- 4. Controls and camera moves ----------
@@ -272,7 +291,7 @@ function stepFly(now) {
   const k = Math.min((now - fly.t0) / 1600, 1), e = k * k * (3 - 2 * k);   // ease in and out
   camera.position.lerpVectors(fly.p0, fly.view.pos, e);
   controls.target.lerpVectors(fly.g0, fly.view.target, e);
-  if (k >= 1) fly = null;
+  if (k >= 1) { fly = null; FLY.jump = true; }    // fly mode takes the final view even when the whole jump fell between two frames (slow or hidden tab)
 }
 
 // ---- Free-fly camera (default on the reef layer; the "Orbit / Fly" button switches to the old orbit controls) ----
@@ -427,27 +446,122 @@ function pairView() {
   const tx = (a.x + b.x) / 2 - r[0] * shift, tz = (a.z + b.z) / 2 - r[1] * shift;
   return { pos: v3(tx + n[0] * Dh, Dh / 2, tz + n[1] * Dh), target: v3(tx, -20, tz) };
 }
-document.getElementById('zoom-in').onclick = () => flyTo(cur.cfg.portugal ? pairView() : cur.cfg.views.near);
+document.getElementById('zoom-in').onclick = () => (setBeachActive(false), flyTo(cur.cfg.portugal ? pairView() : cur.cfg.views.near));
 // Close-up on one reef spot: ~360 m from it, seen from the sea side (same bearing as the near view), and the target
 // is shifted so the spot lands in the middle of the part of the screen the left panel does not cover.
 function spotView(t) {
-  const sd = cur.cfg.seaDir || [-0.698, 0.716], n = sd, r = [sd[1], -sd[0]], D = Math.hypot(300, 200);   // r = sideways, as before
-  const halfW = D * Math.tan(camera.fov / 2 * Math.PI / 180) * camera.aspect;
-  const shift = document.getElementById('panel').getBoundingClientRect().right / window.innerWidth * halfW;
-  const tx = t.x - r[0] * shift, tz = t.z - r[1] * shift;
-  return { pos: v3(tx + n[0] * 300, 200, tz + n[1] * 300), target: v3(tx, -20, tz) };
+  // Surf-check viewpoint: out on the water behind the break (against the wave travel direction), elevated, looking shoreward at the take-off so the waves
+  // are in front and the coast sits behind them. Falls back to the layer's seaDir when a spot has no spotCams entry.
+  const sc = (cur.cfg.spotCams && cur.cfg.spotCams[t.name]) || {}, b = sc.sea != null ? sc.sea * Math.PI / 180 : null;
+  const n = b != null ? [Math.sin(b), -Math.cos(b)] : (cur.cfg.seaDir || [-0.698, 0.716]), r = [n[1], -n[0]];   // n = unit vector to sea in (x, z); r = screen-right
+  const at = sc.at ? [sc.at[0], -sc.at[1]] : [t.x, t.z], D = sc.D || 300, H = sc.H || 100;
+  const halfW = Math.hypot(D, H) * Math.tan(camera.fov / 2 * Math.PI / 180) * camera.aspect;
+  const shift = document.getElementById('panel').getBoundingClientRect().right / window.innerWidth * halfW;   // the spot lands in the middle of the part the left panel does not cover
+  const tx = at[0] - r[0] * shift, tz = at[1] - r[1] * shift;
+  return { pos: v3(tx + n[0] * D, H, tz + n[1] * D), target: v3(tx, 0, tz) };
 }
-[0, 1, 2].forEach(i => { document.getElementById('spot-' + i).onclick = () => flyTo(spotView(cur.spotTags[i])); });
-document.getElementById('zoom-out').onclick = () => flyTo(cur.cfg.views.far);
+// ---- Beach view (default for the spot buttons): stand on the shore near the take-off at eye height and look out to sea,
+// against the incoming waves, so the swell crests march toward you. True vertical scale (stretch 1x), swell layer on.
+// Where you stand: walk from the take-off along the wave travel direction (opposite of spotCams.sea) until the lidar bed is
+// dry (above the tide), then a few metres further up the beach. spotCams[name].beach overrides it: { at: [x, y north] stand
+// here, look: [x, y north] look toward this, eye: m above the ground }. Porto Batel: the filming position on the cliff.
+const BEACH = { mode: 'beach', active: false, exag: 1, eye: 3, back: 8, near: 1.5, maxPx: 40, swellMaxPx: 400, swellSize: 2.5, fadeFar: 700, fov: 30, bedDim: 0.06, waterDim: 0.2, spot: null };
+function heightGrid(c) {                              // once per layer: 6 m buckets holding one lidar point index each
+  if (c.hgrid) return c.hgrid;
+  const B = 6; let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;
+  for (let i = 0; i < c.N; i++) { const x = c.pos[3 * i], z = c.pos[3 * i + 2];
+    if (x < xmin) xmin = x; if (x > xmax) xmax = x; if (z < zmin) zmin = z; if (z > zmax) zmax = z; }
+  const nx = Math.floor((xmax - xmin) / B) + 1, nz = Math.floor((zmax - zmin) / B) + 1, head = new Int32Array(nx * nz).fill(-1);
+  for (let i = 0; i < c.N; i++) if (isFinite(c.depth[i])) head[Math.floor((c.pos[3 * i + 2] - zmin) / B) * nx + Math.floor((c.pos[3 * i] - xmin) / B)] = i;
+  return (c.hgrid = { B, xmin, zmin, nx, nz, head });
+}
+function bedHeightAt(c, x, z, r = 3) {                // bed height above the datum (m, land positive) of the nearest lidar point within ~r buckets; NaN if none
+  const G = heightGrid(c), q = Math.floor((x - G.xmin) / G.B), w = Math.floor((z - G.zmin) / G.B);
+  let best = Infinity, h = NaN;
+  for (let a = Math.max(0, w - r); a <= Math.min(G.nz - 1, w + r); a++) for (let b = Math.max(0, q - r); b <= Math.min(G.nx - 1, q + r); b++) {
+    const i = G.head[a * G.nx + b]; if (i < 0) continue;
+    const d = (c.pos[3 * i] - x) ** 2 + (c.pos[3 * i + 2] - z) ** 2; if (d < best) { best = d; h = -c.depth[i]; }
+  }
+  return h;
+}
+function swellTide() { return SWELL.data ? SWELL.data.tide : 0; }
+function beachView(t) {
+  const sc = (cur.cfg.spotCams && cur.cfg.spotCams[t.name]) || {}, bc = sc.beach || {}, tide = swellTide(), exag = BEACH.exag;
+  const b = sc.sea != null ? sc.sea * Math.PI / 180 : null;
+  let n = b != null ? [Math.sin(b), -Math.cos(b)] : (cur.cfg.seaDir || [-0.698, 0.716]);   // unit (x, z) toward open sea
+  const at = sc.at ? [sc.at[0], -sc.at[1]] : [t.x, t.z];
+  let stand;
+  if (bc.at) stand = [bc.at[0], -bc.at[1]];
+  else {                                            // walk landward from the take-off to the first dry lidar point, then a few metres on
+    stand = null;
+    const dry = (x, z) => bedHeightAt(cur, x, z) > tide + 0.3;
+    if (dry(at[0], at[1])) {                         // the spot's label sits on land: walk seaward to the water's edge, stand just behind it
+      for (let s = 0; s <= 1500 && !stand; s += 3) if (!dry(at[0] + n[0] * s, at[1] + n[1] * s)) stand = [at[0] + n[0] * (s - BEACH.back), at[1] + n[1] * (s - BEACH.back)];
+    } else {
+      for (let s = 0; s <= 2500 && !stand; s += 3) if (dry(at[0] - n[0] * s, at[1] - n[1] * s)) stand = [at[0] - n[0] * (s + BEACH.back), at[1] - n[1] * (s + BEACH.back)];
+    }
+    if (!stand) stand = [at[0] - n[0] * 150, at[1] - n[1] * 150];
+  }
+  const look = bc.look ? [bc.look[0], -bc.look[1]] : at;
+  let lx = look[0] - stand[0], lz = look[1] - stand[1]; const dist = Math.hypot(lx, lz);
+  if (dist > 20 && lx * n[0] + lz * n[1] > 0) n = [lx / dist, lz / dist];   // look from where you stand toward the take-off (and on out to sea); else along the sea bearing
+  let g = bedHeightAt(cur, stand[0], stand[1]); if (!isFinite(g)) g = tide;
+  g = Math.min(Math.max(g, tide), cur.cfg.landCap);  // drawn land is capped at landCap; never stand under the water line
+  const eye = bc.eye || BEACH.eye, y = (g + eye) * exag;
+  const D = Math.max(dist + 40, 120);               // aim at the sea surface beyond the take-off: the horizon sits in the upper part of the view
+  const r = [-n[1], n[0]], W = window.innerWidth;   // screen-right when looking along n
+  const halfW = D * Math.tan(camera.fov / 2 * Math.PI / 180) * camera.aspect;
+  const shift = W < 600 ? 0 : document.getElementById('panel').getBoundingClientRect().right / W * halfW;   // keep the take-off clear of the left panel (not on a phone)
+  // Look down at least enough that the horizon sits about 40% from the top of the screen (the water, not the empty sky, fills the view).
+  const tilt = Math.max((y - tide * exag) / D, 0.2 * Math.tan(camera.fov / 2 * Math.PI / 180));
+  return { pos: v3(stand[0], y, stand[1]), target: v3(stand[0] + n[0] * D - r[0] * shift, y - tilt * D, stand[1] + n[1] * D - r[1] * shift),
+           info: { stand: [stand[0], -stand[1]], ground: g, eye, tide, distToTakeoff: dist } };
+}
+function setBeachActive(on) {                       // beach look: true vertical scale, close near plane, capped dot sizes
+  BEACH.active = on;
+  if (on) { exagInput.value = BEACH.exag; setExag(); }
+  else if (cur) { exagInput.value = cur.cfg.exag; setExag(); }
+  camera.near = on ? BEACH.near : 10; onResize();
+  material.uniforms.uMaxPx.value = on ? BEACH.maxPx : 1e5;
+  document.getElementById('beach-note').style.display = on ? '' : 'none';
+}
+async function swellOnForBeach() {                  // the swell layer is what you came to see: switch it on and wait for it
+  if (!cur.cfg.swellFile) return;
+  const cb = document.getElementById('swl-on');
+  if (!cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
+  for (let i = 0; i < 300 && !SWELL.data; i++) await new Promise(r => setTimeout(r, 50));
+}
+async function flySpot(i, mode = BEACH.mode) {
+  const t = cur && cur.spotTags[i]; if (!t) return;
+  BEACH.spot = t.name;
+  if (mode === 'beach') {
+    await swellOnForBeach();
+    if (!cur || cur.spotTags[i] !== t) return;      // layer changed while the swell loaded
+    setBeachActive(true); const v = beachView(t); BEACH.last = v.info; flyTo(v);
+  } else { setBeachActive(false); flyTo(spotView(t)); }
+}
+function setViewMode(mode) {
+  BEACH.mode = mode;
+  document.getElementById('view-beach').classList.toggle('on', mode === 'beach');
+  document.getElementById('view-off').classList.toggle('on', mode !== 'beach');
+  const i = cur ? cur.spotTags.findIndex(t => t.name === BEACH.spot) : -1;
+  if (i >= 0 && i < 3) flySpot(i, mode);            // re-fly to the spot you were looking at
+}
+document.getElementById('view-beach').onclick = () => setViewMode('beach');
+document.getElementById('view-off').onclick = () => setViewMode('offshore');
+[0, 1, 2].forEach(i => { document.getElementById('spot-' + i).onclick = () => flySpot(i); });
+document.getElementById('zoom-out').onclick = () => { setBeachActive(false); flyTo(cur.cfg.views.far); };
 controls.addEventListener('start', () => { fly = null; });   // grabbing the scene cancels a flight
 
 function onResize() {
   const w = window.innerWidth, h = window.innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
+  // beach view: a narrow lens (30 deg tall) so the crests near the horizon get more pixels; on a portrait phone it widens so at least 45 deg stay visible across
+  camera.fov = BEACH.active ? Math.min(70, Math.max(BEACH.fov, 2 * Math.atan(Math.tan(22.5 * Math.PI / 180) / camera.aspect) * 180 / Math.PI)) : FOV;
   camera.updateProjectionMatrix();
   // pixels per metre at distance 1: lets points keep a fixed size in metres
-  material.uniforms.uScale.value = (h * renderer.getPixelRatio()) / (2 * Math.tan((FOV / 2) * Math.PI / 180));
+  material.uniforms.uScale.value = (h * renderer.getPixelRatio()) / (2 * Math.tan((camera.fov / 2) * Math.PI / 180));   // camera.fov: narrower in beach view
 }
 window.addEventListener('resize', onResize);
 onResize();
@@ -608,23 +722,35 @@ const SWELL = { file: 'data/swell_sim.json', layer: null, on: false, speed: 1, d
 const SWELL_SURF_ALPHA = 0.7;      // swell surface and water fill opacity multipliers (1 = the old, denser look)
 const WATER_FILL_ALPHA = 0.5;
 const swellMat = new THREE.ShaderMaterial({
-  uniforms: { uSize: { value: 14 }, uScale: { value: 1 }, uExag: { value: 5 }, uTide: { value: 0 } },
+  uniforms: { uSize: { value: 14 }, uScale: { value: 1 }, uExag: { value: 5 }, uTide: { value: 0 }, uMaxPx: { value: 8 }, uFadeFar: { value: 0 }, uLow: { value: 0 } },   // uMaxPx/uFadeFar/uLow: beach view only (defaults = the usual look)
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: `
-    uniform float uSize, uScale, uExag, uTide;
-    attribute vec4 aCol; attribute float aAmp; varying vec4 vCol;
+    uniform float uSize, uScale, uExag, uTide, uMaxPx, uFadeFar, uLow;
+    attribute vec4 aCol; attribute float aAmp; varying vec4 vCol; varying float vSq;
     void main() {
-      vec4 mv = modelViewMatrix * vec4(position, 1.0);
-      gl_PointSize = clamp(uSize * uScale / -mv.z, 2.0, 8.0);   // capped: close-up dots would overlap hundreds deep and slow the GPU
+      vec3 p = position;
+      if (uLow > 0.5) {                             // beach view: jitter each dot within its 5 m square, so the regular grid does not draw streaks toward a low camera
+        vec2 h = fract(sin(vec2(dot(p.xz, vec2(12.9898, 78.233)), dot(p.xz, vec2(39.3468, 11.135)))) * 43758.5453);
+        p.xz += (h - 0.5) * 4.0;
+      }
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_PointSize = clamp(uSize * uScale / -mv.z, 2.0, uMaxPx);   // capped: close-up dots would overlap hundreds deep and slow the GPU
       gl_Position = projectionMatrix * mv;
+      vSq = 1.0;                                    // beach view: each dot is drawn as a flat disc lying on the water (an ellipse squashed by the viewing angle), so crests read as lines
+      if (uLow > 0.5) vSq = clamp(abs(dot(normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz), normalize(mv.xyz))), 0.04, 1.0);
       float crest = clamp((position.y / uExag - uTide) / max(aAmp, 0.01), -1.0, 1.0);   // +1 crest, -1 trough
       float up = (crest + 1.0) / 2.0;
-      vCol = vec4(aCol.rgb, aCol.a * (0.12 + 0.88 * up * up));                           // crests bright, troughs faint
+      // Beach view (uLow = 1): seen from eye height the rows of dots pile up, so troughs are dimmed further and crests
+      // sharpened (up^4 instead of up^2), and far water fades out (uFadeFar m) instead of piling into a bright band.
+      float a = mix(0.12 + 0.88 * up * up, 0.04 + 0.96 * up * up * up * up, uLow);
+      if (uFadeFar > 0.0) a *= 1.0 - smoothstep(0.35 * uFadeFar, uFadeFar, -mv.z);
+      vCol = vec4(aCol.rgb, aCol.a * a);                                                 // crests bright, troughs faint
     }`,
   fragmentShader: `
-    varying vec4 vCol;
+    varying vec4 vCol; varying float vSq;
     void main() {
-      float r = length(gl_PointCoord - 0.5) * 2.0;
+      vec2 d = gl_PointCoord - 0.5; d.y /= vSq;
+      float r = length(d) * 2.0;
       if (r > 1.0) discard;
       gl_FragColor = vec4(vCol.rgb, vCol.a * ${SWELL_SURF_ALPHA.toFixed(2)} * pow(1.0 - r, 0.6));     // translucent so the bed reads through; fuller dots than the sea floor's: the surface is drawn with small, overlapping dots
     }`,
@@ -653,17 +779,17 @@ const AWASH_BELOW_TIDE_M = 0.5;    // bed this far below the tide level is still
 const AWASH_ABOVE_TIDE_M = 1.0;    // bed up to this far above the tide level is wet by run-up (above that: dry land)
 const AWASH_COL = [0.85, 1.0, 0.97], LAND_COL = [0.30, 0.23, 0.16];   // pale foam/ice-blue; muted grey-brown, dim
 const awashMat = (col) => new THREE.ShaderMaterial({
-  uniforms: { uExag: { value: 5 }, uSize: { value: 100 }, uScale: { value: 1 }, uLandCap: { value: 1e9 }, uBright: { value: 1 }, uCol: { value: new THREE.Color(col[0], col[1], col[2]) } },
+  uniforms: { uExag: { value: 5 }, uSize: { value: 100 }, uScale: { value: 1 }, uLandCap: { value: 1e9 }, uBright: { value: 1 }, uMaxPx: { value: 1e5 }, uCol: { value: new THREE.Color(col[0], col[1], col[2]) } },
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: `
-    uniform float uExag, uSize, uScale, uLandCap;
+    uniform float uExag, uSize, uScale, uLandCap, uMaxPx;
     attribute float aDepth;
     void main() {
       vec3 p = position;
       float z = aDepth < 0.0 ? -min(-aDepth, uLandCap) : aDepth;   // same height rule as the sea-floor cloud
       p.y = -z * uExag;
       vec4 mv = modelViewMatrix * vec4(p, 1.0);
-      gl_PointSize = max(2.0, uSize * uScale / -mv.z);
+      gl_PointSize = min(uMaxPx, max(2.0, uSize * uScale / -mv.z));
       gl_Position = projectionMatrix * mv;
     }`,
   fragmentShader: `
@@ -679,25 +805,25 @@ const landPts = new THREE.Points(new THREE.BufferGeometry(), awashMat(LAND_COL))
 [awashPts, landPts].forEach(o => { o.frustumCulled = false; o.visible = false; scene.add(o); });
 // Calm water fill at the tide level where the swell draws nothing; colour by water depth (turquoise under ~1 m to dim deep blue past ~5 m). Not simulated.
 const waterMat = new THREE.ShaderMaterial({
-  uniforms: { uExag: { value: 5 }, uTide: { value: 2.1 }, uSize: { value: 100 }, uScale: { value: 1 } },
+  uniforms: { uExag: { value: 5 }, uTide: { value: 2.1 }, uSize: { value: 100 }, uScale: { value: 1 }, uMaxPx: { value: 1e5 }, uBright: { value: 1 } },   // uBright < 1 in beach view only
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: `
-    uniform float uExag, uTide, uSize, uScale;
+    uniform float uExag, uTide, uSize, uScale, uMaxPx;
     attribute float aWd; varying vec3 vCol;
     void main() {
       vec4 mv = modelViewMatrix * vec4(position.x, uTide * uExag, position.z, 1.0);
-      gl_PointSize = max(2.0, uSize * uScale / -mv.z);
+      gl_PointSize = min(uMaxPx, max(2.0, uSize * uScale / -mv.z));
       gl_Position = projectionMatrix * mv;
       float t = smoothstep(1.0, 5.0, aWd);
       vCol = mix(vec3(0.05, 0.50, 0.55), vec3(0.02, 0.08, 0.28), t) * 0.7;   // dimmer than the swell, so the swell reads on top
       vCol = mix(vec3(0.20, 0.72, 0.70) * 0.85, vCol, smoothstep(0.0, 0.5, aWd));   // ankle-deep (<0.5 m) shelf: lighter aqua, still water not rock
     }`,
   fragmentShader: `
-    varying vec3 vCol;
+    uniform float uBright; varying vec3 vCol;
     void main() {
       float r = length(gl_PointCoord - 0.5) * 2.0;
       if (r > 1.0) discard;
-      gl_FragColor = vec4(vCol, pow(1.0 - r, 2.0) * 0.85 * ${WATER_FILL_ALPHA.toFixed(2)});   // translucent: the sea floor shows through
+      gl_FragColor = vec4(vCol * uBright, pow(1.0 - r, 2.0) * 0.85 * ${WATER_FILL_ALPHA.toFixed(2)});   // translucent: the sea floor shows through
     }`,
 });
 const waterPts = new THREE.Points(new THREE.BufferGeometry(), waterMat);
@@ -840,20 +966,21 @@ function updateSwell(now) {
   // The sea floor stays drawn under the water, dimmer (its depth colours still read) and only where the bed is below the
   // tide level (above that the awash/land sets draw it), so the bed shows through the translucent water and swell.
   cloud.visible = true;
-  material.uniforms.uDim.value = show ? SWELL_BED_DIM : 1;
+  material.uniforms.uDim.value = show ? (BEACH.active ? BEACH.bedDim : SWELL_BED_DIM) : 1;   // beach view: the bed under the water is barely seen from the shore
   material.uniforms.uHideAbove.value = show ? SWELL.data.tide : 1e9;
   const dt = SWELL.last === null ? 0 : Math.min((now - SWELL.last) / 1000, 0.25);
   SWELL.last = now;
   if (!show) return;
   swellMat.uniforms.uScale.value = material.uniforms.uScale.value;   // same point size rule as the sea floor
-  swellMat.uniforms.uSize.value = material.uniforms.uSize.value * SWELL_DOT;   // finer dots for the finer grid
+  swellMat.uniforms.uSize.value = material.uniforms.uSize.value * SWELL_DOT * (BEACH.active ? BEACH.swellSize : 1);   // finer dots for the finer grid (beach view: wider flat discs, so neighbours join into crest lines)
   swellMat.uniforms.uExag.value = material.uniforms.uExag.value; swellMat.uniforms.uTide.value = SWELL.data.tide;
   SWELL.t += dt * SWELL.speed;                          // model seconds (real time, or x4)
   [awashPts, landPts].forEach(o => { const u = o.material.uniforms;   // same size/stretch/land cap as the sea-floor cloud
     u.uExag.value = material.uniforms.uExag.value; u.uSize.value = material.uniforms.uSize.value;
-    u.uScale.value = material.uniforms.uScale.value; u.uLandCap.value = material.uniforms.uLandCap.value; });
+    u.uScale.value = material.uniforms.uScale.value; u.uLandCap.value = material.uniforms.uLandCap.value; u.uMaxPx.value = material.uniforms.uMaxPx.value; });
   { const u = waterMat.uniforms; u.uExag.value = material.uniforms.uExag.value; u.uTide.value = SWELL.data.tide;
-    u.uSize.value = material.uniforms.uSize.value; u.uScale.value = material.uniforms.uScale.value; }
+    u.uSize.value = material.uniforms.uSize.value; u.uScale.value = material.uniforms.uScale.value; u.uMaxPx.value = material.uniforms.uMaxPx.value; u.uBright.value = BEACH.active ? BEACH.waterDim : 1; }
+  { const u = swellMat.uniforms, on = BEACH.active; u.uMaxPx.value = on ? BEACH.swellMaxPx : 8; u.uFadeFar.value = on ? BEACH.fadeFar : 0; u.uLow.value = on ? 1 : 0; }
   awashPts.material.uniforms.uBright.value = 0.8 + 0.2 * Math.sin(2 * Math.PI * SWELL.t / (SWELL.data.period || 8));   // slow, subtle
   const { n, pos, amp, ph, omega, tide } = SWELL.data, exag = material.uniforms.uExag.value, wt = omega * SWELL.t;
   for (let j = 0; j < n; j++) pos[3 * j + 1] = (tide + amp[j] * Math.cos(ph[j] - wt)) * exag;
@@ -1086,18 +1213,24 @@ function placeSketch(show) {                          // every frame: sit at the
       s.stick.position.set(s.x, Math.min(y, yw), s.z); s.stick.scale.y = Math.max(Math.abs(yw - y), 0.01);
     }
     s.mesh.position.set(s.x, y, s.z);
+    const near = BEACH.active && Math.hypot(s.x - camera.position.x, s.z - camera.position.z) < 80;   // beach view: a pin you are standing on would fill the screen
+    s.mesh.visible = !near; if (s.stick) s.stick.visible = !near;
+    s.mesh.scale.setScalar(BEACH.active ? 0.3 : 1);                   // beach view: smaller pins (they are sized to read from above)
+    if (near) { s.el.style.display = 'none'; return; }
     placeLabel(s.el, s.x, Math.max(y, yw) + 25 + 22 * i, s.z);       // labels stacked a little so they do not overlap
   });
   SKETCH_LINES.forEach(l => {                          // at the water surface (no text label: the channel label covers it)
     if (!l.mesh) return;
     l.mesh.position.y = 2.1 * material.uniforms.uExag.value;
+    l.mesh.visible = !BEACH.active;                    // beach view: the traced paddle-out tube lies right below the cliff and reads as a slab
   });
   if (keyhole.el) {                                    // channel: tide level (loaded swell tide if present), a hair above the awash points
     if (!show) keyhole.el.style.display = 'none';
     else {
       const y = sketchTide() * material.uniforms.uExag.value;
       keyhole.ribbon.position.y = y; keyhole.dash.position.y = y;
-      placeLabel(keyhole.el, keyhole.mid[0], y + 25, keyhole.mid[1]);
+      keyhole.ribbon.visible = keyhole.dash.visible = !BEACH.active;   // beach view: the flat channel ribbon reads as a slab from eye height
+      if (BEACH.active) keyhole.el.style.display = 'none'; else placeLabel(keyhole.el, keyhole.mid[0], y + 25, keyhole.mid[1]);
     }
   }
 }
@@ -1111,6 +1244,9 @@ new ResizeObserver(() => document.documentElement.style.setProperty('--cap-h', c
 let frame = 0;
 function animate(now) {
   requestAnimationFrame(animate);
+  drawFrame(now);
+}
+function drawFrame(now) {                          // one frame (also the debug hook __viewer.tick, for stepping a hidden tab)
   stepFly(now);
   if (camMode === 'fly') stepFree(now); else controls.update();
   updateSwell(now);
@@ -1131,4 +1267,4 @@ function animate(now) {
 layerBox.firstChild.click();
 requestAnimationFrame(animate);
 // Debug hook (lets the browser console inspect the scene and test hover; harmless to leave in).
-window.__viewer = { marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js
+window.__viewer = { tick: drawFrame, renderer, BEACH, beachView, flySpot, setViewMode, bedHeightAt, marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js

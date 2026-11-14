@@ -19,6 +19,10 @@ SPOTS = {
      H=1.6, T=13.5, sp=340.0, sp_c="wavemaker 280 m seaward of the shoreline (s = 60 + 280); ~5.4 m of water (9 m water is ~420 m out, beyond the s 60-340 tool window)",
      sat=235.0, sat_c="published Parlementia position (approx.), 175 m from the shoreline", t_end=85.0,
      src_c="Open-Meteo Marine hindcast, 43.45 N 1.70 W, Nov-Mar 2024-26 median swell (1.58 m, 13.5 s, 305 deg)"),
+ "hossegor": dict(title="Hossegor / La Graviere, France", datum="IGN69", tide=0.0, tide_c="m above IGN69 (~ mean sea level on this coast, within ~0.2 m)",
+     H=1.6, T=13.5, sp=535.0, sp_c="wavemaker 475 m seaward of the shoreline (s = 60 + 475); 8.1 m of water, seaward of the outer bar (crest ~6.0 m at 350-360 m out). Long domain: spot_run.py widens the tool window to s 60-515",
+     sat=159.0, sat_c="published La Graviere position (approx.), 99 m from the shoreline", t_end=100.0,
+     src_c="Open-Meteo Marine hindcast, 43.45 N 1.70 W, Nov-Mar 2024-26 median swell (1.58 m, 13.5 s, 305 deg)"),
 }
 def make(spot, S, factor=1.0):
     doc = f'''"""case_{spot}: regular swell breaking on the {S["title"]} profile (2D slice). ILLUSTRATIVE, NOT A FORECAST.

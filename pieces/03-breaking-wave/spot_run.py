@@ -12,6 +12,10 @@ loaded, so run_porto_batel.py / calib_wavemaker.py / diagnostics_porto_batel.py 
 UNCHANGED on the new profile. Porto Batel literals in the render script (house position, 236 deg bearing,
 labels, datum) are replaced in memory with the spot's values; the files on disk are not touched.
 Calibration: the tank is lengthened from 85 m to 130 m (sponge 45-130 m) because these swells are ~2x longer.
+Long domains (2026-11-14, Hossegor): the render/slice tools window s 60-340 m. When a spot's wavemaker sits beyond
+s 360 the window is widened in memory to s 60 to (s_piston - 20) (camera clamps, slice bins, slot count, overhang
+search scaled with it), and the slice time cap (78 s = t_end - 7 for the 85 s runs) follows t_end. For spots with
+s_piston <= 360 and t_end 85 (Porto Batel tools' own case, Pipeline, Supertubos, Guethary) nothing changes.
 """
 import csv
 import importlib
@@ -25,8 +29,19 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 VIEW = HERE.parent / "01-seafloor" / "viewer" / "data"
 M_PER_DEG = 111195.0
-POINTS = {"pipeline": "pipeline.json", "supertubos": "reefs_wide.json", "basque": "basque.json", "guethary": "guethary.json"}
-TITLE = {"pipeline": "Pipeline, Oahu", "supertubos": "Supertubos, Peniche", "basque": "Basque coast", "guethary": "Guethary / Parlementia, France"}
+POINTS = {"pipeline": "pipeline.json", "supertubos": "reefs_wide.json", "basque": "basque.json", "guethary": "guethary.json",
+          "hossegor": "hossegor.json"}
+TITLE = {"pipeline": "Pipeline, Oahu", "supertubos": "Supertubos, Peniche", "basque": "Basque coast", "guethary": "Guethary / Parlementia, France",
+         "hossegor": "Hossegor / La Graviere, France"}
+IGN69 = ("basque", "guethary", "hossegor")
+
+
+def window(spot):
+    """s window of the render/slice tools for this spot: (s_hi, t_end). s_hi = 340 (the Porto Batel window)
+    unless the wavemaker sits beyond s 360, then s_piston - 20."""
+    cfg = importlib.import_module(f"case_{spot}").CFG
+    sp = float(cfg["s_piston"])
+    return (340.0 if sp <= 360.0 else float(round(sp - 20.0))), float(cfg["t_end"])
 
 
 def geometry(spot):
@@ -47,7 +62,7 @@ def geometry(spot):
     hx = (hlon - olon) * M_PER_DEG * math.cos(math.radians(olat))
     hy = (hlat - olat) * M_PER_DEG
     bearing = math.degrees(math.atan2(ex, ny)) % 360
-    datum = "LMSL" if spot == "pipeline" else ("IGN69" if spot in ("basque", "guethary") else "LAT")
+    datum = "LMSL" if spot == "pipeline" else ("IGN69" if spot in IGN69 else "LAT")
     return dict(hlat=hlat, hlon=hlon, hx=hx, hy=hy, bearing=bearing, olat=olat, olon=olon, datum=datum,
                 ux=ex, uy=ny)
 
@@ -72,7 +87,25 @@ def patched_render_source(spot):
         ('vertical_datum="LAT"', f'vertical_datum="{G["datum"]}"'),
         ('"porto_batel.mp4"', f'"{spot}.mp4"'),
     ]
+    s_hi, t_end = window(spot)
+    if s_hi != 340.0:                     # long domain: widen the s 60-340 window (only literals that set it)
+        hi = f"{s_hi:.1f}"
+        reps += [
+            ("(s0 > 60) & (s0 < 340)", f"(s0 > 60) & (s0 < {hi})"),
+            ("np.arange(60.0, 340.0 + 1e-9, 1.0)", f"np.arange(60.0, {hi} + 1e-9, 1.0)"),
+            ("surface_s_m=dict(start=60, stop=340, step=1)", f"surface_s_m=dict(start=60, stop={int(s_hi)}, step=1)"),
+            ("s_lo=100.0, s_hi=320.0", f"s_lo=100.0, s_hi={s_hi - 20.0:.1f}"),
+            ("c = min(300.0, track_s[k] - 12.0)", f"c = min({s_hi - 40.0:.1f}, track_s[k] - 12.0)"),
+            ("min(300.0, s_b + 80)", f"min({s_hi - 40.0:.1f}, s_b + 80)"),
+            ("s_lo=60.0, s_hi=340.0):", f"s_lo=60.0, s_hi={hi}):"),
+            ("n_part=2400,", f"n_part={int(round(2400 * (s_hi - 60.0) / 280.0))},"),   # same slots per 1 m bin
+        ]
+    if t_end != 85.0:
+        reps.append(("t1 = min(78.0, kt", f"t1 = min({t_end - 7.0:.1f}, kt"))
     for a, c in reps:
+        n = src.count(a)
+        if n == 0:
+            raise SystemExit(f"render patch: literal not found: {a!r}")
         src = src.replace(a, c)
     return src
 
@@ -112,6 +145,8 @@ def main():
                                     "at this spot); s = 60 m is the shoreline at this tide")
         m["sat_here_note"] = "sat_here_user_s_m = approximate take-off (not a user mark at this spot)"
         caveat = {"supertubos": "Sand beach break: this is the 2011 seabed, the bars have moved since.",
+                  "hossegor": ("Sand beach break: Litto3D lidar 2020-2022 (4 m cells); the bars move with every storm. "
+                               "Two 8 m lidar holes 305-324 m from shore bridged linearly."),
                   "pipeline": "2013 lidar, 8 m cells; the reef's fine structure is not resolved."}.get(spot)
         if caveat:
             m["notes"] = [caveat] + m.get("notes", [])

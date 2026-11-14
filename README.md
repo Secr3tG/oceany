@@ -33,15 +33,20 @@ Live viewer: https://secr3tg.github.io/oceany/
 
 On the Porto Batel layer you can change the swell height, period, direction and tide with
 sliders and the model re-runs in your browser. A guided tour and small challenges walk
-through refraction, shoaling and breaking. See [TUTORIAL.md](TUTORIAL.md).
+through refraction, shoaling and breaking. See [TUTORIAL.md](TUTORIAL.md). The spot buttons open
+a beach view (you stand on the shore at eye height and watch the swell come in; an offshore
+view is one click away), and there are two storm presets (6 m, 16 s): one from
+300 degrees that reaches Porto Batel and one from 315 degrees that the Peniche headland mostly blocks.
 
 ## How well does the breaking-wave model match? (Porto Batel)
 
 Honest headline: the typical-swell run (s8, 1.5 m) first breaks about 142 m from the
 reference point (individual waves 139-153 m), in about 2.0 m of water. That is 10 to 50 m
-further out than the 90-130 m estimated from video footage of the same spot. The cause is
-not known: it could be the 2011 seabed (bars move), the tide, an error in the distance
-read from the footage, or the solver. Break positions are not converged with resolution,
+further out than the 90-130 m estimated from video footage of the same spot. The tide is
+ruled out: the runs use the 18:00 tide, matching the 17:46-18:02 clips. The likely causes
+that remain are a lidar profile line that is off by one cell, the keyhole channel's depth
+missing from the lidar, and typical waves nearer 1.3 m than 1.45 m. An error in the
+distance read from the footage, or the solver, are not excluded. Break positions are not converged with resolution,
 and the model is 2D with a regular wave. Treat it as a picture of the mechanism, not a
 measurement. The upper-bound run (s7, 2.7 m) breaks 194-225 m out.
 The footage is not part of this repository.
@@ -112,6 +117,10 @@ Other spots: `python make_spot_cases.py` writes `case_<spot>.py`; run one with `
 **05 Pipeline** (`pieces/05-pipeline/`)
 
     python export_pipeline.py                                # writes viewer/data/pipeline.json
+
+## Contact
+
+benn@hvid.studio
 
 ## The observer marks
 

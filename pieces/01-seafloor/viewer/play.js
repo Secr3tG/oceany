@@ -20,9 +20,11 @@ const PORTO_BATEL = [662.4, -266.9], COVER_R = 300, SIZE_R = 600, SIZE_DEPTH = 3
 const PRESETS = {
   sep_total: { label: '17 Sep total sea', H0: 2.7, T: 7.8, dir: 337, tide: 2.1, wrapped: true },
   sep_swell: { label: '17 Sep swell only', H0: 1.9, T: 9.7, dir: 325, tide: 2.1, wrapped: true },
+  storm: { label: 'Storm', H0: 6, T: 16, dir: 300, tide: 2.0, wrapped: false },   // big WNW swell, mid tide, direction matters (wrapped off). 315 deg is shadowed by Peniche (1% reached), 300 still arrives
+  storm_nw: { label: 'Storm from NW (315°, shadowed)', H0: 6, T: 16, dir: 315, tide: 2.0, wrapped: false },   // same storm 15 deg further north: the Peniche headland blocks most of it (a lesson in how coastline angle filters swell)
 };
 const SLIDERS = {
-  H0:   { label: 'Height', min: 0.5, max: 5, step: 0.1, fmt: v => v.toFixed(1) + ' m' },
+  H0:   { label: 'Height', min: 0.5, max: 7, step: 0.1, fmt: v => v.toFixed(1) + ' m' },
   T:    { label: 'Period', min: 5, max: 18, step: 0.1, fmt: v => v.toFixed(1) + ' s' },
   dir:  { label: 'From', min: 180, max: 360, step: 5, fmt: v => v.toFixed(0) + '° ' + compass(v) },
   tide: { label: 'Tide', min: 0, max: 3.8, step: 0.1, fmt: v => v.toFixed(1) + ' m above LAT' },
@@ -160,14 +162,17 @@ function buildPanel() {
   box.appendChild(wrappedToggle()); box.appendChild(dirNote());
   const pr = document.createElement('div'); pr.className = 'play-presets';
   Object.entries(PRESETS).forEach(([k, p]) => { const b = document.createElement('button'); b.textContent = p.label; b.onclick = () => set(p); pr.appendChild(b); });
-  const f = document.createElement('button'); f.textContent = 'Python file'; f.title = 'Show swell_sim.json exactly as the Python wrote it';
+  const f = document.createElement('button'); f.textContent = 'My swell'; f.title = 'My own swell: swell_sim.json exactly as the Python wrote it (2.7 m, 12 s)';
   f.onclick = async () => { if (!(await ensureSwellOn())) return; const V = viewer(), c = V.SWELL.file_data.meta.config;
     set({ H0: c.H0_m, T: c.T_s, dir: c.direction_from_deg, tide: c.tide_above_lat_m, wrapped: V.SWELL.file_data.meta.mode === 'WRAPPED' }, { draw: false });
     V.buildSwell(V.SWELL.file_data); };
   pr.appendChild(f); box.appendChild(pr);
+  const pn = document.createElement('div'); pn.className = 'hint play-storms';   // one line on the two storm presets
+  pn.textContent = 'The two storms differ only in direction: from 300° the swell reaches Porto Batel, from 315° the Peniche headland blocks most of it. Coastline angle filters swell.';
+  box.appendChild(pn);
   const rd = document.createElement('div'); rd.id = 'play-read'; rd.className = 'hint'; rd.textContent = 'Move a slider to run the model in your browser.';
   box.appendChild(rd);
-  swl.insertBefore(box, swl.querySelector('#bw-on') ? swl.querySelector('#bw-on').closest('label') : null);
+  const sp = swl.querySelector('#swl-speed-row'); if (sp) sp.after(box); else swl.appendChild(box);   // after the swell checkboxes, below the breaking-wave row
 }
 
 // Check: JS model at the shipped file's settings vs swell_sim.json (run from the console: await __play.validate()).
@@ -200,6 +205,7 @@ const CSS = `
 #play-read { color: #9ab; }
 .play-ms { color: #678; font-size: 11px; }
 .play-dirnote { color: #9ab; font-size: 11px; }
+.play-storms { color: #9ab; font-size: 11px; margin-bottom: 4px; }
 `;
 function init() {
   const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);

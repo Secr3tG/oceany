@@ -1,12 +1,16 @@
-// tutorial.js: a short guided tour of the viewer with five small challenges solved with the Play sliders (play.js).
+// tutorial.js: a short guided tour of the viewer with six small challenges solved with the Play sliders and preset buttons (play.js).
 // Checks run in code on the model's own numbers. Progress is kept in localStorage (if the browser allows it).
 // PLUMBING, apart from the step texts, which are worth reading.
 
 const KEY = 'oceany-tutorial-v1';
+const INTRO_KEY = 'oceany-intro-v1';
 const REEF = 'Reef maps: Consolação and Porto Batel';
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } };
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { /* private mode: progress not kept */ } };
 const S = Object.assign({ step: 0, solved: {}, seen: false, open: false }, load());
+// v2 (2026-11-14) inserted the "shadowed storm" step after "Which direction gets in?" (index 8): saved steps past it move one on.
+// Solved challenges are kept by id, so older progress carries over unchanged.
+if (!S.v) { if (S.step >= 9) S.step += 1; S.v = 2; }
 const play = () => window.__play, viewer = () => window.__viewer;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -15,7 +19,9 @@ async function toReef() {
   const V = viewer(); if (V.cur && V.cur.cfg && V.cur.cfg.portugal) return;
   await V.showLayer(REEF);
 }
-function flyPortoBatel() {
+function flyPortoBatel(mode = 'offshore') {        // the tour's camera steps use the offshore surf-check view unless a step asks for the beach view
+  const V = viewer(), i = V && V.cur ? V.cur.spotTags.findIndex(t => /Porto Batel/i.test(t.name)) : -1;
+  if (i >= 0 && V.flySpot) { V.flySpot(i, mode); return; }
   const b = [...document.querySelectorAll('[id^="spot-"]')].find(x => /Porto Batel/i.test(x.textContent));
   if (b) b.click();
 }
@@ -29,8 +35,8 @@ function setCheckbox(id, on) {
 // challenge: { id, sliders: [...], check(stats, ctx) -> true when solved, status(stats, ctx) -> short live text }
 const STEPS = [
   { title: 'Swell over a real reef',
-    body: `<p>This viewer shows the sea floor at two reefs near Peniche, Portugal, measured by an aircraft lidar in 2011, and a simple model of swell crossing it.</p>
-           <p>About five minutes: what you are looking at, then five small challenges you solve with sliders. Everything here is <b>illustrative, not a forecast</b>.</p>` },
+    body: `<p>This viewer shows the sea floor at real surf spots (the Danish North Sea, reefs near Peniche in Portugal, Pipeline in Hawaii and the Basque coast), measured by survey lidar and sonar, and a simple model of swell crossing it.</p>
+           <p>About five minutes: what you are looking at, then six small challenges you solve with sliders and buttons. Everything here is <b>illustrative, not a forecast</b>.</p>` },
   { title: 'The sea floor',
     enter: async () => { setCheckbox('bw-on', false); await toReef(); flyPortoBatel(); },
     body: `<p>Each dot is one lidar depth, about 11 by 14 m. Colour is depth below the lowest tide (LAT); the height is stretched so the reef shapes show.</p>
@@ -83,6 +89,18 @@ const STEPS = [
       status: (s, ctx) => `Waves off Porto Batel: ${Math.round(s.size * 100)}% of offshore height, from ${s.params.dir}\u00b0` + (ctx.best ? ` (best: ${Math.round(ctx.best.size * 100)}%)` : ' (finding the best...)'),
       check: (s, ctx) => !s.params.wrapped && ctx.best && s.size > 0 && s.size >= 0.98 * ctx.best.size,
       done: 'Porto Batel faces roughly SW, so a SW swell walks straight in at nearly full height. The more oblique the swell, the more its crests are stretched along the coast by bending, and the smaller it gets. A NNW swell only gets in by wrapping round Peniche.' } },
+  { title: 'Same storm, different angle',
+    enter: async ctx => { ctx.seen = {}; await swellWith({ ...play().PRESETS.storm }); flyPortoBatel('beach'); },
+    body: `<p>A big storm swell: <b>6 m, 16 s</b>, "wrapped" off so the direction counts. You are now on the cliff at the filming position, looking out at the swell coming in.</p>
+           <p>Try both storms below. They differ only in direction, by 15&deg;.</p>`,
+    challenge: { id: 'shadow', presets: ['storm', 'storm_nw'],
+      task: 'Run both storms and compare how much of Porto Batel each one reaches.',
+      status: (s, ctx) => { const p = s.params;
+        if (p.H0 === 6 && p.T === 16 && !p.wrapped && (p.dir === 300 || p.dir === 315)) ctx.seen[p.dir] = s;
+        const f = d => ctx.seen[d] ? `${Math.round(ctx.seen[d].cover * 100)}% reached, waves ${Math.round(ctx.seen[d].size * 100)}%` : 'not run yet';
+        return `From 300\u00b0: ${f(300)}. From 315\u00b0: ${f(315)}.`; },
+      check: (s, ctx) => !!(ctx.seen && ctx.seen[300] && ctx.seen[315]),
+      done: 'Same storm, but from 315\u00b0 the Peniche headland stands between it and Porto Batel, so almost nothing gets in. The angle of the coastline filters which swells a spot sees.' } },
   { title: 'The zoom-in: one breaking wave',
     enter: async () => { await swellWith({ ...play().PRESETS.sep_total }); setCheckbox('bw-on', true); flyPortoBatel(); },
     body: `<p>The swell model only says <i>where</i> a wave is broken. The breaking-wave slice is a separate particle simulation of one representative wave along one line out from the filming position, so you can see the shape: the face steepening and the lip throwing.</p>
@@ -135,6 +153,8 @@ async function go(i) {
   if (S.step !== i || !ch) return;                       // moved on while setting up, or no challenge here
   const ctl = card.querySelector('.tut-ctl');
   (ch.sliders || []).forEach(k => ctl.appendChild(play().slider(k)));
+  (ch.presets || []).forEach(k => { const p = play().PRESETS[k]; const b = el(`<button class="tut-opt">${p.label}</button>`);
+    b.onclick = () => play().set({ ...p }); ctl.appendChild(b); });
   if (ch.quiz) quiz(ch, ctl); else watch(ch);
 }
 function solved(ch) {
@@ -192,12 +212,21 @@ const CSS = `
 async function init() {
   const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
   const panel = document.getElementById('panel');
-  const b = el('<button id="tut-open" title="A short guided tour with five challenges">Guided tour and challenges</button>');
+  const b = el('<button id="tut-open" title="A short guided tour with six challenges">Guided tour and challenges</button>');
   b.onclick = () => open(S.step >= STEPS.length - 1 ? 0 : S.step);
   const row = el('<div class="row"></div>'); row.appendChild(b);
   const first = panel.querySelector('#layers'); panel.insertBefore(row, first);
   if (!(await ready())) return;
-  if (!S.seen || S.open) open(S.step);                    // first visit: welcome card; mid-tour: carry on where you were
+  // First visit: one intro box (Take the tour / Just explore) instead of the tour's own welcome card, so nothing stacks.
+  // Mid-tour: carry on where you were. The intro is shown once; dismissal is remembered under INTRO_KEY.
+  const intro = document.getElementById('intro'), seenIntro = () => { try { return !!localStorage.getItem(INTRO_KEY); } catch (e) { return false; } };
+  const doneIntro = () => { try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) { /* private mode: shown again next visit */ } if (intro) intro.style.display = 'none'; };
+  if (S.open) { doneIntro(); open(S.step); }
+  else if (intro && !seenIntro()) {
+    intro.style.display = '';
+    document.getElementById('intro-tour').onclick = () => { doneIntro(); open(0); };
+    document.getElementById('intro-go').onclick = () => { S.seen = true; save(); doneIntro(); };
+  } else if (!S.seen && !intro) open(S.step);
 }
 init();
 window.__tutorial = { open, close, go, get state() { return JSON.parse(JSON.stringify(S)); }, STEPS };
