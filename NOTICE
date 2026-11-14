@@ -5,6 +5,10 @@ Licensed under the Apache License, Version 2.0 (see LICENSE). This licence
 covers the code. Own text and plots: CC BY 4.0 (CONTENT-LICENSE.md).
 Data licences and credits: DATA-LICENSES.md.
 
+Data credit: Basque coast reef maps contain Litto3D data, Shom - IGN, 2025.
+https://doi.org/10.17183/LITTO3D_NAQ_2020_2022. Etalab 2.0. Not for navigation.
+Full list of data credits: DATA-LICENSES.md.
+
 Third-party software included in this repository:
 
 three.js (pieces/01-seafloor/viewer/vendor/)

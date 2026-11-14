@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Oceany - Klitmoller sea floor</title>
-  <link rel="stylesheet" href="style.css?v=s9">
+  <title>Oceany - sea floor and swell viewer</title>
+  <link rel="stylesheet" href="style.css?v=c2a">
   <!-- The import map tells the browser where "three" lives, so main.js and
        OrbitControls.js can both say: import ... from 'three'. No bundler needed. -->
   <script type="importmap">
@@ -17,7 +17,7 @@
   <canvas id="scene"></canvas>
 
   <div id="panel">
-    <h1>Klitm&oslash;ller sea floor</h1>
+    <h1>Oceany <span class="sub">Klitm&oslash;ller sea floor</span></h1>
     <label>Vertical stretch
       <input id="exag" type="range" min="1" max="200" step="1" value="60">
     </label>
@@ -36,12 +36,14 @@
       <div id="brk-cap" class="hint"></div>
     </div>
     <div id="swl" style="display:none">
-      <label class="row"><input id="swl-on" type="checkbox"> Simulated swell (illustrative), 17 Sep 2026 18:00</label>
+      <label class="row"><input id="swl-on" type="checkbox"> <span id="swl-on-text">Simulated swell (illustrative), 17 Sep 2026 18:00</span></label>
       <label class="row" id="swl-speed-row"><input id="swl-fast" type="checkbox"> x4 speed</label>
-      <label class="row"><input id="bw-on" type="checkbox"> Breaking wave slice (illustrative, 2D slice), 17 Sep 2026</label>
-      <div id="bw-note" class="hint" style="display:none">Breaking wave slice (illustrative, 2D slice). Simulated along one line from the filming position (236&deg;), 2.7 m / 7.8 s, tide 2.1 m. One representative wave, no refraction, bed interpolated from 11 &times; 14 m lidar. Break position good to about &plusmn;15&ndash;20 m.</div>
+      <label class="row" id="bw-row"><input id="bw-on" type="checkbox"> Breaking wave slice (illustrative, 2D slice), 17 Sep 2026</label>
+      <div id="bw-variant" class="hint" style="display:none"></div>
+      <div id="bw-note" class="hint" style="display:none"></div>
       <div class="hint">Simple model: the swell slows and grows as it shallows, bends toward shore, and is marked broken where height reaches 0.78 x depth.<br>It does not simulate the shape of a breaking wave.<br>The surface is interpolated between 11 x 14 m model cells and smoothed for drawing, so it shows no detail finer than the cells. The sea floor stays drawn, dimmer, under the translucent water.</div>
       <div id="swl-note" class="hint"></div>
+      <div id="play-only" class="hint" style="display:none">Play with the swell (sliders): Porto Batel only.</div>
       <div id="swl-awash-note" class="hint" style="display:none">Pale band: rock within about 1 m of the tide level, wet by wave run-up (illustrative, not simulated)<br>Flat blue: still water at the tide level where the swell model draws nothing (not simulated)</div>
     </div>
     <label class="row"><input id="rotate" type="checkbox"> auto-rotate</label>
@@ -54,6 +56,8 @@
   <div id="status">loading...</div>
   <div id="loading" style="display:none"></div>
 
-  <script type="module" src="main.js?v=s9b"></script>
+  <script type="module" src="main.js?v=c4a"></script>
+  <script type="module" src="play.js?v=c2"></script>
+  <script type="module" src="tutorial.js?v=c2a"></script>
 </body>
 </html>

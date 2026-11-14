@@ -31,9 +31,11 @@ is for navigation.
   accompanies the data; written confirmation was requested from NOAA on 2026-11-14 and has
   not been received at the time of writing. Resampled to 8 m cells; gaps are left as gaps.
   Not for navigation.
-- Basque coast (Litto3D, only if the Basque layer is present in `viewer/data/`): Shom - IGN,
-  2025. https://doi.org/10.17183/LITTO3D_NAQ_2020_2022. Open licence (Etalab 2.0 per the
-  catalogue). Vertical datum IGN69, not LAT. Not for navigation.
+- Basque coast, Guéthary and Hossegor reef maps (Litto3D Nouvelle-Aquitaine 2020-2022):
+  Shom - IGN, 2025. https://doi.org/10.17183/LITTO3D_NAQ_2020_2022. Not for navigation.
+  Open licence, Etalab 2.0. Vertical datum IGN69 (not LAT). Block-averaged to 4 m cells,
+  land cropped 250 m inland, gaps left as gaps.
+- Supertubos map: same DGT/APA 2011 lidar as Peniche (above), wider patch.
 
 ## Other data
 
@@ -41,6 +43,9 @@ is for navigation.
   Open-Meteo.com (https://open-meteo.com), CC BY 4.0, which in turn credits the underlying
   wave models (for example Meteo-France MFWAM, DWD EWAM). Used only as reference values; the
   swell inputs in `simulate_swell.py` are typed constants for one case.
+- Typical swells for the spot layers: Pipeline uses the Nov-Mar 2024-25 median at NDBC buoy
+  51201 (NOAA National Data Buoy Center, public data); Supertubos, Guéthary and Hossegor use the
+  Open-Meteo hindcast winter median (Open-Meteo.com, CC BY 4.0). Typical values, not forecasts.
 - Observer marks (`pieces/02-reefs/data/surf_zones.json` and the pins in the viewer): observer
   marks (one surfer, 17 Sep 2026). The author's own marks, not survey data.
 
@@ -52,7 +57,11 @@ is for navigation.
 | `seafloor_ddm.json` | Denmark's Depth Model 50 m (DDM50 v2.0) |
 | `reefs.json` | DGT/APA 2011 lidar via EMODnet patch 590_HR_Lidar_Centro |
 | `swell_sim.json` | Own simple swell model over `reefs.json` (derived from the lidar) |
-| `porto_batel_slice.json` | Own wave solver output on a lidar bed profile (derived from the lidar) |
+| `porto_batel_slice.json` (s7) | Own wave solver output on a lidar bed profile (derived from the lidar) |
+| `reefs_wide.json` | DGT/APA 2011 lidar, wider Peniche patch (Supertubos) |
+| `supertubos_swell.json`, `pipeline_swell.json`, `guethary_swell.json`, `hossegor_swell.json` | Own swell model over the matching map file (derived), typical swells above |
+| `porto_batel_slice_s8.json`, `pipeline_slice.json`, `supertubos_slice.json`, `guethary_slice.json` | Own wave solver output on a bed profile through the matching map (derived) |
+| `guethary.json`, `hossegor.json` | Shom - IGN Litto3D 2020-2022 (derived 4 m grid) |
 | `pipeline.json` | NOAA/USACE 2013 NCMP topobathy, Oahu (see above; derived grid) |
 
 ## Software

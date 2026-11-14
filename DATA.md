@@ -50,15 +50,29 @@ Paths are relative to the repository root. Create the `raw/` folders if they do 
 - Target folder: `pieces/05-pipeline/data/raw/`. Read by `export_pipeline.py`.
 - Licence: believed public domain; written confirmation requested from NOAA, 2026-11-14.
 
-## 5. Open-Meteo marine snapshot (included)
+## 5. Open-Meteo marine snapshot (included) and NDBC 51201
 
 - `pieces/02-reefs/data/swell_snapshot_*` already hold the pulled data. Request URL and
   retrieval time are in `swell_snapshot_README.txt`. CC BY 4.0, credit Open-Meteo.com.
 
-## 6. Basque coast, Litto3D (only if present)
+## 6. Basque coast, Litto3D
 
 - Source: Shom, Litto3D Nouvelle-Aquitaine 2020-2022, https://diffusion.shom.fr (free account and
   cart needed), DOI https://doi.org/10.17183/LITTO3D_NAQ_2020_2022. Tiles: 1 km ASC at 1 m,
-  EPSG:2154, `LITTO3D_FRA_XXXX_YYYY_MNT_1M_<date>_LAMB93_IGN69.asc`.
+  EPSG:2154 (Lambert-93), `LITTO3D_FRA_XXXX_YYYY_MNT_1M_<date>_LAMB93_IGN69.asc` (datum IGN69).
+- Cells to fetch: those covering Guéthary / Parlementia (about 43.43 N, 1.61 W) and Hossegor /
+  La Gravière (about 43.68 N, 1.44 W) out to roughly 2 km seaward. `pieces/04-basque/export_basque.py`
+  lists the tile window it reads. Extract each cell into its own folder under `pieces/04-basque/data/raw/<cell>/` (the script reads `MNT1m/*MNT*.asc` below it).
+- Credit: Shom - IGN, 2025. Etalab 2.0 open licence. Not for navigation.
+
+## 7. Supertubos: wider Peniche grid
+
+- Same patch as section 3. `pieces/02-reefs/export_reefs_wide.py` writes `viewer/data/reefs_wide.json`
+  from `590_HR_Lidar_Centro.nc`.
+
+## 8. NOAA topobathy (Pipeline)
+
+- See section 4: the NOAA/USACE 2013 NCMP tiles are public on the NOAA Digital Coast S3 bucket, no account
+  needed. Run `pieces/05-pipeline/export_pipeline.py` after putting the tiles in `data/raw/`.
 
 Footage and field photos used by the author are not part of the repository.

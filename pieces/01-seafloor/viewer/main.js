@@ -30,7 +30,7 @@ const LAYERS = {
              near: { pos: v3(-130000, 70000, 90000), target: v3(0, -2000, 0) } } },
   // Portugal, ~4 km box (x,z in metres from the box middle; z = south). reef: true switches on the title, labels,
   // button names and tooltip wording for this layer.
-  'Reef maps: Consolação and Porto Batel': { file: 'data/reefs.json', size: 14, exag: 5, deepAt: 12, landCap: 15, mark: 1, reef: true, portugal: true,
+  'Reef maps: Consolação and Porto Batel': { file: 'data/reefs.json', size: 14, exag: 5, deepAt: 12, landCap: 15, mark: 1, reef: true, portugal: true, spot: 'porto_batel', swellFile: 'data/swell_sim.json',
     title: 'Peniche reefs, Portugal', zoomIn: 'Zoom to the two spots', zoomOut: 'Whole box',
     views: { far: { pos: v3(-1500, 1100, 2000), target: v3(-100, -30, 0) },
              // near = the two spots: target is the midpoint of Consolação (103, -278) and Porto Batel (662, 267); camera sits
@@ -41,8 +41,31 @@ const LAYERS = {
   // seaDir: unit vector (x, z) from the spot towards open sea (north-west here); the close-up camera sits on that side.
   'Reef map: Pipeline, Oahu': { file: 'data/pipeline.json', size: 14, exag: 5, deepAt: 25, landCap: 15, mark: 1, reef: true,
     title: 'Pipeline, Oahu North Shore', zoomIn: 'Zoom to Pipeline', zoomOut: 'Whole box', datumLabel: 'LMSL', seaDir: [-0.707, -0.707],
+    // spot: key for data/<spot>_slice.json (listed in data/slices.json); swellFile: data/*_swell.json for this layer's points (same order and count)
+    spot: 'pipeline', swellFile: 'data/pipeline_swell.json',
     views: { far: { pos: v3(-3600, 2600, -3200), target: v3(-300, -20, 300) },
-             near: { pos: v3(-800, 600, -750), target: v3(-60, -20, -60) } } },
+             // near = take-off (-247, -123) seen from 600 m out along bearing 310, 250 m up (B-DATA-READY.md): x -707, z (south) -263
+             near: { pos: v3(-707, 250, -263), target: v3(-247, -20, 123) } } },
+  // Supertubos, Peniche: the wide Portuguese box (reefs_wide.json, 2011 lidar). No portugal flag (Porto Batel pins, break line, play controls stay on the first Portuguese layer).
+  'Reef map: Supertubos, Peniche': { file: 'data/reefs_wide.json', size: 14, exag: 5, deepAt: 14, landCap: 15, mark: 1, reef: true,
+    title: 'Supertubos, Peniche (2011 seabed)', zoomIn: 'Zoom to Supertubos', zoomOut: 'Whole box', seaDir: [-1, 0],
+    spot: 'supertubos', swellFile: 'data/supertubos_swell.json',
+    views: { far: { pos: v3(-5200, 4200, -1500), target: v3(0, -20, -800) },
+             // near = take-off (50, 1977) seen from 500 m out along bearing 266, 200 m up: x -449, z (south) -1942
+             near: { pos: v3(-449, 200, -1942), target: v3(50, -20, -1977) } } },
+  // Basque coast, France (Litto3D NAQ 2020-2022, 4 m, datum IGN69). Same pattern as Pipeline: reef: true, no portugal flag.
+  // spot keys guethary and hossegor match data/<spot>_slice.json. One swell file per points file (same order and count).
+  // x east, z south, metres from the spot (meta.origin). seaDir points to open sea (west).
+  'Reef map: Guéthary / Parlementia, France': { file: 'data/guethary.json', size: 14, exag: 5, deepAt: 25, landCap: 15, mark: 1, reef: true,
+    title: 'Guéthary / Parlementia, France', zoomIn: 'Zoom to Parlementia', zoomOut: 'Whole box', datumLabel: 'IGN69', seaDir: [-0.996, -0.087],
+    spot: 'guethary', swellFile: 'data/guethary_swell.json',
+    views: { far: { pos: v3(-4200, 2800, 600), target: v3(-500, -20, 300) },
+             near: { pos: v3(-598, 250, -52), target: v3(0, -20, 0) } } },
+  'Reef map: Hossegor / La Gravière, France': { file: 'data/hossegor.json', size: 14, exag: 5, deepAt: 20, landCap: 15, mark: 1, reef: true,
+    title: 'Hossegor / La Gravière, France', zoomIn: 'Zoom to La Gravière', zoomOut: 'Whole box', datumLabel: 'IGN69', seaDir: [-0.918, 0.396],
+    spot: 'hossegor', swellFile: 'data/hossegor_swell.json',
+    views: { far: { pos: v3(-3000, 2400, 1900), target: v3(150, -20, 500) },
+             near: { pos: v3(-563, 250, 237), target: v3(-13, -20, -5) } } },
 };
 const material = new THREE.ShaderMaterial({
   // uDim: brightness (below 1 while the swell is on, so the bed reads through the water); uHideAbove: bed higher than this (m above LAT) is not drawn (the awash/land sets draw it while the swell is on)
@@ -76,7 +99,7 @@ cloud.frustumCulled = false;   // the shader moves points, so the stored bounds 
 scene.add(cloud);
 
 // Loading line: shows what is loading while the big JSON files download; an error stays on screen if a fetch fails.
-const DATA_VERSION = 's9';
+const DATA_VERSION = 's10';
 const loadingEl = document.getElementById('loading'), loadingNow = new Set();
 async function loadJSON(url, what) {
   loadingNow.add(what); loadingEl.className = ''; loadingEl.textContent = 'Loading data\u2026 ' + [...loadingNow].join(', '); loadingEl.style.display = 'block';
@@ -141,6 +164,7 @@ async function showLayer(label) {
   cur.cfg = L;
   cur.lines.visible = true;
   document.title = 'Oceany - ' + (L.title || 'Klitmoller sea floor');
+  switchSwellLayer(label);
   cloud.geometry = cur.g;
   material.uniforms.uSize.value = L.size;
   material.uniforms.uLandCap.value = L.landCap;
@@ -153,12 +177,13 @@ async function showLayer(label) {
   setCamMode(L.reef ? 'fly' : 'orbit');          // free-fly on the reef layer, orbit elsewhere (the button switches)
   const m = cur.meta;
   // Panel title, zoom button names and page title follow the layer.
-  document.querySelector('#panel h1').innerHTML = L.title || 'Klitm&oslash;ller sea floor';
+  document.querySelector('#panel h1').innerHTML = 'Oceany <span class="sub">' + (L.title || 'Klitm&oslash;ller sea floor') + '</span>';
   document.getElementById('zoom-in').innerHTML = L.zoomIn || 'Zoom to Klitm&oslash;ller';
   document.getElementById('zoom-out').textContent = L.zoomOut || 'Zoom out';
   marksBox.style.display = L.reef ? '' : 'none';
   document.getElementById('brk').style.display = L.portugal ? '' : 'none';
-  document.getElementById('swl').style.display = L.portugal ? '' : 'none';
+  document.getElementById('swl').style.display = L.swellFile ? '' : 'none';
+  setSwellUI(L);
   if (L.reef && !marksLoaded) loadMarks();
   [0, 1, 2].forEach(i => {                       // reef layer: one close-up button per named spot
     const b = document.getElementById('spot-' + i), t = L.reef && cur.spotTags[i];
@@ -195,7 +220,7 @@ let currentPalette = 'Ocean';
 
 // Break-line overlay (reef layer only). Edit this object to change the case; lidar depth = water depth - tideAboveLAT.
 const BREAK = { waveHeight: 2.7, tideAboveLAT: 2.10, factor: 1.3, range: [0.8, 1.7], band: 0.25,
-  label: "Rule's break line, 17 Sep 2026 18:00", on: false,
+  label: "0.78 rule break line (H = 0.78 h), 17 Sep 18:00", on: false,
   bright: [1.0, 0.15, 0.85], tint: [1.0, 0.72, 0.4], tintMix: 0.55 };
 BREAK.centre = BREAK.waveHeight * BREAK.factor - BREAK.tideAboveLAT;                 // lidar depth of the bright line
 BREAK.lo = BREAK.waveHeight * BREAK.range[0] - BREAK.tideAboveLAT;                   // band edges, lidar depth
@@ -484,7 +509,7 @@ function pick() {
   if (cur.cfg.wide) { const ex = pos[3 * best] / 1000, ez = pos[3 * best + 2] / 1000;   // z points south
     text += ` (dot ${Math.abs(ex).toFixed(0)} km ${ex < 0 ? 'W' : 'E'}, ${Math.abs(ez).toFixed(0)} km ${ez < 0 ? 'N' : 'S'} of Klitmøller)`; }
   if (kilde) text += `, source: ${meta.kilde_codes[kilde[best]] || 'none'}${aar[best] ? ' ' + aar[best] : ''}`;
-  if (cur.cfg.portugal && SWELL.on && SWELL.data) {
+  if (cur.cfg.swellFile && SWELL.on && SWELL.data) {
     const st = SWELL.data.state ? SWELL.data.state[best] : undefined;
     const hv = SWELL.data.H ? SWELL.data.H[best] : undefined;   // guard: H or index may be missing
     text += (st === 1 || st === 2) && Number.isFinite(hv) ? `; model wave ${hv.toFixed(1)} m, ${st === 2 ? 'broken' : 'unbroken'}`
@@ -579,7 +604,7 @@ function placeMarks(show) {                         // every frame: follow the v
 // Broken cells (H >= 0.78 x depth) are white foam, unbroken cells translucent blue-green; cells the model
 // cannot reach are not drawn. Sea-floor points are never moved.
 // PLUMBING: the loading and the typed-array update below. WORTH READING: the height formula in updateSwell().
-const SWELL = { file: 'data/swell_sim.json', on: false, speed: 1, data: null, loading: false, t: 0, last: null };
+const SWELL = { file: 'data/swell_sim.json', layer: null, on: false, speed: 1, data: null, loading: false, t: 0, last: null };
 const SWELL_SURF_ALPHA = 0.7;      // swell surface and water fill opacity multipliers (1 = the old, denser look)
 const WATER_FILL_ALPHA = 0.5;
 const swellMat = new THREE.ShaderMaterial({
@@ -697,18 +722,53 @@ function buildAwash(reef, tide) {                    // once, from the reef clou
   waterPts.geometry.setAttribute('aWd', new THREE.BufferAttribute(wd, 1));
   window.__awashCount = A.length; window.__landCount = Ld.length; window.__waterCount = Wt.length;
 }
+// Each layer with a swellFile keeps its own swell state; switching layers stashes the current one and restores the target's (or none).
+const swellStash = {};
+const swellFiles = {};                                // parsed swell JSON per file (play.js "Python file" and layer switches reuse it)
+function switchSwellLayer(label) {
+  if (SWELL.layer === label) return;
+  if (SWELL.layer) swellStash[SWELL.layer] = { data: SWELL.data, file_data: SWELL.file_data, awashTide: SWELL.awashTide };
+  const st = swellStash[label] || {}, L = LAYERS[label];
+  SWELL.layer = label; SWELL.data = st.data || null; SWELL.file_data = st.file_data || null; SWELL.awashTide = undefined;
+  if (L.swellFile) SWELL.file = L.swellFile;
+  swellCloud.visible = false;
+  if (SWELL.data) { buildAwash(cache[label], SWELL.data.tide); SWELL.awashTide = SWELL.data.tide; swellCloud.geometry = SWELL.geom || swellCloud.geometry; }
+  else if (SWELL.on && L.swellFile) loadSwell().catch(() => {});
+}
+// Per-layer text in the swell box: the Porto Batel wording stays; other spots say what file/swell is drawn.
+function setSwellUI(L) {
+  const porto = !!L.portugal, show = (id, on) => { const e = document.getElementById(id); if (e) e.style.display = on ? '' : 'none'; };
+  document.getElementById('swl-on-text').textContent = porto ? 'Simulated swell (illustrative), 17 Sep 2026 18:00' : 'Simulated swell (illustrative, not a forecast)';
+  document.getElementById('swl-note').textContent = SWELL.data && SWELL.data.note ? SWELL.data.note : '';
+  const hasBW = !!(L.spot && BW.avail && BW.avail.includes(L.spot));
+  show('bw-row', hasBW); show('bw-variant', hasBW && !!BW_VARIANTS[L.spot]);
+  show('bw-note', hasBW && BW.on);
+  document.getElementById('play-only').style.display = porto ? 'none' : 'block';   // play.js controls: Porto Batel only
+  const pl = document.getElementById('play'); if (pl) pl.style.display = porto ? '' : 'none';
+  if (BW.on && hasBW) selectBW(L.spot).catch(() => {});
+}
 async function loadSwell() {
   if (SWELL.data || SWELL.loading) return;
   SWELL.loading = true;
-  const d = await loadJSON(SWELL.file, 'swell model');
-  const reef = cache[Object.keys(LAYERS).find(k => LAYERS[k].portugal)];   // swell_sim.json belongs to the Portuguese reef layer only
-  if (!reef) throw new Error('Portuguese reef layer not loaded');
-  if (d.H.length !== reef.N) throw new Error(`swell_sim.json has ${d.H.length} points, reefs.json ${reef.N}`);
-  const tide = d.meta.config.tide_above_lat_m;
+  const layerLabel = SWELL.layer, file = SWELL.file;
+  try {
+    const d = swellFiles[file] || (swellFiles[file] = await loadJSON(file, 'swell model'));
+    SWELL.file_data = d;               // the Python run as shipped; play.js resets to it
+    if (SWELL.layer === layerLabel) buildSwell(d);
+  } finally { SWELL.loading = false; }
+}
+// HOOK (play.js): rebuild the swell surface from any object shaped like swell_sim.json (meta, H, broken, k, phase, state).
+function buildSwell(d) {
+  const reef = cache[SWELL.layer] || cache[Object.keys(LAYERS).find(k => LAYERS[k].portugal)];   // the swell belongs to the layer that is on screen (play.js: Porto Batel)
+  if (!reef) throw new Error('reef layer not loaded');
+  if (d.H.length !== reef.N) throw new Error(`swell file has ${d.H.length} points, layer has ${reef.N}`);
+  const c0 = d.meta.config, tide = c0.tide_above_lat_m != null ? c0.tide_above_lat_m : (c0.tide_above_datum_m || 0);
   // PLUMBING: put the model cells on a 2D grid (nx x nz), in the same row/column layout as the lidar.
   const X = [], Z = []; for (let i = 0; i < reef.N; i++) { X.push(reef.pos[3 * i]); Z.push(reef.pos[3 * i + 2]); }
-  const dx = pitch(X), dz = pitch(Z), x0 = Math.min(...X), z0 = Math.min(...Z);
-  const nx = Math.round((Math.max(...X) - x0) / dx) + 1, nz = Math.round((Math.max(...Z) - z0) / dz) + 1;
+  let xmin = Infinity, xmax = -Infinity, zmin = Infinity, zmax = -Infinity;   // loops, not Math.min(...X): 170k points overflow the argument limit
+  for (let i = 0; i < reef.N; i++) { if (X[i] < xmin) xmin = X[i]; if (X[i] > xmax) xmax = X[i]; if (Z[i] < zmin) zmin = Z[i]; if (Z[i] > zmax) zmax = Z[i]; }
+  const dx = pitch(X), dz = pitch(Z), x0 = xmin, z0 = zmin;
+  const nx = Math.round((xmax - x0) / dx) + 1, nz = Math.round((zmax - z0) / dz) + 1;
   const st = new Uint8Array(nx * nz), Hc = new Float32Array(nx * nz), Cc = new Float32Array(nx * nz), Sc = new Float32Array(nx * nz);
   const Fc = new Float32Array(nx * nz), flag = new Uint8Array(nx * nz);
   let faded = 0;
@@ -754,21 +814,27 @@ async function loadSwell() {
     col.set(colourFlag[nr * nx + nq] ? [1.0, 1.0, 1.0, 1.0 * f] : [0.25, 0.95, 0.8, 0.85 * f], 4 * n);
     n++;
   }
+  swellCloud.geometry.dispose(); swellCloud.geometry = new THREE.BufferGeometry();   // fresh buffers on a redraw (play.js)
   const g = swellCloud.geometry;
   g.setAttribute('position', new THREE.BufferAttribute(pos.slice(0, 3 * n), 3).setUsage(THREE.DynamicDrawUsage));
   g.setAttribute('aCol', new THREE.BufferAttribute(col.slice(0, 4 * n), 4));
   g.setAttribute('aAmp', new THREE.BufferAttribute(amp.slice(0, n), 1));
+  SWELL.geom = g;
   SWELL.data = { meta: d.meta, n, pos: g.attributes.position.array, amp: amp.slice(0, n), ph: ph.slice(0, n),
                  state: d.state, H: d.H,   // per reef point (same index as the pick), for the tooltip
                  omega: d.meta.config.omega_rad_s, tide, stats: { cells: nx * nz, fadedCells: faded, fadedPts, recoloured: flicker, points: n } };
   SWELL.data.period = d.meta.config.T_s || (2 * Math.PI / d.meta.config.omega_rad_s) || 8;   // pulse period for the awash set
-  buildAwash(reef, tide);
-  document.getElementById('swl-note').textContent = d.meta.viewer_note || '';
-  SWELL.loading = false;
+  if (SWELL.awashTide !== tide) { buildAwash(reef, tide); SWELL.awashTide = tide; }   // only when the tide changes (play.js)
+  // On-screen label: the file's own wording (viewer_note), plus its label / caveat / source if the note does not already carry them.
+  const m = d.meta; let note = m.viewer_note || '';
+  [m.label && (m.label.charAt(0).toUpperCase() + m.label.slice(1) + '.'), m.caveat].forEach(t => { if (t && !note.toLowerCase().includes(t.replace(/\.$/, '').toLowerCase())) note += (note ? ' ' : '') + t; });
+  if (m.config && m.config.H0_m && m.config.T_s) note += ` Drawn: ${m.config.H0_m} m, ${m.config.T_s} s, from ${m.config.direction_from_deg} deg, tide ${tide} m above ${m.config.datum || 'LAT'}.`;
+  SWELL.data.note = note;
+  document.getElementById('swl-note').textContent = note;
 }
 // Every frame: surface height = tide + (H/2) cos(phase - omega t), times the vertical stretch. No allocations.
 function updateSwell(now) {
-  const show = SWELL.on && !!SWELL.data && !!cur && !!cur.cfg.portugal;
+  const show = SWELL.on && !!SWELL.data && !!cur && !!cur.cfg.swellFile;
   swellCloud.visible = show;
   awashPts.visible = landPts.visible = waterPts.visible = show;
   // The sea floor stays drawn under the water, dimmer (its depth colours still read) and only where the bed is below the
@@ -804,7 +870,14 @@ document.getElementById('swl-fast').addEventListener('change', e => { SWELL.spee
 // ---------- 6e. Reef layer: breaking-wave slice (data from 03-breaking-wave, a 2D particle simulation along one line) ----------
 // Particles, free surface and bed along the 236 deg line from the filming position. Built in metres (y = height above LAT) and the
 // group is scaled in y by the same vertical stretch as the sea floor, so the slice sits on the lidar. Illustrative, one wave.
-const BW = { file: 'data/porto_batel_slice.json', on: false, loading: false, data: null, t: 0, last: null };
+// Variants per spot: the first is the default. file = data file; fb = first-break fallback (m) when the slice meta has no first_break_s_m.
+const BW_VARIANTS = {
+  porto_batel: [
+    { key: 's8', file: 'porto_batel_slice_s8.json', label: 'Typical wave, 1.5 m (s8)', fb: 142 },
+    { key: 's7', file: 'porto_batel_slice.json', label: 'Upper bound, 2.7 m (s7)', fb: 194 },
+  ],
+};
+const BW = { on: false, loading: false, data: null, t: 0, last: null, avail: null, byspot: {}, variant: {} };   // slices: data/<spot>_slice.json for every spot listed in data/slices.json
 const bwGroup = new THREE.Group(); bwGroup.visible = false; scene.add(bwGroup);
 const bwMat = new THREE.ShaderMaterial({
   uniforms: { uSize: { value: 14 }, uScale: { value: 1 }, uVmax: { value: 40 } },
@@ -831,11 +904,24 @@ bwSurf.frustumCulled = false; bwSurf.renderOrder = 12; bwGroup.add(bwSurf);
 const bwBed = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x4f6f8a, transparent: true, opacity: 0.55, depthTest: false }));
 bwBed.frustumCulled = false; bwBed.renderOrder = 12; bwGroup.add(bwBed);
 const bwLabel = document.createElement('div'); bwLabel.className = 'tag'; bwLabel.style.color = '#cfefff'; bwLabel.style.fontSize = '11px';
-bwLabel.style.display = 'none'; bwLabel.textContent = 'front goes vertical here (sim): 181 m from filming position'; document.body.appendChild(bwLabel);
-async function loadBW() {
-  if (BW.data || BW.loading) return;
+bwLabel.style.display = 'none'; bwLabel.textContent = 'front goes vertical here (sim)'; document.body.appendChild(bwLabel);
+// Which slices exist: data/slices.json = { "slices": ["porto_batel", ...] } (the simulation worker appends). A missing manifest = Porto Batel only. No 404s for slices that do not exist.
+async function loadSliceManifest() {
+  try { const r = await fetch('data/slices.json?v=' + DATA_VERSION); const j = r.ok ? await r.json() : null; BW.avail = (j && j.slices) || ['porto_batel']; }
+  catch (e) { BW.avail = ['porto_batel']; }
+  if (cur) setSwellUI(cur.cfg);
+}
+loadSliceManifest();
+function bwVariantOf(spot) { const vs = BW_VARIANTS[spot]; if (!vs) return null; return vs.find(v => v.key === BW.variant[spot]) || vs[0]; }
+function bwPortoNote(m, v) {
+  return 'Breaking wave slice (illustrative, 2D slice, not a forecast). ' + (v.key === 's7' ? 'Upper bound: ' : 'Typical wave: ') + 'simulated along one line from the filming position (236\u00b0), ' + m.H_m + ' m / ' + m.T_s + ' s, tide ' + m.tide_above_lat_m + ' m. One representative wave, no refraction, bed interpolated from 11 \u00d7 14 m lidar. Break position good to about \u00b115\u201320 m.';
+}
+async function loadBW(spot) {
+  const v = bwVariantOf(spot), key = spot + (v ? '|' + v.key : '');
+  if (BW.byspot[key] || BW.loading) return;
   BW.loading = true;
-  const d = await loadJSON(BW.file, 'breaking-wave slice'), m = d.meta, n = d.frames.length, P = d.frames[0].s_cm.length;
+  try {
+  const d = await loadJSON('data/' + (v ? v.file : spot + '_slice.json'), 'breaking-wave slice'), m = d.meta, n = d.frames.length, P = d.frames[0].s_cm.length;
   const [ux, uy] = m.direction_unit_xy, hx = m.house_x_m, hy = m.house_y_m;     // same x_m / -y_m frame as the reef cloud
   const S = [], Z = [], V = [], F = [], s = Float64Array.from(d.frames[0].s_cm), z = Float64Array.from(d.frames[0].z_cm);
   const ss = m.surface_s_m, ns = Math.floor((ss.stop - ss.start) / ss.step) + 1;
@@ -847,22 +933,34 @@ async function loadBW() {
   const sx = j => hx + (ss.start + j * ss.step) * ux, sz = j => -(hy + (ss.start + j * ss.step) * uy);
   const bed = [], bs = d.bed.s_m, bz = d.bed.z_above_lat_m;
   for (let j = 0; j < bs.length; j++) bed.push(new THREE.Vector3(hx + bs[j] * ux, bz[j], -(hy + bs[j] * uy)));
-  bwBed.geometry.setFromPoints(bed);
   const vs = []; for (let i = 0; i < n; i += 5) for (let j = 0; j < P; j++) vs.push(V[i][j]);
   vs.sort((a, b) => a - b);
-  bwMat.uniforms.uVmax.value = Math.max(1, vs[Math.floor(vs.length * 0.98)]);
-  bwPts.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P * 3), 3).setUsage(THREE.DynamicDrawUsage));
-  bwPts.geometry.setAttribute('aV', new THREE.BufferAttribute(new Float32Array(P), 1).setUsage(THREE.DynamicDrawUsage));
-  bwSurf.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ns * 6), 3).setUsage(THREE.DynamicDrawUsage));
-  BW.data = { n, P, S, Z, V, F, ns, sx, sz, hx, hy, ux, uy, dt: m.frame_dt_s, tide: m.tide_above_lat_m,
-              labelX: hx + 181 * ux, labelZ: -(hy + 181 * uy) };
+  const brk = m.first_break_s_m || (v && v.fb);
+  const note = spot === 'porto_batel' ? bwPortoNote(m, v) : ('Breaking wave slice (illustrative, 2D slice, not a forecast). ' + (m.case || '') + (m.H_m ? ` ${m.H_m} m / ${m.T_s} s` : '') + (m.tide_above_lat_m != null ? `, tide ${m.tide_above_lat_m} m` : '') + '. One representative wave, no refraction.' + (m.caveat ? ' ' + m.caveat : ''));
+  BW.byspot[key] = { spot, key, n, P, S, Z, V, F, ns, sx, sz, hx, hy, ux, uy, dt: m.frame_dt_s, tide: m.tide_above_lat_m != null ? m.tide_above_lat_m : (m.tide_above_datum_m || 0),
+              vmax: Math.max(1, vs[Math.floor(vs.length * 0.98)]), bed, note,
+              labelText: spot === 'porto_batel' ? `front goes vertical here (sim): ${Math.round(brk)} m from the house` : (brk ? `front goes vertical here (sim): ${Math.round(brk)} m from the start of the line` : 'breaking-wave slice (sim)'),
+              labelX: hx + (brk || 181) * ux, labelZ: -(hy + (brk || 181) * uy),
+              pos: new THREE.BufferAttribute(new Float32Array(P * 3), 3).setUsage(THREE.DynamicDrawUsage),
+              aV: new THREE.BufferAttribute(new Float32Array(P), 1).setUsage(THREE.DynamicDrawUsage),
+              surf: new THREE.BufferAttribute(new Float32Array(ns * 6), 3).setUsage(THREE.DynamicDrawUsage) };
   window.__bwFrames = n; window.__bwParticles = P;
-  BW.loading = false;
+  } finally { BW.loading = false; }
+}
+async function selectBW(spot) {                         // make the slice of this spot the one that is drawn (shared meshes, per-spot buffers)
+  const v = bwVariantOf(spot), key = spot + (v ? '|' + v.key : '');
+  if (BW.data && BW.data.key === key) return;
+  await loadBW(spot);
+  const D = BW.byspot[key]; if (!D || BW.data === D) return; if (!D || !cur || cur.cfg.spot !== spot) return;
+  bwBed.geometry.setFromPoints(D.bed); bwMat.uniforms.uVmax.value = D.vmax;
+  bwPts.geometry.setAttribute('position', D.pos); bwPts.geometry.setAttribute('aV', D.aV); bwSurf.geometry.setAttribute('position', D.surf);
+  bwLabel.textContent = D.labelText; document.getElementById('bw-note').textContent = D.note;
+  BW.data = D; BW.t = 0;
 }
 function updateBW(now) {
   const dt = BW.last === null ? 0 : Math.min((now - BW.last) / 1000, 0.25);
   BW.last = now;
-  const show = BW.on && !!BW.data && !!cur && !!cur.cfg.portugal;
+  const show = BW.on && !!BW.data && !!cur && !!cur.cfg.spot && BW.data.spot === cur.cfg.spot;
   bwGroup.visible = show;
   if (!show) { bwLabel.style.display = 'none'; return; }
   const D = BW.data, exag = material.uniforms.uExag.value;
@@ -889,8 +987,20 @@ function updateBW(now) {
 document.getElementById('bw-on').addEventListener('change', async e => {
   BW.on = e.target.checked;
   document.getElementById('bw-note').style.display = BW.on ? '' : 'none';
-  if (BW.on) await loadBW();
+  if (BW.on && cur && cur.cfg.spot) await selectBW(cur.cfg.spot);
 });
+// Variant toggle (Porto Batel): typical wave (s8, default) or upper bound (s7). Both stay labelled illustrative, not a forecast.
+{
+  const row = document.getElementById('bw-variant');
+  if (row && BW_VARIANTS.porto_batel) {
+    BW_VARIANTS.porto_batel.forEach((v, i) => {
+      const lb = document.createElement('label'); lb.style.marginRight = '10px';
+      const r = document.createElement('input'); r.type = 'radio'; r.name = 'bw-var'; r.value = v.key; r.checked = i === 0;
+      r.addEventListener('change', async () => { BW.variant.porto_batel = v.key; if (BW.on && cur && cur.cfg.spot === 'porto_batel') await selectBW('porto_batel'); });
+      lb.append(r, ' ' + v.label); row.appendChild(lb);
+    });
+  }
+}
 
 // ---------- 6d. Reef layer: observer marks, 17 Sep 2026 ----------
 // Observer marks (Google Earth): where the observer sat (= the take-off zone, rock contact observed here) and the
@@ -924,7 +1034,7 @@ function buildSketch() {                              // inverse of toLatLon(): 
     s.x = (s.lon - o.lon) * M * Math.cos(o.lat * Math.PI / 180); s.z = -(s.lat - o.lat) * M;
     const m = new THREE.Mesh(new THREE.OctahedronGeometry(9), mat); m.renderOrder = 11; s.mesh = m; sketchGroup.add(m);
     s.house = /filming/.test(s.name);                    // the filming position stays on the cliff top at the old fixed height
-    let txt = s.name + (s.note && s.house ? '\n' + s.note : '');
+    let txt = 'observer marks (one surfer, 17 Sep 2026)\n' + s.name + (s.note && s.house ? '\n' + s.note : '');
     if (!s.house) {                                    // pin sits on the lidar bed (nearest cell); stick from bed to the water surface
       const reef = cache[Object.keys(LAYERS).find(k => LAYERS[k].portugal)];
       let best = 1e18, bi = -1;
@@ -1021,4 +1131,4 @@ function animate(now) {
 layerBox.firstChild.click();
 requestAnimationFrame(animate);
 // Debug hook (lets the browser console inspect the scene and test hover; harmless to leave in).
-window.__viewer = { marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud };
+window.__viewer = { marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js

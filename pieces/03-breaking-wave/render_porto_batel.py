@@ -43,6 +43,8 @@ def pick_wave(d):
     best = None
     for w in d["waves"]:
         fb = w.get("first_break")
+        if w.get("n_vertical_frames", 99) < 3:    # session 7: one-frame face-test triggers (e.g. a smooth crest
+            continue                               # at the paddle in s7, t 24 s) are noise, not breaks
         if fb and (best is None or fb["H_b_m"] > best["first_break"]["H_b_m"]):
             best = w
     return best
@@ -220,6 +222,8 @@ def export_slice(run, meta, d, files, ts, track_s, kt, wave, n_part=2400, max_fr
     if mode == "surface":
         edges = np.arange(60.0, 340.0 + 1e-9, 1.0)
         slots = np.array([a.size for a in np.array_split(np.arange(n_part), edges.size - 1)])
+        wl = np.load(Path(run) / "walls.npz")
+        walls = (wl["x"].astype(float), wl["z"].astype(float))
         overhangs = {}
     s_grid = np.arange(60.0, 340.0 + 1e-9, 1.0)
     frames = []
@@ -227,7 +231,7 @@ def export_slice(run, meta, d, files, ts, track_s, kt, wave, n_part=2400, max_fr
     for k in ks:
         t, x, z, u, w = load_snap(files[k])
         if mode == "surface":
-            pick = surface_pick(x, z, dp, sp_, tide, edges, slots, rng)
+            pick = surface_pick(x, z, dp, sp_, tide, edges, slots, rng, walls=walls)
             # lip / air pocket: overhang columns in ALL particles (0.1 m columns, gap > 3 dp), then how many
             # exported particles sit on the water above that gap
             ov = coherent_runs(overhang_columns(sp_ - x, z + tide, s_lo=100.0, s_hi=320.0, col=0.1, gap=0.3))
@@ -322,10 +326,10 @@ def coherent_runs(cols, min_cols=5, join=0.25):
     return [c for r in runs if len(r) >= min_cols for c in r]
 
 
-def surface_pick(x, z, dp, sp_, tide, edges, slots, rng, ring=0.12):
+def surface_pick(x, z, dp, sp_, tide, edges, slots, rng, ring=0.08, walls=None):
     """Indices for one frame of the surface-band v1 slice (see export_slice). Removed (drained) particles
-    are skipped. Surface test as export_slice_surface: < 11 neighbours within 2 dp and > 0.25 m above the
-    bed, grown by `ring` m (about 1-2 dp) so the surface reads as a band."""
+    are skipped. Surface test like export_slice_surface but with a 3 dp radius and wall particles counted
+    (see below), > 0.25 m above the bed, grown by `ring` m so the band is about 1-2 dp thick."""
     from scipy.spatial import cKDTree
     alive = np.where(x < 655.0)[0]
     s = sp_ - x[alive]
@@ -334,9 +338,18 @@ def surface_pick(x, z, dp, sp_, tide, edges, slots, rng, ring=0.12):
     alive, s, zz = alive[win], s[win], zz[win]
     P = np.c_[s, zz]
     tree = cKDTree(P)
-    nn = tree.query_ball_point(P, 2 * dp, return_length=True)
+    # 3 dp radius (bulk ~28 neighbours incl. walls), surface if < 0.8 x pi x 9 = 22.6. The v2 test (2 dp, < 11)
+    # flagged ~12 % of interior particles at h_over_dp 1.7 (the particle arrangement is less lattice-like),
+    # which put ~30 % of the v1 picks deep in the water. With 3 dp: 0.2 % of interior, 100 % of the top layer
+    # (checked on s7 snap_0400).
+    nn = tree.query_ball_point(P, 3 * dp, return_length=True)
+    if walls is not None:
+        # count bed (wall) particles as neighbours too, so water next to the bed does not look like surface
+        # (without this ~30 % of the picks were near-bed particles 0.25-0.4 m above the bed)
+        wtree = cKDTree(np.c_[sp_ - walls[0], walls[1] + tide])
+        nn = nn + wtree.query_ball_point(P, 3 * dp, return_length=True)
     s_all, zl_all = case.profile()
-    core = (nn < 11) & ((zz - np.interp(s, s_all, zl_all)) > 0.25)
+    core = (nn < 0.8 * math.pi * 9) & ((zz - np.interp(s, s_all, zl_all)) > 0.25)
     surf = np.zeros(s.size, bool)
     if core.any():
         near = tree.query_ball_point(P[core], ring)

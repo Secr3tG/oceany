@@ -78,6 +78,10 @@ def main():
         k_, v_ = kv.split("=")
         cfg[k_] = float(v_)
     cfg["stroke_factor"] = args.factor
+    # 2026-11-14 (session 7): the harness needs the closed end wall at 85 m. Since session 6 the case default
+    # is shore_outflow=1 (no end wall, bed continues), which turned the 85 m end into an open dam break: the
+    # mean level near the paddle fell ~0.8 m within ~10 s and the first calib_s7 runs were invalid.
+    cfg["shore_outflow"] = 0.0
     cfg["s_shore"] = cfg["s_piston"] - X_END
     dp = args.dp
     h = cfg["h_over_dp"] * dp

@@ -1,23 +1,59 @@
 # Oceany
 
-Oceany is an ocean data project. It turns open bathymetry into a 3D viewer in the
-browser and adds two small wave models on top: a simple swell model over the reef at
-Porto Batel (Peniche, Portugal), and a 2D particle solver that shows one wave breaking
-there. The viewer also has sea-floor maps of the Danish North Sea coast and a reef
-map of Pipeline, Oahu.
+Oceany is an ocean data project. It turns open bathymetry and lidar into a 3D viewer in
+the browser and adds two small wave models on top: a swell refraction model over the
+reef (waves bend, grow and break as the bottom shallows), and a 2D particle solver that
+shows one wave breaking along a line through the lidar.
+
+## Spots
+
+Reef-scale (lidar seabed, swell layer, and a breaking-wave slice where marked):
+
+| Spot | Swell layer | Breaking-wave slice |
+|---|---|---|
+| Porto Batel, Peniche, Portugal | yes | yes (typical 1.5 m and upper bound 2.7 m) |
+| Consolação, Peniche, Portugal | yes | no |
+| Supertubos, Peniche, Portugal | yes (2011 seabed) | yes |
+| Pipeline, Oahu, Hawaii | yes | yes |
+| Guéthary / Parlementia, France | yes | yes |
+| Hossegor / La Gravière, France | yes | no |
+
+Model scale only (sea-floor maps, no wave models): Klitmøller and the Danish North Sea coast.
+
+Spot positions are approximate published positions and the take-off points are derived
+from the bathymetry, not surveyed. At the Basque spots the lidar reaches only about
+17-29 m depth, so deeper refraction is not modelled, and Belharra is not covered.
 
 **Illustrative, not a forecast.** The wave layers show how waves could behave over the
 bottom shapes. They are not predictions. Nothing here is for navigation.
 
-Live viewer: https://secr3tg.github.io/oceany/ (available once the site is published)
+Live viewer: https://secr3tg.github.io/oceany/
+
+## Play and tutorial
+
+On the Porto Batel layer you can change the swell height, period, direction and tide with
+sliders and the model re-runs in your browser. A guided tour and small challenges walk
+through refraction, shoaling and breaking. See [TUTORIAL.md](TUTORIAL.md).
+
+## How well does the breaking-wave model match? (Porto Batel)
+
+Honest headline: the typical-swell run (s8, 1.5 m) first breaks about 142 m from the
+reference point (individual waves 139-153 m), in about 2.0 m of water. That is 10 to 50 m
+further out than the 90-130 m estimated from video footage of the same spot. The cause is
+not known: it could be the 2011 seabed (bars move), the tide, an error in the distance
+read from the footage, or the solver. Break positions are not converged with resolution,
+and the model is 2D with a regular wave. Treat it as a picture of the mechanism, not a
+measurement. The upper-bound run (s7, 2.7 m) breaks 194-225 m out.
+The footage is not part of this repository.
 
 ## What is in it
 
 | Folder | What |
 |---|---|
 | `pieces/01-seafloor/` | Bathymetry prep scripts and the three.js viewer (`viewer/`) |
-| `pieces/02-reefs/` | Linear swell model over the Peniche lidar (`simulate_swell.py`) |
-| `pieces/03-breaking-wave/` | 2D particle (SPH) solver for a breaking wave, flume test and Porto Batel case |
+| `pieces/02-reefs/` | Swell refraction model over the Peniche lidar (`simulate_swell.py`) and per spot (`simulate_swell_spot.py`) |
+| `pieces/03-breaking-wave/` | 2D particle (SPH) solver for a breaking wave: flume test, Porto Batel, and Pipeline, Supertubos, Guéthary cases |
+| `pieces/04-basque/` | Export of the Guéthary and Hossegor reef maps from Litto3D |
 | `pieces/05-pipeline/` | Reef map of Pipeline, Oahu, from NOAA/USACE topobathy |
 | `tasks/`, `live-data/` | Small side experiments (wave dispersion, Open-Meteo fetch, Copernicus buoys) |
 
@@ -65,6 +101,13 @@ see `DATA.md` for what to download and where to put it.
 `render_porto_batel.py` writes `porto_batel_slice.json` into the run folder. Copy it to
 `pieces/01-seafloor/viewer/data/` to show it in the viewer. See
 `pieces/03-breaking-wave/README.md` for the method and its limits.
+
+Other spots: `python make_spot_cases.py` writes `case_<spot>.py`; run one with `python spot_run.py <spot>`
+(see the docstrings). Swell layers for other spots: `python simulate_swell_spot.py --spot <spot>` in `pieces/02-reefs/`.
+
+**04 Basque** (`pieces/04-basque/`, needs the Litto3D tiles, see `DATA.md`)
+
+    python export_basque.py                                  # writes guethary.json and hossegor.json
 
 **05 Pipeline** (`pieces/05-pipeline/`)
 
