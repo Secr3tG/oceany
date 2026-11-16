@@ -12,7 +12,7 @@
 // WHAT YOU SHOULD UNDERSTAND: swell_model.js run() (the physics). PLUMBING: everything in this file.
 // Illustrative, not a forecast.
 
-import { makeModel, toMetres, waveSpeeds, G } from './swell_model.js?v=c2';
+import { makeModel, toMetres, waveSpeeds, G } from './swell_model.js?v=c3';
 
 // Observer marks (one surfer, 17 Sep 2026), as in simulate_swell.py USER_SKETCH. (lat, lon)
 const FILM = toMetres(39.319506, -9.355772), TAKEOFF = toMetres(39.318870, -9.356829);

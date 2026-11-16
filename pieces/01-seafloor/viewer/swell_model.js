@@ -8,6 +8,14 @@ export const G = 9.81;
 // The lidar grid of simulate_swell.py (590_HR_Lidar_Centro, same box as export_reefs.py), printed by the Python.
 export const GRID = { nrow: 184, ncol: 346, x0: -1932.0923834924738, y0: -1324.2050418400154,
                       dx: 11.200535555239744, dy: 14.47851562478931 };
+// The same model on the other reef maps (pieces/02-reefs/simulate_swell_spot.py load_grid(): x0/y0 = smallest x/y of the
+// points file, dx/dy from its spacing; printed by the Python 2026-11-16). Plumbing: only the grid differs, not the physics.
+export const SPOT_GRIDS = {
+  pipeline:   { nrow: 625, ncol: 516, x0: -2424.5, y0: -2775.9, dx: 8.0, dy: 8.0 },
+  supertubos: { nrow: 476, ncol: 423, x0: -1932.1, y0: -1324.2, dx: 11.20047393364929, dy: 14.478526315789473 },
+  guethary:   { nrow: 833, ncol: 908, x0: -2335.6, y0: -1968.2, dx: 4.0, dy: 4.0 },
+  hossegor:   { nrow: 833, ncol: 603, x0: -932.9, y0: -2290.8, dx: 4.0, dy: 4.0 },
+};
 // Model knobs, same values as the Python CONFIG block.
 export const KNOBS = { gamma: 0.78, normalSmooth: 100, regionalSmooth: 600, edgeDepth: 12.0, maxTheta0: 80, wetMin: 0.05 };
 
@@ -76,8 +84,9 @@ function gauss1d(src, R, C, sigma, axis) {
 }
 
 // Build the model for one grid. reefs = reefs.json (x_m, y_m, depth_m in the same order as swell_sim.json).
-export function makeModel(reefs) {
-  const { nrow: R, ncol: C, x0, y0, dx, dy } = GRID, NC = R * C, N = reefs.depth_m.length;
+// grid: GRID (Porto Batel, the default) or one of SPOT_GRIDS for the other reef maps.
+export function makeModel(reefs, grid = GRID) {
+  const { nrow: R, ncol: C, x0, y0, dx, dy } = grid, NC = R * C, N = reefs.depth_m.length;
   const lidar = new Float64Array(NC).fill(NaN), valid = new Uint8Array(NC), cellOf = new Int32Array(N);
   for (let i = 0; i < N; i++) {
     const c = pyRound((reefs.y_m[i] - y0) / dy) * C + pyRound((reefs.x_m[i] - x0) / dx);

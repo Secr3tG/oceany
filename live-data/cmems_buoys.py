@@ -1,5 +1,5 @@
 """Find CMEMS INSITU wave platforms near spots using index_latest.txt.
-Usage: python cmems_buoys.py [--refresh] [--hours 48] [--km 150] [--fetch PLATFORM_CODE ...]
+Usage: python live-data/cmems_buoys.py [--refresh] [--hours 48] [--km 150] [--fetch PLATFORM_CODE ...]
 Index is cached in live-data/cache/index_latest.txt (44 MB, keep out of git) (cm.get also fetches ~270MB of other index parts; we delete them).
 Needs prior `copernicusmarine login`. Stdlib + copernicusmarine (+xarray for --fetch printing).
 """

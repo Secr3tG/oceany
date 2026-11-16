@@ -1,6 +1,6 @@
 """Smoke test for CMEMS wave forecasts. Run AFTER `copernicusmarine login` (user does that themselves):
     copernicusmarine login
-    python cmems_test.py
+    python live-data/cmems_test.py
 Subsets the latest ~24 h of the nearest grid cell for three spots and prints a few lines each.
 Directions are "coming from" (deg). Needs only stdlib + copernicusmarine.
 """

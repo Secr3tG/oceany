@@ -107,7 +107,7 @@ cloud.frustumCulled = false;   // the shader moves points, so the stored bounds 
 scene.add(cloud);
 
 // Loading line: shows what is loading while the big JSON files download; an error stays on screen if a fetch fails.
-const DATA_VERSION = 's11';
+const DATA_VERSION = 's12';
 const loadingEl = document.getElementById('loading'), loadingNow = new Set();
 async function loadJSON(url, what) {
   loadingNow.add(what); loadingEl.className = ''; loadingEl.textContent = 'Loading data\u2026 ' + [...loadingNow].join(', '); loadingEl.style.display = 'block';
@@ -1002,6 +1002,7 @@ const BW_VARIANTS = {
   porto_batel: [
     { key: 's8', file: 'porto_batel_slice_s8.json', label: 'Typical wave, 1.5 m (s8)', fb: 142 },
     { key: 's7', file: 'porto_batel_slice.json', label: 'Upper bound, 2.7 m (s7)', fb: 194 },
+    { key: 'fw', fw: true, file: 'porto_batel_funwave.json', label: 'Whole reef, 2DH model (FUNWAVE), 1.45 m (not default)', fb: 136 },
   ],
 };
 const BW = { on: false, loading: false, data: null, t: 0, last: null, avail: null, byspot: {}, variant: {} };   // slices: data/<spot>_slice.json for every spot listed in data/slices.json
@@ -1043,9 +1044,56 @@ function bwVariantOf(spot) { const vs = BW_VARIANTS[spot]; if (!vs) return null;
 function bwPortoNote(m, v) {
   return 'Breaking wave slice (illustrative, 2D slice, not a forecast). ' + (v.key === 's7' ? 'Upper bound: ' : 'Typical wave: ') + 'simulated along one line from the filming position (236\u00b0), ' + m.H_m + ' m / ' + m.T_s + ' s, tide ' + m.tide_above_lat_m + ' m. One representative wave, no refraction, bed interpolated from 11 \u00d7 14 m lidar. Break position good to about \u00b115\u201320 m.';
 }
+// FUNWAVE-TVD 2DH layer (pieces/05-funwave/export_viewer_layer.py): eta on a 3 m grid over the whole Porto Batel reef, a seamless
+// two-period loop of a regular swell; foam = model breaking (fading trace). Drawn as points in the same frame and stretch as the slice.
+// Drawn as a lit, semi-transparent surface (points at grazing angles merged into one white smear): troughs dark, crests bright,
+// foam white. Wave height gets its own visual stretch so the swell reads at any depth stretch (labelled on screen).
+const FW = { exag: 3, flown: false };                 // visual vertical exaggeration of the FUNWAVE surface (slider 1-5, labelled on screen)
+const fwMat = new THREE.MeshPhongMaterial({ vertexColors: true, shininess: 30, specular: 0x223344, side: THREE.DoubleSide });
+const fwMesh = new THREE.Mesh(new THREE.BufferGeometry(), fwMat); fwMesh.frustumCulled = false; fwMesh.renderOrder = 12; fwMesh.visible = false; bwGroup.add(fwMesh);
+const fwSun = new THREE.DirectionalLight(0xffffff, 0.6); fwSun.position.set(0.5, 0.8, -0.35);   // from the shore side and above: lights the wave faces seen from the cliff
+const fwSky = new THREE.HemisphereLight(0x9fcfff, 0x000000, 0.3);
+scene.add(fwSun); scene.add(fwSky);
+const fwTag = document.createElement('div'); fwTag.className = 'tag'; fwTag.style.cssText = 'color:#fff;font-size:12px;font-weight:600;display:none;left:50%;bottom:34px;top:auto;transform:translateX(-50%);position:fixed;background:rgba(0,0,0,.45);padding:3px 8px;border-radius:4px';
+document.body.appendChild(fwTag);
+{
+  const row = document.createElement('div'); row.id = 'fw-exag-row'; row.className = 'hint'; row.style.display = 'none';
+  row.innerHTML = '<label>Wave heights (2DH model) <input id="fw-exag" type="range" min="1" max="5" step="0.5" value="3" style="vertical-align:middle;width:110px"> <span id="fw-exag-text">heights exaggerated \u00d73</span></label>';
+  const anchor = document.getElementById('bw-variant'); anchor.parentNode.insertBefore(row, anchor.nextSibling);
+  row.querySelector('#fw-exag').addEventListener('input', e => { FW.exag = Number(e.target.value); document.getElementById('fw-exag-text').textContent = `heights exaggerated \u00d7${FW.exag}`; });
+}
+async function loadFW(spot, v, key) {
+  BW.loading = true;
+  try {
+    const d = await loadJSON('data/' + v.file, 'FUNWAVE layer'), m = d.meta, n = d.frames.length, P = m.ns * m.ny;
+    const [ux, uy] = m.direction_unit_xy, [ax, ay] = m.along_unit_xy, hx = m.house_x_m, hy = m.house_y_m;
+    const X = new Float32Array(P), Zc = new Float32Array(P);
+    for (let j = 0; j < m.ny; j++) for (let i = 0; i < m.ns; i++) {
+      const k = j * m.ns + i, s = m.s_m[i], y = m.y_m[j];
+      X[k] = hx + s * ux + y * ax; Zc[k] = -(hy + s * uy + y * ay);
+    }
+    const E = d.frames.map(f => Float32Array.from(f.eta_cm, c => c === 9999 ? NaN : c / 100));
+    const F = d.frames.map(f => Float32Array.from(f.foam, c => +c / 9));
+    const brk = m.first_break_house_m || v.fb;
+    BW.byspot[key] = { fw: true, spot, key, n, P, X, Zc, E, F, dt: m.frame_dt_s, tide: m.tide_above_lat_m,
+      note: 'Breaking wave, whole reef (illustrative, not a forecast): FUNWAVE-TVD 2DH Boussinesq model over the 2011 lidar, regular swell ' + m.H_m + ' m / ' + m.T_s +
+            ' s from ' + m.from_deg + '\u00b0, tide ' + m.tide_above_lat_m + ' m. White = where the model breaks. In front of the house the wave peels as a right-hander (toward ' +
+            m.peel.toward_deg + '\u00b0, about ' + m.peel.alongshore_m_s + ' m/s). Bed from 11 \u00d7 14 m lidar; no overturning lip in a depth-averaged model.',
+      labelText: `first breaks here (2DH model): ${Math.round(brk)} m from the house`, labelX: hx + brk * ux, labelZ: -(hy + brk * uy),
+      pos: new THREE.BufferAttribute(new Float32Array(P * 3), 3).setUsage(THREE.DynamicDrawUsage),
+      aF: new THREE.BufferAttribute(new Float32Array(P), 1).setUsage(THREE.DynamicDrawUsage) };
+    const idx = [];                                      // all grid triangles; dry ones are dropped per frame
+    for (let j = 0; j + 1 < m.ny; j++) for (let i = 0; i + 1 < m.ns; i++) { const k = j * m.ns + i; idx.push(k, k + 1, k + m.ns, k + 1, k + m.ns + 1, k + m.ns); }
+    Object.assign(BW.byspot[key], { tri: Uint32Array.from(idx), index: new THREE.BufferAttribute(new Uint32Array(idx.length), 1).setUsage(THREE.DynamicDrawUsage),
+      col: new THREE.BufferAttribute(new Float32Array(P * 3), 3).setUsage(THREE.DynamicDrawUsage) });
+    Object.assign(BW.byspot[key], { hx, hy, ux, uy, ax, ay });
+    window.__fwFrames = n; window.__fwPoints = P;
+  } finally { BW.loading = false; }
+}
 async function loadBW(spot) {
   const v = bwVariantOf(spot), key = spot + (v ? '|' + v.key : '');
   if (BW.byspot[key] || BW.loading) return;
+  if (v && v.fw) return loadFW(spot, v, key);
   BW.loading = true;
   try {
   const d = await loadJSON('data/' + (v ? v.file : spot + '_slice.json'), 'breaking-wave slice'), m = d.meta, n = d.frames.length, P = d.frames[0].s_cm.length;
@@ -1079,6 +1127,13 @@ async function selectBW(spot) {                         // make the slice of thi
   if (BW.data && BW.data.key === key) return;
   await loadBW(spot);
   const D = BW.byspot[key]; if (!D || BW.data === D) return; if (!D || !cur || cur.cfg.spot !== spot) return;
+  fwMesh.visible = !!D.fw; bwPts.visible = bwSurf.visible = bwBed.visible = !D.fw;
+  if (D.fw) {
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', D.pos); geo.setAttribute('color', D.col); geo.setIndex(D.index);
+    fwMesh.geometry.dispose(); fwMesh.geometry = geo;
+    bwLabel.textContent = D.labelText; document.getElementById('bw-note').textContent = D.note;
+    BW.data = D; BW.t = 0; return;
+  }
   bwBed.geometry.setFromPoints(D.bed); bwMat.uniforms.uVmax.value = D.vmax;
   bwPts.geometry.setAttribute('position', D.pos); bwPts.geometry.setAttribute('aV', D.aV); bwSurf.geometry.setAttribute('position', D.surf);
   bwLabel.textContent = D.labelText; document.getElementById('bw-note').textContent = D.note;
@@ -1089,11 +1144,35 @@ function updateBW(now) {
   BW.last = now;
   const show = BW.on && !!BW.data && !!cur && !!cur.cfg.spot && BW.data.spot === cur.cfg.spot;
   bwGroup.visible = show;
+  if (!show || !BW.data.fw) fwTag.style.display = 'none';
+  document.getElementById('fw-exag-row').style.display = show && BW.data.fw ? '' : 'none';
   if (!show) { bwLabel.style.display = 'none'; return; }
   const D = BW.data, exag = material.uniforms.uExag.value;
   bwGroup.scale.y = exag;                               // same vertical stretch as the reef cloud
   bwMat.uniforms.uSize.value = material.uniforms.uSize.value * 0.8; bwMat.uniforms.uScale.value = material.uniforms.uScale.value;
   BW.t += dt * SWELL.speed;                              // real time, or x4 with the swell's speed box
+  if (D.fw) {                                            // FUNWAVE layer: periodic loop, so blend across the seam too
+    const kE = FW.exag / exag;                           // the group is stretched by the depth stretch; this makes the wave exactly FW.exag
+    const f = (BW.t / D.dt) % D.n, i = Math.floor(f), a = f - i, i2 = (i + 1) % D.n;
+    const pp = D.pos.array, pc = D.col.array, pf = D.aF.array, E0 = D.E[i], E1 = D.E[i2], F0 = D.F[i], F1 = D.F[i2];
+    for (let k = 0; k < D.P; k++) {
+      const e0 = E0[k], e1 = E1[k];
+      if (isNaN(e0) || isNaN(e1)) { pf[k] = -1; continue; }
+      const e = e0 + (e1 - e0) * a, fo = Math.min(1, Math.max(0, (F0[k] + (F1[k] - F0[k]) * a - 0.35) / 0.25));   // breaking (and just broken) = opaque white
+      pp[3 * k] = D.X[k]; pp[3 * k + 1] = D.tide + e * kE; pp[3 * k + 2] = D.Zc[k]; pf[k] = fo;
+      const c = Math.pow(Math.min(1, Math.max(0, (e + 0.5) / 1.5)), 1.3);   // trough (navy) -> crest (bright cyan)
+      const r = 0.01 + 0.20 * c, g = 0.04 + 0.70 * c, b = 0.10 + 0.70 * c;   // linear colour (the renderer outputs sRGB)
+      pc[3 * k] = r + (1.9 - r) * fo; pc[3 * k + 1] = g + (1.9 - g) * fo; pc[3 * k + 2] = b + (1.9 - b) * fo;   // >1: stays white under the dim lights
+    }
+    const T = D.tri, ix = D.index.array; let m = 0;
+    for (let t = 0; t < T.length; t += 3) { const p = T[t], q = T[t + 1], r = T[t + 2]; if (pf[p] < 0 || pf[q] < 0 || pf[r] < 0) continue; ix[m++] = p; ix[m++] = q; ix[m++] = r; }
+    fwMesh.geometry.setDrawRange(0, m); D.index.needsUpdate = true;
+    D.pos.needsUpdate = true; D.col.needsUpdate = true; fwMesh.geometry.computeVertexNormals();
+    fwTag.textContent = `FUNWAVE 2DH model: heights exaggerated \u00d7${FW.exag}; white = breaking; illustrative, not a forecast`;
+    fwTag.style.display = '';
+    placeLabel(bwLabel, D.labelX, D.tide * exag + 25, D.labelZ);
+    return;
+  }
   const f = (BW.t / D.dt) % D.n, i = Math.floor(f), a = f - i, i2 = i + 1 < D.n ? i + 1 : i;   // no blend across the loop seam
   const pp = bwPts.geometry.attributes.position.array, pv = bwPts.geometry.attributes.aV.array;
   for (let j = 0; j < D.P; j++) {
@@ -1116,7 +1195,7 @@ document.getElementById('bw-on').addEventListener('change', async e => {
   document.getElementById('bw-note').style.display = BW.on ? '' : 'none';
   if (BW.on && cur && cur.cfg.spot) await selectBW(cur.cfg.spot);
 });
-// Variant toggle (Porto Batel): typical wave (s8, default) or upper bound (s7). Both stay labelled illustrative, not a forecast.
+// Variant toggle (Porto Batel): typical wave (s8, default), upper bound (s7) or the whole-reef 2DH model (FUNWAVE). All labelled illustrative, not a forecast. Both stay labelled illustrative, not a forecast.
 {
   const row = document.getElementById('bw-variant');
   if (row && BW_VARIANTS.porto_batel) {
@@ -1267,4 +1346,4 @@ function drawFrame(now) {                          // one frame (also the debug 
 layerBox.firstChild.click();
 requestAnimationFrame(animate);
 // Debug hook (lets the browser console inspect the scene and test hover; harmless to leave in).
-window.__viewer = { tick: drawFrame, renderer, BEACH, beachView, flySpot, setViewMode, bedHeightAt, marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js
+window.__viewer = { DATA_VERSION, LAYERS, tick: drawFrame, renderer, BEACH, beachView, flySpot, setViewMode, bedHeightAt, marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js

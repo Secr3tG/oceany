@@ -25,17 +25,20 @@ is for navigation.
   The EMODnet metadata for this patch states CC BY 4.0 and "do not use for
   navigation". Originators per that metadata: APA and IGEO (now DGT).
 
-- Pipeline, Oahu reef map: 2013 USACE NCMP topobathy DEM (LMSL), 1 m, NOAA dataset
-  ID 9365. Credit: NOAA Office for Coastal Management / USACE JALBTCX, via NOAA Digital
-  Coast. Licence status: believed public domain (US federal data). No licence text
-  accompanies the data; written confirmation was requested from NOAA on 2026-11-14 and has
-  not been received at the time of writing. Resampled to 8 m cells; gaps are left as gaps.
-  Not for navigation.
+- Pipeline, Oahu reef map, reef-model bed grid, lookup table and live snapshot: 2013 USACE NCMP
+  topobathy DEM (LMSL), 1 m, NOAA dataset ID 9365. Derived from 2013 USACE NCMP Topobathy Lidar DEM (LMSL): Oahu, HI (NOAA OCM dataset 9365), collected by USACE JALBTCX, distributed by NOAA Office for Coastal Management. US Government work, provided as-is, not endorsed by NOAA or USACE.
+  Basis: the dataset's official metadata, NOAA InPort record 65476 (access constraints
+  "None"; collected and processed by USACE). An e-mail confirmation requested from NOAA on
+  2026-11-14 is still pending. Resampled to 8 m (map) and 10 m (reef model) cells; gaps are
+  left as gaps. Not for navigation.
 - Basque coast, Guéthary and Hossegor reef maps (Litto3D Nouvelle-Aquitaine 2020-2022):
   Shom - IGN, 2025. https://doi.org/10.17183/LITTO3D_NAQ_2020_2022. Not for navigation.
   Open licence, Etalab 2.0. Vertical datum IGN69 (not LAT). Block-averaged to 4 m cells,
   land cropped 250 m inland, gaps left as gaps.
 - Supertubos map: same DGT/APA 2011 lidar as Peniche (above), wider patch.
+- Porto Batel reef-model bed grid (`pieces/06-live-wave/data/bed_grid_porto_batel.npz`) and lookup
+  table (`pieces/06-live-wave/lookup/`): derived from the same DGT/APA 2011 lidar (EMODnet patch
+  590_HR_Lidar_Centro, CC BY 4.0), resampled to a 10 m grid.
 
 ## Other data
 
@@ -48,6 +51,21 @@ is for navigation.
   Open-Meteo hindcast winter median (Open-Meteo.com, CC BY 4.0). Typical values, not forecasts.
 - Observer marks (`pieces/02-reefs/data/surf_zones.json` and the pins in the viewer): observer
   marks (one surfer, 17 Sep 2026). The author's own marks, not survey data.
+
+## Live forecast snapshots (`live/*.json`, refreshed by a scheduled job)
+
+- Open-Meteo Marine and Weather API: weather data by Open-Meteo.com, CC BY 4.0
+  (https://open-meteo.com/en/licence).
+- E.U. Copernicus Marine Service: generated using E.U. Copernicus Marine Service Information;
+  IBI https://doi.org/10.48670/moi-00025, NWS https://doi.org/10.48670/moi-00055,
+  MED https://doi.org/10.48670/mds-00373, in-situ https://doi.org/10.48670/moi-00036 (data provider
+  named in each file).
+- DMI (Danish Meteorological Institute) open data, CC BY 4.0: "Kilde: DMI" for values as
+  published; "Baseret på data fra DMI og efterfølgende bearbejdet" for derived values
+  (model-minus-buoy bias).
+- Not in the public files: kyst.dk buoys (no published terms), NDBC 51201 / CDIP values (CDIP
+  asks that data are not altered; used only in the Pipeline validation write-up, with
+  attribution).
 
 ## Which viewer file uses which source
 
@@ -63,6 +81,7 @@ is for navigation.
 | `porto_batel_slice_s8.json`, `pipeline_slice.json`, `supertubos_slice.json`, `guethary_slice.json` | Own wave solver output on a bed profile through the matching map (derived) |
 | `guethary.json`, `hossegor.json` | Shom - IGN Litto3D 2020-2022 (derived 4 m grid) |
 | `pipeline.json` | NOAA/USACE 2013 NCMP topobathy, Oahu (see above; derived grid) |
+| `porto_batel_funwave.json` | Own FUNWAVE-TVD 2DH model output over `reefs.json` (derived from the lidar) |
 
 ## Software
 

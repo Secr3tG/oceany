@@ -1,0 +1,262 @@
+{
+ "description": "Pipeline (Oahu) Stage A lookup (pieces/06-live-wave/stage_a.py, site 'pipeline' in sites.py). See README.md.",
+ "format": "v2",
+ "axes": {
+  "tp_s": [
+   8,
+   9,
+   10,
+   11,
+   12,
+   13,
+   14,
+   15,
+   16,
+   17,
+   18,
+   20,
+   22
+  ],
+  "dir_from_deg": [
+   270,
+   275,
+   280,
+   285,
+   290,
+   295,
+   300,
+   305,
+   310,
+   315,
+   320,
+   325,
+   330,
+   335,
+   340,
+   345,
+   350,
+   355,
+   360,
+   365,
+   370,
+   375,
+   380,
+   385,
+   390
+  ],
+  "tide_above_datum_m": [
+   -0.3,
+   -0.2,
+   -0.1,
+   0.0,
+   0.1,
+   0.2,
+   0.3,
+   0.4,
+   0.5,
+   0.6,
+   0.7,
+   0.8,
+   0.9
+  ],
+  "H0_m": [
+   0.5,
+   0.75,
+   1.0,
+   1.25,
+   1.5,
+   1.75,
+   2.0,
+   2.25,
+   2.5,
+   2.75,
+   3.0,
+   3.25,
+   3.5,
+   3.75,
+   4.0,
+   4.25,
+   4.5,
+   4.75,
+   5.0,
+   5.25,
+   5.5,
+   5.75,
+   6.0,
+   6.25,
+   6.5,
+   6.75,
+   7.0,
+   7.25,
+   7.5,
+   7.75,
+   8.0
+  ]
+ },
+ "node_order": "for each Tp file: [dir][tide][H0], row-major",
+ "profile_offsets_m": [
+  -600.0,
+  -575.0,
+  -550.0,
+  -525.0,
+  -500.0,
+  -475.0,
+  -450.0,
+  -425.0,
+  -400.0,
+  -375.0,
+  -350.0,
+  -325.0,
+  -300.0,
+  -275.0,
+  -250.0,
+  -225.0,
+  -200.0,
+  -175.0,
+  -150.0,
+  -125.0,
+  -100.0,
+  -75.0,
+  -50.0,
+  -25.0,
+  0.0,
+  25.0,
+  50.0,
+  75.0,
+  100.0,
+  125.0,
+  150.0,
+  175.0,
+  200.0,
+  225.0,
+  250.0,
+  275.0,
+  300.0,
+  325.0,
+  350.0,
+  375.0,
+  400.0,
+  425.0,
+  450.0,
+  475.0,
+  500.0,
+  525.0,
+  550.0,
+  575.0,
+  600.0
+ ],
+ "profile_line_deg": 314.0,
+ "profile_along_deg": 44.0,
+ "house": {
+  "lat": 21.66326527913084,
+  "lon": -158.05319391492213,
+  "what": "the start of the reference line, 100 m landward of the published Pipeline take-off along the 314 deg shore normal"
+ },
+ "datum": {
+  "name": "LMSL",
+  "words": "m above LMSL (local mean sea level, the lidar datum)",
+  "msl_minus_datum_m": 0.0,
+  "note": "Open-Meteo sea level (MSL, tide + surge) is taken as height above LMSL; not checked"
+ },
+ "gamma": 0.78,
+ "nobreak_u16": 65535,
+ "scalar_columns": [
+  "status",
+  "break_house",
+  "breaker_H_house",
+  "peel_angle_near",
+  "peel_speed_near",
+  "peel_angle_line",
+  "peel_speed_line"
+ ],
+ "scalar_scale": [
+  1,
+  10,
+  100,
+  100,
+  100,
+  100,
+  100
+ ],
+ "arrays": [
+  {
+   "name": "break_s",
+   "dtype": "uint16",
+   "per_node": 49,
+   "scale": 10.0,
+   "byte_offset": 0,
+   "byte_length": 987350,
+   "unit": "m along the profile, value/10; 65535 = no break on that profile"
+  },
+  {
+   "name": "scalars",
+   "dtype": "uint16",
+   "per_node": 7,
+   "byte_offset": 987350,
+   "byte_length": 141050,
+   "unit": "value/scalar_scale per column; 65535 = NaN"
+  }
+ ],
+ "files": {
+  "8": "T8.bin",
+  "9": "T9.bin",
+  "10": "T10.bin",
+  "11": "T11.bin",
+  "12": "T12.bin",
+  "13": "T13.bin",
+  "14": "T14.bin",
+  "15": "T15.bin",
+  "16": "T16.bin",
+  "17": "T17.bin",
+  "18": "T18.bin",
+  "20": "T20.bin",
+  "22": "T22.bin"
+ },
+ "status_codes": {
+  "0": "breaks on the house line",
+  "1": "breaks on the reef, not on the house line",
+  "2": "no break in the domain",
+  "3": "no phase (no upwind seed deeper than 1 m)"
+ },
+ "site": "pipeline",
+ "grid_deg": 314.0,
+ "takeoff": {
+  "lat": 21.66389,
+  "lon": -158.05389,
+  "s": 100.0
+ },
+ "shore_s_lmsl_m": 55.7,
+ "reefs": [
+  {
+   "name": "First Reef",
+   "from_shore_m": [
+    0.0,
+    91.0
+   ]
+  },
+  {
+   "name": "Second Reef",
+   "from_shore_m": [
+    91.0,
+    213.0
+   ]
+  },
+  {
+   "name": "Third Reef",
+   "from_shore_m": [
+    213.0,
+    400.0
+   ]
+  },
+  {
+   "name": "outside Third Reef",
+   "from_shore_m": [
+    400.0,
+    null
+   ]
+  }
+ ],
+ "profile_s_max_m": 1288.0,
+ "dir_note": "directions run 270-390 through north (390 = 30 deg); a forecast direction d < 180 is used as d + 360",
+ "missing_nodes": 0
+}

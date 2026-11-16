@@ -55,9 +55,10 @@
         <li><b>"Below LAT":</b> depth measured down from the lowest normal tide, so the real water is almost always a bit deeper. Pipeline uses mean sea level and the French spots IGN69, as shown on a point's tooltip.</li>
         <li><b>North Sea window:</b> EMODnet and Danish 50 m data. Fine enough to show how the shelf turns the swell, too coarse for single reefs or sandbars.</li>
         <li><b>Swell layer:</b> a simple model of one swell crossing the sea floor. Not a forecast.</li>
+        <li><b>Live forecast (every map):</b> today's forecast for the spot, with buoy values where a snapshot has them. At Porto Batel the forecast also drives the reef model (Stage A, pink break line). On the reef maps a forecast hour can drive the swell layer; a line under the panel says whether the swell on screen is a forecast hour, your slider values or the map's fixed typical swell. Driven by the forecast, but a representative wave, not a prediction of each wave.</li>
         <li><b>Breaking-wave layer (Porto Batel):</b> an illustrative 2D slice of one typical wave on 17 Sep 2026 (about 1.5 m), along one line. Not a prediction of any real wave.</li>
         <li><b>Pins (Porto Batel):</b> one surfer's marks from 17 Sep 2026: the filming position, the take-off zone (rock contact observed there) and the keyhole channel. Not survey points.</li>
-        <li><b>Other spots</b> (Supertubos, Pipeline, Gu&eacute;thary, Hossegor, Consola&ccedil;&atilde;o): the same sea floor and swell model, with a typical swell for the place. Illustrative, not a forecast.</li>
+        <li><b>Other spots</b> (Supertubos, Pipeline, Gu&eacute;thary, Hossegor, Consola&ccedil;&atilde;o): the same sea floor and swell model, with a typical swell for the place. Illustrative, not a forecast. On these maps the Live forecast panel can redraw the swell from a forecast hour.</li>
       </ul>
     </details>
     <label class="row"><input id="rotate" type="checkbox"> auto-rotate</label>
@@ -66,11 +67,11 @@
   <div id="intro" role="dialog" aria-label="About this viewer" style="display:none">
     <h2>How the North Sea hits the Danish coast</h2>
     <p>The sea floor of the North Sea off Denmark as a 3D point cloud, with swell arriving from the north-west, west and south-west. The bottom bends and slows the waves before they reach the beach, so the same swell lands differently on each stretch of coast. Zoom in to Porto Batel in Portugal to see one wave break on a real reef.</p>
-    <p>Swell and breaking waves are models drawn on real depth data, not a forecast.</p>
+    <p>Swell and breaking waves are models drawn on real depth data. The Live forecast panel shows each spot's forecast; on the reef maps it can drive the swell, and at Porto Batel it feeds the reef model: a representative wave, not a prediction of each wave.</p>
     <p class="intro-ctl"><span class="intro-desk"><b>Controls:</b> drag to look, W/A/S/D to move, E/Space up, Q/C down, wheel to glide, Shift fast. The spot buttons put you on the shore for a beach view.</span><span class="intro-phone"><b>Controls:</b> one finger to look, pinch to move forward and back, two fingers to pan.</span></p>
     <div class="intro-btns"><button id="intro-tour" class="on">Take the tour</button><button id="intro-go">Just explore</button></div>
   </div>
-  <div id="credits">Bathymetry: EMODnet Bathymetry (CC BY 4.0); Danish depth model 50 m, Klimadatastyrelsen; Porto Batel and Supertubos lidar 2011, DGT and APA via EMODnet (CC BY 4.0); Pipeline: NOAA/USACE; Gu&eacute;thary and Hossegor: Shom - IGN Litto3D (Etalab 2.0). Not for navigation. 3D: three.js (MIT). Full list in DATA-LICENSES.md.</div>
+  <div id="credits">Bathymetry: EMODnet Bathymetry (CC BY 4.0); Danish depth model 50 m, Klimadatastyrelsen; Porto Batel and Supertubos lidar 2011, DGT and APA via EMODnet (CC BY 4.0); Pipeline: NOAA OCM / USACE JALBTCX 2013 lidar (US Government work); Gu&eacute;thary and Hossegor: Shom - IGN Litto3D (Etalab 2.0). Not for navigation. Live forecast: Open-Meteo (CC BY 4.0), E.U. Copernicus Marine Service, DMI (CC BY 4.0). 3D: three.js (MIT). Full list in DATA-LICENSES.md.</div>
 
   <div id="label-shore" class="tag">Klitm&oslash;ller (shoreline)</div>
   <div id="label-village" class="tag dim">village</div>
@@ -79,8 +80,9 @@
   <div id="status">loading...</div>
   <div id="loading" style="display:none"></div>
 
-  <script type="module" src="main.js?v=c6g"></script>
-  <script type="module" src="play.js?v=c5b"></script>
+  <script type="module" src="main.js?v=c6q"></script>
+  <script type="module" src="play.js?v=c5c"></script>
+  <script type="module" src="live.js?v=l5"></script>
   <script type="module" src="tutorial.js?v=c3d"></script>
 </body>
 </html>

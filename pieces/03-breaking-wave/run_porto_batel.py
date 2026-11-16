@@ -33,6 +33,12 @@ ap.add_argument("--tend", type=float, default=None)
 ap.add_argument("--tag", default="")
 ap.add_argument("--set", nargs="*", default=[])
 ap.add_argument("--outdir", default=None, help="output folder name under out/ (default porto_batel_dp<dp><tag>)")
+ap.add_argument("--breaking", action="store_true",
+                help="opt-in breaking eddy viscosity (sim.WCSPH.set_breaking); off reproduces s8 and earlier")
+ap.add_argument("--brk_M", type=float, default=0.03)
+ap.add_argument("--brk_beta", type=float, default=0.85)
+ap.add_argument("--brk_tmem", type=float, default=1.5)
+ap.add_argument("--brk_roller", action="store_true", help="flag the whole fast roller, not only surface particles")
 args = ap.parse_args()
 
 cfg = dict(case.CFG)
@@ -76,6 +82,9 @@ S.nstep = 0
 motion, pinfo = case.piston_motion_factory(cfg)
 S.piston_motion = motion
 S.set_piston(0.0)
+if args.breaking:
+    _gx = np.arange(domain[0], domain[1] + 0.05, 0.05)
+    S.set_breaking(_gx, case.bed_z(_gx, cfg), M=args.brk_M, beta=args.brk_beta, t_mem=args.brk_tmem, roller=args.brk_roller)
 
 # ---- shoreward outflow (particle sink)
 sink_on = bool(info.get("shore_outflow"))
@@ -136,7 +145,9 @@ S._rates(S.u, S.w, S.rho)
 meta = dict(cfg=cfg, dp=dp, h=h, c0=c0, n_fluid=int(nf), n_wall=int(bx.size), info=info,
             piston=pinfo, settle_wall_s=time.time() - t0,
             outflow=dict(on=sink_on, x_sink=x_sink, s_sink=cfg["s_shore"] if sink_on else None,
-                         x_bed_end=info["x_bed_end"], sentinel="x_cm=65535, z_cm=32767 for removed particles"))
+                         x_bed_end=info["x_bed_end"], sentinel="x_cm=65535, z_cm=32767 for removed particles"),
+            breaking=dict(on=args.breaking, M=args.brk_M, beta=args.brk_beta, t_mem=args.brk_tmem, roller=args.brk_roller)
+            if args.breaking else dict(on=False))
 (out / "meta.json").write_text(json.dumps(meta, indent=1))
 np.savez(out / "walls.npz", x=bx[:bx.size - npist].astype(np.float32), z=bz[:bx.size - npist].astype(np.float32))
 
@@ -147,8 +158,12 @@ def save(k):
     zc = np.clip(np.rint(S.z[:nf] * 100), -32768, 32766).astype(np.int16)
     xc[removed] = 65535
     zc[removed] = 32767
+    extra = {}
+    if S.brk is not None:   # breaking indicator 0-255 and eddy viscosity in cm2/s
+        extra = dict(brk_u8=np.clip(np.rint(S.b_brk * 255), 0, 255).astype(np.uint8),
+                     nu_cm2s=np.clip(np.rint(S.nu * 1e4), 0, 65535).astype(np.uint16))
     np.savez_compressed(out / f"snap_{k:04d}.npz", t=S.t, piston_X=getattr(S, "piston_X", 0.0),
-                        x_cm=xc, z_cm=zc,
+                        x_cm=xc, z_cm=zc, **extra,
                         u_cms=np.clip(np.rint(S.u[:nf] * 100), -32768, 32767).astype(np.int16),
                         w_cms=np.clip(np.rint(S.w[:nf] * 100), -32768, 32767).astype(np.int16))
 
@@ -176,7 +191,8 @@ while S.t < cfg["t_end"] - 1e-9:
         ra = S.rho[:nf][~removed]
         print(f"t={S.t:7.2f} steps={S.nstep:8d} dt={S.timestep():.2e} vmax={vmax:5.2f} "
               f"rho[{ra.min():.0f},{ra.max():.0f}] removed={n_parked} below_bed={lb} outside={lo} wall={el:7.0f}s "
-              f"eta_end={el / S.t * (cfg['t_end'] - S.t) / 60:5.1f} min", flush=True)
+              f"eta_end={el / S.t * (cfg['t_end'] - S.t) / 60:5.1f} min"
+              + (f" brk={int((S.b_brk > 0.5).sum())} numax={S.nu.max():.3f}" if S.brk is not None else ""), flush=True)
 meta["wall_seconds"] = time.time() - wall0
 meta["steps"] = S.nstep
 lb, lo = leaks()
