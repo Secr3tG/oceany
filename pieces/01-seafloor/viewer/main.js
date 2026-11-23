@@ -1461,13 +1461,14 @@ function stepExit(now) {                           // every frame, reef layers: 
   if (EXIT.gone || !cur || !cur.cfg.reef) { if (!EXIT.gone && EXIT.fade) { EXIT.fade = 0; fadeEl.style.opacity = 0; } return; }
   if (arriveFade(now)) return;                     // arriving from the globe: the fade runs on time, not distance (section 6e)
   const r = exitRange(), d = Math.max(Math.hypot(camera.position.x - r.cx, camera.position.y, camera.position.z - r.cz), ZB.d || 0);   // ZB.d: zoom distance (to the point the view centre looks at)
-  let f = smooth01(r.start, r.end, d);
+  // UX 2026-11-23 (first-visitor feedback: "it jumped me to all kinds of screens"): zooming out no longer fades into the
+  // globe by itself; the zoom stops at EXIT.start with a line pointing at the Back to globe button, which is the only way out.
+  void d; let f = 0;
   if (EXIT.button) { f = Math.max(f, smooth01(0, 1600, now - EXIT.button)); if (now - EXIT.button > 1600) { goToGlobe(); return; } }
   if (Math.abs(f - EXIT.fade) > 0.002) {
     EXIT.fade = f; fadeEl.style.opacity = f.toFixed(3);
     fadeHint.style.opacity = EXIT.button ? 0 : Math.min(1, f * 3).toFixed(2);
   }
-  if (d >= r.end) goToGlobe();
 }
 addEventListener('pageshow', e => {                // back from the globe (page restored from the cache): start over at the overview
   if (!e.persisted || !EXIT.gone) return;
@@ -1503,13 +1504,18 @@ function zoomFocus(out, nx = 0, ny = 0) {          // sea-level point on the ray
 const sliderFromD = d => Math.round(ZB_MAX * Math.max(0, Math.min(1, Math.log(zoomMax() / d) / Math.log(zoomMax() / zoomMin()))));
 const dFromSlider = v => zoomMax() * Math.exp(-v / ZB_MAX * Math.log(zoomMax() / zoomMin()));
 function showZoomNote() {
-  zbNote.textContent = `Closest view the data supports: the lidar here has one point every ~${Math.round(lidarCellM())} m, so going closer would only make the dots bigger, not show more detail.`;
+  zbNote.textContent = `As close as the data goes: the survey here has one depth point every ~${Math.round(lidarCellM())} m, so closer would only make the dots bigger.`;
+  ZB.noteUntil = performance.now() + 3500;
+}
+function showOutNote() {                           // UX 2026-11-23: the far end says how to leave instead of leaving
+  zbNote.textContent = 'As far out as this spot goes. Tap \u2190 Back to globe (top left) for the whole Earth.';
   ZB.noteUntil = performance.now() + 3500;
 }
 function zoomSet(t, cursor = null) {               // every zoom input ends here: new eased target distance
   if (!cur || !cur.cfg.reef || EXIT.gone) return;
-  const lo = Math.min(zoomMin(), ZB.d || Infinity), hi = exitRange().end * 1.05;
+  const lo = Math.min(zoomMin(), ZB.d || Infinity), hi = Math.max(zoomMax(), ZB.d || 0);   // UX 2026-11-23: out to EXIT.start only
   if (t <= zoomMin() * 1.001) showZoomNote();
+  else if (t >= zoomMax() * 0.999) showOutNote();
   ZB.target = Math.max(lo, Math.min(hi, t)); ZB.active = true; ZB.cursor = cursor; fly = null;
 }
 const zbBase = () => (ZB.active ? ZB.target : ZB.d);
@@ -1517,7 +1523,7 @@ function zoomWheel(e) {                            // same feel as the globe: pi
   const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1), k = e.ctrlKey ? 0.01 : 0.002;
   zoomSet(zbBase() * Math.exp(Math.max(-1, Math.min(1, px * k))), [e.clientX / innerWidth * 2 - 1, 1 - e.clientY / innerHeight * 2]);
 }
-const zoomOutStep = () => { const b = zbBase(); zoomSet(b >= zoomMax() * 0.98 ? b * 1.3 : dFromSlider(sliderFromD(b) - 80)); };
+const zoomOutStep = () => { const b = zbBase(); zoomSet(b >= zoomMax() * 0.98 ? zoomMax() : dFromSlider(sliderFromD(b) - 80)); };
 document.getElementById('zb-in').onclick = () => zoomSet(dFromSlider(sliderFromD(zbBase()) + 80));
 document.getElementById('zb-out').onclick = zoomOutStep;
 zbSlider.addEventListener('input', () => zoomSet(dFromSlider(+zbSlider.value)));
@@ -1656,7 +1662,7 @@ if (wantLayer && LAYERS[wantLayer] && LAYERS[wantLayer].reef) {   // came from t
   const intro = document.getElementById('intro'), L = LAYERS[wantLayer];
   intro.querySelector('h2').textContent = L.title;
   intro.querySelector('p').textContent = `The sea floor at ${L.title} from lidar, as a 3D point cloud, set in its coast from coarse global terrain tiles (the dimmer dots). ` +
-    'Fly in to see the reef up close; keep zooming out (wheel or pinch) to go back to the globe.';
+    'Fly in to see the reef up close; the Back to globe button takes you back to the whole Earth.';
 }
 requestAnimationFrame(animate);
 // Debug hook (lets the browser console inspect the scene and test hover; harmless to leave in).

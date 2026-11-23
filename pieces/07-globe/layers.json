@@ -54,5 +54,19 @@
   "label": "Swell fronts (WAVEWATCH III, illustrative)",
   "on": false,
   "v": "g1"
+ },
+ {
+  "id": "quakes-live",
+  "module": "../12-quakes/quakes_live.js",
+  "label": "Earthquakes live (USGS)",
+  "on": false,
+  "v": "q1"
+ },
+ {
+  "id": "quakes-history",
+  "module": "../12-quakes/quakes_history.js",
+  "label": "Earthquakes M5+ since 1970 (USGS)",
+  "on": false,
+  "v": "q1"
  }
 ]

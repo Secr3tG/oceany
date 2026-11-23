@@ -294,19 +294,16 @@ function exagFor(alt) {
 const hint = document.getElementById('hint');
 let hintExag = '1', terrainNote = '';   // terrainNote: loading / failure, said in the hint too
 const exagLabel = x => (x < 3 ? x.toFixed(1) : String(Math.round(x)));
+// UX 2026-11-23 (calm first view): the hint is plain words only, what your hands do and, when relief is stretched, by how
+// much; the data sources, grid sizes and dot spacing live one tap away (View panel readout, About).
 function updateHint() {
-  const parts = [matchMedia('(pointer: coarse)').matches ? 'Drag to move; pinch to zoom; two fingers up or down to tilt, twist to turn.' : 'Drag to move, right-drag to tilt and turn, scroll or pinch to zoom.'];
-  parts.push(terrain.enabled
-    ? (TERRAIN_AWS ? 'Terrain: land from SRTM, EU-DEM and others (detail varies by country), seabed from ETOPO1 (~1.85 km).'
-      : 'Terrain: seabed from GEBCO_2026 (~460 m), land from GEBCO and, near the spots, Copernicus DEM (~30-90 m).')
-    : '');
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const parts = [touch ? 'Drag to move. Pinch to zoom.' : 'Drag to move. Scroll to zoom. Right-drag to tilt.'];
   hintExag = exagLabel(dotExag.value);
-  if (dotExag.value > 1.05) parts.push(`Mountains ×${hintExag} taller than true so they read (true scale close in).`);
-  if (terrain.enabled && terrainNote) parts.push(terrainNote);
+  if (dotExag.value > 1.05) parts.push(`Mountains and sea floor drawn ${hintExag}\u00d7 taller than real so they show.`);
+  if (terrain.enabled && terrainNote) parts.push(terrainNote.replace(/^Terrain: /, 'Ground detail: '));
   let storms = false; try { storms = layers.some(l => l.visible); } catch (e) { /* layers not set up yet */ }
-  if (storms) parts.push('Layers: each one says in the panel what is data and what is illustrative.');
-  // narrow screens (tablet): with terrain on the hint ran to four lines under the globe; keep only what is about the view
-  if (innerWidth < 1040 && terrain.enabled) { parts[0] = ''; if (storms) parts.pop(); }
+  if (storms) parts.push('Each layer says in the Layers panel what is data and what is illustrative.');
   hint.textContent = parts.filter(Boolean).join(' ');
 }
 const terrainBox = document.getElementById('terrain-toggle'), readout = document.getElementById('terrain-readout'),
@@ -373,7 +370,7 @@ function updateDetailFloor(now) {
 function showDetailEnds(on) {
   const btn = document.getElementById('zoom-note-terrain');
   if (on) {
-    zoomNote.firstElementChild.textContent = 'Detail ends here: finer terrain is built only around the spots.';
+    zoomNote.firstElementChild.textContent = 'As close as it goes here: sharper ground is built only around the surf spots.';
     btn.hidden = true; zoomNote.hidden = false; uiBoxesAt = -1e9; clearTimeout(noteTimer); noteTimer = setTimeout(() => { zoomNote.hidden = true; btn.hidden = false; }, 5000);
   } else if (btn.hidden) { zoomNote.hidden = true; btn.hidden = false; clearTimeout(noteTimer); }   // our line is up: take it down
 }
@@ -391,7 +388,7 @@ function askAlt(a) {
     return Math.min(ALT_MAX, Math.max(altMin() * Math.exp(-zoom.give), a));
   }
   if (a < altMin() * 0.98 && !terrain.enabled && !follow) {
-    zoomNote.firstElementChild.textContent = 'The global grid ends here: one dot is about 41 km of ETOPO1 relief.';
+    zoomNote.firstElementChild.textContent = 'This is as close as the plain globe goes.';
     document.getElementById('zoom-note-terrain').hidden = false;
     zoomNote.hidden = false; clearTimeout(noteTimer); noteTimer = setTimeout(() => { zoomNote.hidden = true; }, 5000);
   }
@@ -436,10 +433,10 @@ function zoomAnchor(x, y, keep) {
 // pixel under the cursor: at the whole globe one pixel is ~13 km, which grew to ~700 px of drift by the closest zoom.
 // Wheel notches that keep coming from the same place stay on that spot (STICK) even after it has glided to the centre.
 const MAG_PX = 36, STICK = { r: null, x: 0, y: 0, t: 0 };
-function spotAt(e) {
+function spotAt(e, mag = MAG_PX) {
   const lbl = e.target && e.target.closest ? e.target.closest('.lbl') : null;
   if (lbl) { const r = regions.find(q => q.label === lbl); if (r && r.pos) return r; }
-  let best = null, bd = MAG_PX;
+  let best = null, bd = mag;
   for (const r of regions) {
     if (!r.pos || !r.label || !r.label.classList.contains('show') || !facing(r)) continue;
     const [x, y] = screenOf(r.pos), d = Math.hypot(x - e.clientX, y - e.clientY);
@@ -447,9 +444,9 @@ function spotAt(e) {
   }
   return best;
 }
-function wheelAnchor(e) {
+function wheelAnchor(e, mag) {
   const now = performance.now();
-  const r = STICK.r && now - STICK.t < 2500 && Math.hypot(e.clientX - STICK.x, e.clientY - STICK.y) < 12 ? STICK.r : spotAt(e);
+  const r = STICK.r && now - STICK.t < 2500 && Math.hypot(e.clientX - STICK.x, e.clientY - STICK.y) < 12 ? STICK.r : spotAt(e, mag);
   Object.assign(STICK, { r, x: e.clientX, y: e.clientY, t: now });
   if (!r) { if (zoom.spot) zoom.cursor = null; zoomAnchor(e.clientX, e.clientY, false); return; }
   if (zoom.spot === r && zoom.cursor && zoom.anchor) return;   // already holding (and gliding) this spot
@@ -840,18 +837,20 @@ function pickRegion(r) {
   if (flight) return;
   picked = r;
   releaseFollow();
-  if (r.status === 'unlocked' && r.link) {          // same hand-off as zooming in: down through the terrain to ~15 km, then enter
+  if (r.status === 'unlocked' && r.link) {          // UX 2026-11-23: down through the terrain to ~15 km, then stop there; the
+    // "Open <spot>" button (enterFrame) offers the viewer, nothing opens it by itself
     if (!terrain.enabled && !terrainOff) { terrainBox.checked = true; setTerrain(true); }
-    flyTo(r, () => enterSpot(r), RADIUS + (terrain.enabled ? 0.0024 : 0.18), { extra: terrain.enabled ? 1400 : 0 });
+    if (spin.on) setSpin(false); spin.k = 0;         // a spinning globe (and its eased-out speed) carried the landing ~170 km past the spot
+    flyTo(r, null, RADIUS + (terrain.enabled ? 0.0024 : 0.18), { extra: terrain.enabled ? 1400 : 0 });
   }
   else { showCard(r); flyTo(r, null, RADIUS + Math.min(1.2, view.alt)); }   // ease to it: 1.2 radii up from further out, else at your zoom
 }
 // ---------- zoom-in hand-off to the seafloor viewer (the mirror of the viewer's zoom-out; see the arrival code below) ----------
-// Over an unlocked spot, zooming on past the closest zoom (wheel, pinch, + button, slider held at its top or arrow keys
-// there; all of them reach askAlt) opens the spot in the viewer with ?from=globe&d=&h=&p= (distance m, heading and tilt
-// deg), and the viewer starts at that view and eases in. It needs continued input past the limit (ENTER.need, in
-// log-zoom units, drains after a pause) and a spot within max(20 km, 8% of the camera distance) of the looked-at point.
-// A wanted spot without data just stops; its card says what is missing. Clicking an unlocked spot ends in the same hand-off.
+// UX 2026-11-23: the hand-off is offered, never automatic. Near an unlocked spot (within max(20 km, 8% of the camera
+// distance) of the looked-at point, or 90 px of the pointer) an "Open <spot> in 3D" button shows; tapping it opens the
+// viewer with ?from=globe&d=&h=&p= (distance m, heading and tilt deg), and the viewer starts at that view and eases in.
+// Zooming on past the limit only makes the button glow. A wanted spot without data just stops; its card says what is
+// missing. Clicking an unlocked spot's name flies down to it and stops; the button then offers the viewer.
 const ENTER = { push: 0, at: 0, r: null, gone: false, cover: null, cue: null, need: 0.9 };
 const ENTER_PTR = [NaN, NaN];                        // last pointer position: zooming toward the cursor leaves the spot there, not mid-screen
 for (const t of ['pointermove', 'wheel']) addEventListener(t, e => { ENTER_PTR[0] = e.clientX; ENTER_PTR[1] = e.clientY; }, { passive: true, capture: true });
@@ -872,8 +871,9 @@ function enterAsk(a) {                                // from askAlt: an input a
   if (r !== ENTER.r) { ENTER.r = r; ENTER.push = 0; }
   ENTER.at = performance.now();
   if (r.status !== 'unlocked' || !r.link) { if (picked !== r || card.style.display !== 'block') { picked = r; showCard(r); } return; }
-  ENTER.push += Math.min(0.45, Math.log(altMin() / a));   // one + click counts half: two clicks, or a short scroll/pinch
-  if (ENTER.push >= ENTER.need) enterSpot(r);
+  // UX 2026-11-23 (first-visitor feedback: "it jumped me to all kinds of screens"): zooming on past the limit never opens
+  // the viewer by itself any more; it only nudges the "Open <spot>" button (enterFrame), which the visitor taps.
+  ENTER.nudge = performance.now();
 }
 function enterCover() {
   if (!ENTER.cover) {
@@ -907,24 +907,24 @@ addEventListener('pageshow', e => {                   // Back from the viewer (p
   const q = new URLSearchParams(location.search); ['from', 'at', 'd', 'h', 'p'].forEach(k => q.delete(k));
   history.replaceState(history.state, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash);
 });
-function enterFrame(now, dt) {                        // every frame: held slider, draining, the cover and the cue
+function enterFrame(now, dt) {                        // every frame: the "Open <spot>" button (UX 2026-11-23)
   if (ENTER.gone) return;
-  if (zoom.held && +slider.value >= S_MAX) askAlt(altMin() * Math.exp(-dt * 0.9));   // slider held at its top end
-  if (now - ENTER.at > 600) ENTER.push = Math.max(0, ENTER.push - dt * 1.5);
-  if (ENTER.push > 0 || ENTER.cover) { const o = (0.85 * Math.min(1, ENTER.push / ENTER.need)).toFixed(3); if (Math.abs(+enterCover().style.opacity - o) > 0.002) enterCover().style.opacity = o; }
-  const r = !flight && !follow && !arrival && view.alt < altMin() * 2.5 ? enterCandidate() : null, ok = !!(r && r.status === 'unlocked' && r.link);
+  // Close to an unlocked spot (or after a tap on its name flew you there), a calm button offers the 3D reef viewer.
+  // Nothing opens it by itself: wheel, pinch, + and the slider only zoom.
+  const r = !flight && !follow && !arrival && view.alt < Math.max(altMin() * 2.5, 0.03) ? enterCandidate() : null, ok = !!(r && r.status === 'unlocked' && r.link);
   if (!ENTER.cue) {
-    ENTER.cue = document.createElement('div'); ENTER.cue.id = 'zoom-cue';
-    ENTER.cue.style.cssText = 'position:fixed;font-size:12px;color:var(--open);text-shadow:0 0 4px #000,0 0 8px #000;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .3s;transform:translateY(-50%);z-index:6';
+    ENTER.cue = document.createElement('button'); ENTER.cue.type = 'button'; ENTER.cue.id = 'open-spot'; ENTER.cue.hidden = true;
+    ENTER.cue.onclick = () => { if (ENTER.cueR) enterSpot(ENTER.cueR); };
     document.body.appendChild(ENTER.cue);
   }
-  const zin = document.getElementById('zoom-in');
   if (ok) {
-    const b = zin.getBoundingClientRect(), t = 'keep zooming to enter ' + r.name;
-    if (ENTER.cue.textContent !== t) ENTER.cue.textContent = t;
-    ENTER.cue.style.right = Math.round(innerWidth - b.left + 10) + 'px'; ENTER.cue.style.top = Math.round(b.top + b.height / 2) + 'px';
+    ENTER.cueR = r;
+    const t = 'Open ' + r.name + ' in 3D \u2192';
+    if (ENTER.cue.textContent !== t) { ENTER.cue.textContent = t; ENTER.cue.title = 'Open the 3D sea-floor viewer for ' + r.name; }
   }
-  if ((ENTER.cue.style.opacity === '1') !== ok) { ENTER.cue.style.opacity = ok ? '1' : '0'; zin.style.borderColor = ok ? 'var(--open)' : ''; zin.title = ok ? 'Keep zooming to enter ' + r.name : ''; }
+  if (ENTER.cue.hidden === ok) ENTER.cue.hidden = !ok;
+  const nudge = ok && now - (ENTER.nudge || -1e9) < 900;   // zooming on past the limit: the button glows, it does not open
+  if (ENTER.cue.classList.contains('nudge') !== nudge) ENTER.cue.classList.toggle('nudge', nudge);
 }
 // Fly the rig along the sphere to the region (eased), then call done. endDist is the old camera distance from the
 // globe centre (1.18 = 0.18 radii up). opt.dir() gives a moving target's direction each frame (a storm); opt.pitch
@@ -1023,18 +1023,20 @@ canvas.addEventListener('pointermove', () => { if (drag && Math.abs(view.n.y) > 
 // Touch (pointer events with pointerType 'touch' only, so mouse, pen and trackpad keep their own paths):
 // one finger drags (above). Two fingers: the gesture is read once they have moved TOUCH_DECIDE css px together, then kept:
 //  - tilt: both fingers move up or down together (spacing and angle nearly unchanged) → camera tilt, like a right-drag;
-//  - pinch: anything else → zoom toward the fingers' midpoint (the ground under it stays under it and follows it), and
-//    twist (the turn of the line between the fingers) turns the heading once it passes TWIST_DEAD.
-// Same askAlt path as the wheel, so a pinch past the limit over an unlocked spot enters it. Lifting one finger hands the
+//  - twist: the fingers turn around each other with their spacing nearly unchanged → heading only (deliberate);
+//  - pinch: anything else → zoom only, toward the fingers' midpoint (the ground under it stays under it and follows it).
+// UX 2026-11-23 (first-visitor feedback: "with two fingers the angles keep shifting"): one gesture per touch, decided
+// once and kept; a pinch never turns or tilts the camera. Same askAlt path as the wheel (a pinch past the limit over an
+// unlocked spot only makes the Open button glow). Lifting one finger hands the
 // drag to the finger left down, so the view does not jump.
 const touches = new Map(); let pinch = null, touchMulti = false;
-const TOUCH_DECIDE = 10, TWIST_DEAD = 6 * D2R;
+const TOUCH_DECIDE = 14;
 const pairOf = () => { const [a, b] = [...touches.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; };
 canvas.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'touch') return;
   if (!touches.size) touchMulti = false;
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (touches.size === 2) { drag = null; touchMulti = true; down = null; const p = pairOf(); pinch = { ...p, start: p, kind: null, twist: 0 }; zoom.cursor = null; }
+  if (touches.size === 2) { drag = null; touchMulti = true; down = null; const p = pairOf(); pinch = { ...p, start: p, kind: null }; zoom.cursor = null; }
   else if (touches.size > 2) pinch = null;            // three fingers: nothing (lift back to two to carry on)
 });
 canvas.addEventListener('pointermove', e => {
@@ -1049,11 +1051,17 @@ canvas.addEventListener('pointermove', e => {
     let da = p.ang - s0.ang; da = Math.atan2(Math.sin(da), Math.cos(da));
     const spread = Math.abs(dd) + Math.abs(da) * s0.d / 2;     // css px the fingers moved apart / around each other
     const both = Math.hypot(mx, my);
-    if (Math.max(spread, both) < TOUCH_DECIDE) { pinch.ang = p.ang; pinch.my = p.my; return; }   // not decided yet: track only
-    pinch.kind = Math.abs(my) > 1.5 * spread && Math.abs(my) > Math.abs(mx) ? 'tilt' : 'pinch';
-    if (pinch.kind === 'pinch') { zoom.cursor = null; zoomAnchor(p.mx, p.my, false); pinch.twist = da - dAng; }   // the dead zone counts from the first touch
+    if (Math.max(spread, both) < TOUCH_DECIDE && Math.abs(da) < 6 * D2R) { pinch.ang = p.ang; pinch.my = p.my; return; }   // not decided yet: track only
+    const turn = Math.abs(da) * s0.d / 2;                      // css px the fingers moved around each other
+    pinch.kind = Math.abs(my) > 2.5 * spread && Math.abs(my) > 1.5 * Math.abs(mx) ? 'tilt'
+      : turn > 2.5 * Math.abs(dd) && Math.abs(da) > 5 * D2R ? 'twist' : 'pinch';
+    // UX 2026-11-23: a pinch centred within 60 px of a spot zooms to the spot itself (as the wheel does), so it stays put
+    if (pinch.kind === 'pinch') { zoom.cursor = null; zoom.spot = null; STICK.r = null; wheelAnchor({ clientX: p.mx, clientY: p.my, target: null }, 60); }
   }
-  if (pinch.kind === 'tilt') {
+  if (pinch.kind === 'twist') {                          // heading only (the ground turns with the fingers)
+    if (follow) releaseFollow();
+    northEase = false; view.heading -= dAng;
+  } else if (pinch.kind === 'tilt') {
     releaseFollow(); northEase = false;
     view.manual = Math.max(0, Math.min(pitchLimit(view.alt), (view.manual ?? view.pitch) - dy * 0.005));
     syncTilt();
@@ -1061,12 +1069,7 @@ canvas.addEventListener('pointermove', e => {
     let ask = zoom.target * pinch.d / p.d;
     if (p.d > pinch.d && zoom.target <= altMin() * 1.02) ask = Math.min(ask, altMin() * Math.exp(-Math.min(0.45, Math.log(p.d / pinch.d) * 3)));
     zoom.target = askAlt(ask);
-    if (!follow) zoomAnchor(p.mx, p.my, true);
-    pinch.twist += dAng;
-    if (Math.abs(pinch.twist) > TWIST_DEAD) {                // past the dead zone: the heading turns with the fingers
-      if (follow) releaseFollow();
-      northEase = false; view.heading -= dAng;           // (heading is the camera's compass: the ground turns the other way, with the fingers)
-    }
+    if (!follow && !zoom.spot) zoomAnchor(p.mx, p.my, true);
   }
   pinch.d = p.d; pinch.ang = p.ang; pinch.mx = p.mx; pinch.my = p.my;
 });
@@ -1284,7 +1287,16 @@ canvas.addEventListener('pointerdown', e => { down = e.button === 0 && !e.shiftK
 canvas.addEventListener('pointerup', e => {
   if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;   // a drag, not a click
   if (e.pointerType === 'touch' && touchMulti) return;   // part of a two-finger gesture
-  let best = null, bd = 18;
+  // UX 2026-11-23: on touch the spot names let gestures through to the globe (index.html), so a tap on a name is found
+  // here, from the name's box (8 px slack), before the nearest marker within 28 px
+  if (e.pointerType === 'touch') {
+    for (const r of regions) {
+      if (!r.label || !r.label.classList.contains('show')) continue;
+      const b = r.label.getBoundingClientRect();
+      if (e.clientX > b.left - 8 && e.clientX < b.right + 8 && e.clientY > b.top - 8 && e.clientY < b.bottom + 8) { if (r.cl) zoomCluster(r.cl); else pickRegion(r); return; }
+    }
+  }
+  let best = null, bd = e.pointerType === 'touch' ? 28 : 18;
   for (const r of regions) {
     if (!facing(r) || !shownKind(r) || !inFront(r.pos) || (follow && r.wanted)) continue;
     const [x, y] = screenOf(r.markAt), d = Math.hypot(x - e.clientX, y - e.clientY);
@@ -1310,15 +1322,16 @@ const NOTICE = {
     ['US tornado and severe weather', 'https://www.weather.gov/'],
     ['Hurricanes', 'https://www.nhc.noaa.gov/'],
     ['Space weather (aurora)', 'https://www.swpc.noaa.gov/'],
+    ['Earthquakes', 'https://earthquake.usgs.gov/'],   // 12-quakes
   ],
   officialTail: 'For marine forecasts, use your national weather service.',
   liveLayer: 'Not an official product. Do not use for safety decisions.',
   liveExtra: { 'tornado-live': 'If a warning is in effect where you are, follow weather.gov and local officials.' },
   liveCue: { 'tornado-live': 'NOAA reports active tornado warnings' },   // the glow's tooltip: a report, never an instruction
-  liveIds: new Set(['hurricanes', 'tornado-live', 'aurora', 'snow', 'wind', 'waves', 'swell']),  // live data and model layers (the SPC tornado archive is history)
+  liveIds: new Set(['hurricanes', 'tornado-live', 'aurora', 'quakes-live', 'snow', 'wind', 'waves', 'swell']),  // live data and model layers (the SPC tornado archive is history)
   // the on-globe line under the standing line: live feeds and model output (hurricanes are an IBTrACS replay of past
   // tracks, so their line stays in the panel only)
-  globeIds: new Set(['tornado-live', 'aurora', 'snow', 'wind', 'waves', 'swell']),
+  globeIds: new Set(['tornado-live', 'aurora', 'quakes-live', 'snow', 'wind', 'waves', 'swell']),
 };
 {
   const a = document.getElementById('notice-standing');
@@ -1564,7 +1577,8 @@ const SPIN_FULL = 2.0, SPIN_NONE = 0.5, SPIN_RESUME_MS = 6000;
 const spin = { on: new URLSearchParams(location.search).get('spin') !== '0',   // on at every load (owner); ?spin=0 is the only way to start without it
   k: 0, quietUntil: 0, speed: SPIN_SPEED_DEFAULT, skyDeg: 0 };   // skyDeg: how far the view clock's sky has run ahead of real GMST
 const spinBtn = document.getElementById('spin-btn'), spinBox = document.getElementById('spin-toggle');
-function setSpin(on) { spin.on = on; spinBtn.setAttribute('aria-pressed', String(on)); spinBox.checked = on; spin.quietUntil = 0; }   // toggles within a visit only, not remembered
+function setSpin(on) { spin.on = on; spinBtn.setAttribute('aria-pressed', String(on)); spinBox.checked = on; spin.quietUntil = 0;
+  const sb = document.getElementById('spin-speed-box'); if (sb) sb.hidden = !on; }   // UX 2026-11-23: speed shows only while spinning   // toggles within a visit only, not remembered
 spinBtn.onclick = () => setSpin(!spin.on); spinBox.onchange = () => setSpin(spinBox.checked);
 setSpin(spin.on);
 // speed slider: log scale 0…1000 → ×1…×SPIN_SPEED_MAX, rounded to two significant figures; snaps to the ×1 notch
@@ -1902,6 +1916,26 @@ if (restored && restored.palette && restored.palette !== 'Ocean') {   // back fr
 }
 
 // Debug hook for the browser console.
+// ---------- UX 2026-11-23: first-visit welcome (calm first view) ----------
+// One line on what this is and one suggested first action (fly down to Supertubos), shown once per browser; any drag,
+// pinch or wheel on the globe also puts it away (the visitor has started on their own). Never shown on a return from the
+// viewer or a deep link.
+{
+  const W_KEY = 'oceany-globe-welcome-v1', w = document.getElementById('welcome');
+  const qs = new URLSearchParams(location.search);
+  if (w && !store.get(W_KEY) && !qs.has('from') && !qs.has('at')) {
+    if (matchMedia('(pointer: coarse)').matches) document.getElementById('welcome-how').textContent = 'Drag to move. Pinch to zoom.';
+    w.hidden = false;
+    const done = () => { if (w.hidden) return; w.hidden = true; store.set(W_KEY, '1'); };
+    document.getElementById('welcome-close').onclick = done;
+    document.getElementById('welcome-go').onclick = () => {
+      done(); const r = regions.find(q => q.id === 'supertubos' && q.pos);
+      if (r) pickRegion(r);
+    };
+    canvas.addEventListener('pointerdown', done, { once: true });
+    canvas.addEventListener('wheel', done, { once: true, passive: true });
+  }
+}
 window.__globe = { LITE, sky, frame, spin, setSpeed, THREE, renderer, terrain, scene, camera, view, zoom, setTerrain, perf, flyToStorm, get follow() { return follow; }, get flight() { return flight; }, regions, layers, latLonToVector3, pickRegion, earth, dotCount: N };
 // ---------- offline (opt-in): ?offline=1 registers sw.js (app shell and terrain tiles kept for offline use); ?offline=0
 // unregisters it and deletes its caches. Without the parameter nothing changes (an earlier opt-in stays until ?offline=0).

@@ -16,7 +16,7 @@
   { "imports": {
       "three": "../01-seafloor/viewer/vendor/three.module.js",
       "three/addons/": "../01-seafloor/viewer/vendor/addons/",
-      "./dots.js": "./dots.js?v=b41", "./terrain.js": "./terrain.js?v=b41" } }
+      "./dots.js": "./dots.js?v=b42", "./terrain.js": "./terrain.js?v=b42" } }
   </script>
   <style>
     :root { --panel: #060e16; --bg: #04060a; --ink: #cfe6f2; --dim: #6b8696; --open: #5ff2ff; --accent: #5ff2ff; --fc: #8fc2d1; --lock: #4a5a66; --hz: #8ca3b8; }
@@ -167,11 +167,32 @@
     @media (max-width: 600px) { .offline-cue { top: 132px; left: 16px; right: auto; } }
     #zoom-note button { all: unset; color: var(--open); cursor: pointer; border-bottom: 1px dotted currentColor; }
     #zoom-note button[hidden] { display: none; }
+    /* UX 2026-11-23: the offered way into a spot's 3D viewer (globe.js enterFrame); nothing opens it by itself */
+    #open-spot { position: fixed; left: 50%; bottom: 52px; transform: translateX(-50%); z-index: 6; min-height: 44px; padding: 0 18px; border-radius: 22px;
+      background: color-mix(in srgb, var(--bg) 82%, transparent); border: 1px solid var(--open); color: var(--open); font: 600 14px/1 system-ui, sans-serif;
+      cursor: pointer; white-space: nowrap; max-width: calc(100vw - 140px); overflow: hidden; text-overflow: ellipsis; backdrop-filter: blur(6px); transition: box-shadow .3s; }
+    #open-spot[hidden] { display: none; }
+    #open-spot:hover, #open-spot:focus-visible, #open-spot.nudge { box-shadow: 0 0 14px color-mix(in srgb, var(--open) 55%, transparent); outline: none; }
+    @media (max-width: 600px) { #open-spot { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 80px); left: calc(50% - 28px); } }
+    #spin-speed-box[hidden] { display: none; }
+    /* UX 2026-11-23: first-visit welcome (globe.js): one line on what this is, one suggested first action */
+    #welcome { position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%); width: min(440px, calc(100vw - 32px)); box-sizing: border-box; z-index: 7;
+      padding: 14px 16px 12px; border-radius: 12px; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid color-mix(in srgb, var(--open) 28%, transparent);
+      backdrop-filter: blur(8px); color: var(--ink); font-size: 14px; line-height: 1.45; }
+    #welcome[hidden] { display: none; }
+    #welcome p { margin: 0 0 6px; } #welcome .w-how { color: var(--dim); font-size: 13px; }
+    #welcome .w-btns { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+    #welcome button { min-height: 44px; padding: 0 16px; border-radius: 22px; font: 600 14px/1 system-ui, sans-serif; cursor: pointer; background: none;
+      border: 1px solid color-mix(in srgb, var(--dim) 45%, transparent); color: var(--ink); }
+    #welcome button.primary { border-color: var(--open); color: var(--open); }
+    #welcome button:hover, #welcome button:focus-visible { border-color: var(--open); outline: none; }
+    @media (max-width: 600px) { #welcome { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); left: 8px; right: 62px; width: auto; transform: none; } }
     #labels.following .lbl.show { opacity: .35; }
     @keyframes live-pulse { 0%, 100% { text-shadow: 0 0 0 transparent; } 50% { text-shadow: 0 0 9px var(--open); } }
     .layer.live, #bar button.live { animation: live-pulse 3.2s ease-in-out infinite; }
     .live-note { font-size: 11px; color: var(--dim); margin: 2px 0 0 22px; }
     .lbl { opacity: 0; transition: opacity .15s; } .lbl.show { opacity: 1; } .lbl:not(.show) { pointer-events: none; }
+    @media (pointer: coarse) { .lbl, .lbl.show { pointer-events: none; } }   /* UX 2026-11-23: a pinch on a name zooms; globe.js finds taps on names */
     #notice-standing { position: fixed; right: 16px; bottom: 12px; max-width: 190px; text-align: right; line-height: 1.35; font-size: 11px; color: var(--dim); text-decoration: none; opacity: .9; z-index: 4;
       background: color-mix(in srgb, var(--bg) 72%, transparent); padding: 3px 7px; border-radius: 6px; backdrop-filter: blur(4px); }   /* backing: legible over close terrain (round-1 item 14) */
     @media (max-width: 1040px) { #notice-standing { bottom: 84px; } #card { bottom: 144px; max-height: calc(100vh - 216px); }   /* round 4: clear of a three-line standing line */ }
@@ -209,17 +230,17 @@
        the zoom bar shrinks to + and − at the bottom right (pinch zooms); the hint is one line; cards and panel fit and scroll */
     @media (max-width: 600px) {
       #bar { left: 8px; right: 54px; top: 8px; flex-wrap: wrap; padding: 2px 4px; row-gap: 0; }
-      #bar button { min-height: 40px; padding: 0 7px; box-sizing: border-box; }
+      #bar button { min-height: 44px; padding: 0 7px; box-sizing: border-box; }   /* UX 2026-11-23: 44 px touch targets */
       #bar .gap { display: none; }
       #spin-speed-box { flex: 1 1 auto; min-width: 0; }
       #spin-speed-box .notched, #spin-speed-box input { flex: 1 1 auto; min-width: 60px; }
-      #compass { top: 12px; right: 10px; width: 38px; height: 38px; }
+      #compass { top: 10px; right: 8px; width: 44px; height: 44px; }
       #panel { top: 104px; left: 8px; right: 8px; max-width: none; max-height: calc(100vh - 180px); }
       #zoom { top: auto; bottom: 64px; right: 10px; transform: none; padding: 4px; gap: 6px; }
       #zoom-slider, #tilt-slider, #zoom .tl, #zoom .sep, #tilt-auto, #zoom #north { display: none !important; }
-      #zoom button { width: 40px; height: 40px; }
+      #zoom button { width: 44px; height: 44px; }
       #zoom.faded { opacity: .6; }
-      #zoom-note { top: 104px; }
+      #zoom-note { top: 104px; } #zoom-note button { display: inline-block; min-height: 44px; line-height: 44px; }
       #card { left: 8px; right: 70px; bottom: 40px; width: auto; max-width: none; max-height: calc(100vh - 150px); }   /* the zoom buttons stay free on the right; b38: was 50vh, which cut the longest cards (up to 510 px) and scrolled; now the top stays below the bar (94 px) */
       #notice-standing { bottom: 8px !important; right: 8px; max-width: none; left: 8px; text-align: center; }
     }
@@ -268,7 +289,7 @@
     <section data-sec="view" hidden>
       <h2>View</h2>
       <label class="layer"><input type="checkbox" id="spin-toggle"> Spin the globe (pauses while you look around)</label>
-      <label class="layer"><input type="checkbox" id="terrain-toggle"> Terrain detail (land and seabed relief)</label>
+      <label class="layer"><input type="checkbox" id="terrain-toggle"> Ground detail close up (land and sea-floor relief; comes on by itself as you zoom in)</label>
       <div id="terrain-readout" style="display:none"></div>
       <details id="terrain-credits" style="display:none"><summary>Terrain credits</summary>
         <span id="tc-own">Terrain: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa);
@@ -341,11 +362,16 @@
     <button id="north" type="button" aria-label="Turn north up" title="Turn north up">N</button>
     <button id="fullscreen" type="button" aria-label="Full screen" title="Full screen" aria-pressed="false"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></button>
   </div>
-  <div id="zoom-note" role="status" hidden><span></span> <button type="button" id="zoom-note-terrain">Turn on terrain detail</button></div>
+  <div id="zoom-note" role="status" hidden><span></span> <button type="button" id="zoom-note-terrain">Show ground detail</button></div>
   <div id="card"></div>
   <div id="follow-cap" hidden></div>
+  <div id="welcome" role="dialog" aria-labelledby="welcome-what" hidden>
+    <p id="welcome-what"><b>Oceany</b> draws the whole Earth in dots, from real land and sea-floor heights. The glowing names are surf reefs you can open in 3D.</p>
+    <p class="w-how" id="welcome-how">Drag to move. Scroll or pinch to zoom.</p>
+    <div class="w-btns"><button type="button" id="welcome-go" class="primary">Fly down to Supertubos</button><button type="button" id="welcome-close">Look around first</button></div>
+  </div>
   <div id="hint">Drag to move; right-drag or shift-drag to tilt and turn; scroll, pinch or use the slider to zoom. Each dot is one point of ETOPO1 global relief (NOAA): ocean blue by depth; land coloured by height (olive low ground, brown uplands, grey-brown high plateaus, paler only on the highest peaks; the Antarctic and Greenland ice sheets blue-grey). Colour shows height, not vegetation or snow.</div>
   <script type="module" src="./fullscreen.js?v=f1"></script>
-  <script type="module" src="./globe.js?v=b41"></script>
+  <script type="module" src="./globe.js?v=b42"></script>
 </body>
 </html>

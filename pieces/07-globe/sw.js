@@ -10,8 +10,8 @@
 const R2_HOST = 'pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev';
 const IS_LOCAL = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
 const TILE_BASE = IS_LOCAL ? './tiles-build/tiles/' : `https://${R2_HOST}/terrain/`;
-const SHELL = 'oceany-shell-b39', TILES = 'oceany-tiles-1', TILE_MAX = 600;
-const PRECACHE = ['./', './index.html', './globe.js?v=b41', './dots.js?v=b41', './terrain.js?v=b41', './terrarium.js', './terrain-source.js?v=t3', TILE_BASE + 'coverage.json',
+const SHELL = 'oceany-shell-b42', TILES = 'oceany-tiles-1', TILE_MAX = 600;
+const PRECACHE = ['./', './index.html', './globe.js?v=b42', './dots.js?v=b42', './terrain.js?v=b42', './terrarium.js', './terrain-source.js?v=t3', TILE_BASE + 'coverage.json',
   './layers.json', './regions.json', './manifest.webmanifest', './assets/earth_dots.json', './assets/earth_dots.bin',
   './assets/stars.bin', './assets/icons/icon-192.png', './assets/icons/icon-512.png',
   '../01-seafloor/viewer/vendor/three.module.js', '../01-seafloor/viewer/vendor/three.core.js'];

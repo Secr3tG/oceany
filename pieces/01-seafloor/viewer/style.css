@@ -94,3 +94,5 @@ button:hover { color: #fff; }
 /* Offline line (offline.js): small, calm, top centre; only while saved data is being served. */
 #offline-note { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 27; font-size: 11px; line-height: 1.35; color: #8fb0c0; background: rgba(4,8,14,.6); padding: 3px 10px; border-radius: 10px; pointer-events: none; white-space: nowrap; }
 @media (max-width: 600px) { #offline-note { white-space: normal; text-align: center; max-width: calc(100vw - 32px); } }
+/* UX 2026-11-23: 44 px touch targets on phones (buttons in the panel, the zoom bar and the Back to globe button) */
+@media (max-width: 600px), (pointer: coarse) { button { min-height: 44px; } #zoom button { width: 44px; height: 44px; } #zoom-slider { width: 30px; } }

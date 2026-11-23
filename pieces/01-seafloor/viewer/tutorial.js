@@ -204,6 +204,14 @@ const CSS = `
 .tut-nav button:disabled { opacity: .4; }
 .tut-skip { display: block; width: 100%; margin-top: 6px; background: none; border: none; color: #7d97a0; text-decoration: underline; }
 #tut-open { margin-top: 6px; }
+#tut-offer { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); width: min(460px, calc(100vw - 24px)); box-sizing: border-box; z-index: 20;
+  display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 12px; background: rgba(6,14,22,.88); border: 1px solid rgba(120,200,230,.3);
+  color: #dfeff5; font-size: 13px; line-height: 1.4; backdrop-filter: blur(6px); }
+#tut-offer .to-text { flex: 1 1 auto; min-width: 0; }
+#tut-offer .to-btns { display: flex; gap: 6px; flex: none; }
+#tut-offer button { min-height: 44px; border-radius: 22px; padding: 0 14px; font: 600 13px/1 system-ui, sans-serif; cursor: pointer; background: none; color: #dfeff5; border: 1px solid rgba(160,200,215,.4); }
+#tut-offer .to-go { color: #8fe3ff; border-color: #8fe3ff; }
+#tut-offer .to-x { min-width: 44px; padding: 0; font-size: 20px; }
 @media (max-width: 600px) {
   body.tut-open #panel { display: none; }   /* the panel would sit under the tour card on a phone; close the tour to get it back */
   #tut { left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 52vh; font-size: 13px; }
@@ -217,23 +225,24 @@ async function init() {
   const row = el('<div class="row"></div>'); row.appendChild(b);
   const first = panel.querySelector('#layers'); panel.insertBefore(row, first);
   if (!(await ready())) return;
-  // First visit: one intro box (Take the tour / Just explore) instead of the tour's own welcome card, so nothing stacks.
-  // Mid-tour: carry on where you were. The intro is shown once; dismissal is remembered under INTRO_KEY.
+  // UX 2026-11-23 (first-visitor feedback on a phone: "it asked me to do all kinds of things, then jumped me to all kinds
+  // of screens"): nothing opens by itself any more, not the intro box, not the tour, not a tour left half done. A small
+  // offer line names the place and offers the tour; it closes with x (remembered under INTRO_KEY) or by tapping the tour.
+  // The tour stays one tap away under "Guided tour and challenges" in the panel.
   const intro = document.getElementById('intro'), seenIntro = () => { try { return !!localStorage.getItem(INTRO_KEY); } catch (e) { return false; } };
-  const doneIntro = () => { try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) { /* private mode: shown again next visit */ } if (intro) intro.style.display = 'none'; };
-  // The intro box never blocks zooming: a wheel over it goes to the viewer's zoom; wheeling out also dismisses it (as "Just explore").
-  if (intro) intro.addEventListener('wheel', e => {
-    if (intro.style.display === 'none') return;
-    e.preventDefault();
-    const cv = document.getElementById('scene'); if (cv) cv.dispatchEvent(new WheelEvent('wheel', { deltaX: e.deltaX, deltaY: e.deltaY, deltaMode: e.deltaMode, ctrlKey: e.ctrlKey, altKey: e.altKey, clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true }));
-    if (e.deltaY > 0) { const go = document.getElementById('intro-go'); if (go) go.click(); }
-  }, { passive: false });
-  if (S.open) { doneIntro(); open(S.step); }
-  else if (intro && !seenIntro()) {
-    intro.style.display = '';
-    document.getElementById('intro-tour').onclick = () => { doneIntro(); open(0); };
-    document.getElementById('intro-go').onclick = () => { S.seen = true; save(); doneIntro(); };
-  } else if (!S.seen && !intro) open(S.step);
+  if (intro) intro.style.display = 'none';
+  if (seenIntro() && !S.open) return;
+  const title = intro && intro.querySelector('h2') ? intro.querySelector('h2').textContent : 'Oceany viewer';
+  const touch = matchMedia('(pointer: coarse)').matches;
+  const offer = el(`<div id="tut-offer" role="region" aria-label="Getting started"><div class="to-text"><b></b><span></span></div>
+    <div class="to-btns"><button type="button" class="to-go"></button><button type="button" class="to-x" aria-label="Close">&times;</button></div></div>`);
+  offer.querySelector('b').textContent = title + '. ';
+  offer.querySelector('span').textContent = touch ? 'Drag to look around, pinch to zoom.' : 'Drag to look around, scroll to zoom.';
+  offer.querySelector('.to-go').textContent = S.open ? 'Carry on with the tour' : 'Take the short tour';
+  const doneIntro = () => { try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) { /* private mode: offered again next visit */ } offer.remove(); };
+  offer.querySelector('.to-x').onclick = () => { S.open = false; save(); doneIntro(); };
+  offer.querySelector('.to-go').onclick = () => { const i = S.open ? S.step : 0; doneIntro(); open(i); };
+  document.body.appendChild(offer);
 }
 init();
 window.__tutorial = { open, close, go, get state() { return JSON.parse(JSON.stringify(S)); }, STEPS };

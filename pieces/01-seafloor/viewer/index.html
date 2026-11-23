@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Oceany - how the North Sea hits the Danish coast</title>
-  <link rel="stylesheet" href="style.css?v=z6">
+  <link rel="stylesheet" href="style.css?v=z7">
   <!-- The import map tells the browser where "three" lives, so main.js and
        OrbitControls.js can both say: import ... from 'three'. No bundler needed. -->
   <script type="importmap">
@@ -17,7 +17,7 @@
   <canvas id="scene"></canvas>
 
   <div id="panel">
-    <div class="row" style="margin:0 0 6px"><button id="to-globe" title="Zoom back out to the whole Earth (or keep zooming out with the wheel)">&larr; Back to globe</button></div>
+    <div class="row" style="margin:0 0 6px"><button id="to-globe" title="Back to the whole Earth">&larr; Back to globe</button></div>
     <h1>Oceany <span class="sub">Klitm&oslash;ller sea floor</span></h1>
     <label>Vertical stretch
       <input id="exag" type="range" min="1" max="200" step="1" value="60">
@@ -86,15 +86,15 @@
     <button id="zb-in" type="button" aria-label="Zoom in">+</button>
     <input id="zoom-slider" type="range" min="0" max="1000" step="25" value="500" aria-label="Zoom, from the closest view the lidar supports to the whole Earth">
     <button id="zb-out" type="button" aria-label="Zoom out">&minus;</button>
-    <span class="zb-end" title="Keep zooming out for the globe" aria-hidden="true"><i class="zb-globe"></i>Earth</span>
+    <span class="zb-end" title="Use Back to globe for the whole Earth" aria-hidden="true"><i class="zb-globe"></i>Earth</span>
   </div>
   <div id="zoom-note" role="status" hidden></div>
   <div id="globe-fade"><span id="globe-fade-hint">Keep zooming out for the globe</span></div>
 
   <script src="offline.js?v=o1"></script>
-  <script type="module" src="main.js?v=z7"></script>
+  <script type="module" src="main.js?v=z8"></script>
   <script type="module" src="play.js?v=c5c"></script>
   <script type="module" src="live.js?v=n2"></script>
-  <script type="module" src="tutorial.js?v=c3e"></script>
+  <script type="module" src="tutorial.js?v=c3f"></script>
 </body>
 </html>
