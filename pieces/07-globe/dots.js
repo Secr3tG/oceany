@@ -246,7 +246,10 @@ export function makeDotMaterial({ size = 0.006, color = 0xffffff, vertexColors =
             // The ramp ends one tile in or 40 × the split threshold on screen (~320 device px) in, whichever comes first: a near
             // tile is large on screen, and ramping all of it coarsened the foreground.
             float eu = (float(gl_VertexID % MORPH_N) + 0.5) / float(MORPH_N), ev = (float(gl_VertexID / MORPH_N) + 0.5) / float(MORPH_N);
-            float eK = max(1.0, float(MORPH_N) * sPx / (40.0 * uMorphT));   // tile widths per ramp length
+            // 2026-11-23: 40 → 96 × T. TARGET_PX went 4 → 2.5 (terrain.js), which had shortened this ramp from ~160 to ~100
+            // device px, and the EMODnet / spot box edges showed a step (measured: ~100 px wide at 60 km, ×2 dot size). Now
+            // ~240 px at T = 2.5: the grain changes over about a fifth of the screen.
+            float eK = max(1.0, float(MORPH_N) * sPx / (96.0 * uMorphT));   // tile widths per ramp length
             #define EDGE_R(d) (1.0 - smoothstep(0.0, 1.0, (d) * eK))
             float mE = max(max(uEdge.x * EDGE_R(eu), uEdge.y * EDGE_R(1.0 - eu)), max(uEdge.z * EDGE_R(ev), uEdge.w * EDGE_R(1.0 - ev)));
             m = max(m, mE);
