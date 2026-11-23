@@ -1,34 +1,71 @@
-// Shared loader for the three ocean layers (wind.js, waves.js, swell.js): reads the snapshot that build_ocean.py writes
-// into data/ once, and gives each layer the grids plus the shared wording (model, run, valid time, staleness).
+// Shared loader for the three ocean layers (wind.js, waves.js, swell.js): reads what build_ocean.py writes into data/
+// and gives each layer the grids plus the shared wording (model, run, valid time, staleness).
 // Plumbing: the layers call loadWind()/loadWaves() the first time they are shown; nothing is fetched before that.
-// Hosted pages read the newest build from Cloudflare R2 (../07-globe/data-source.js, layer 'ocean', refreshed every
-// 6 h by the refresh-layers workflow); the files in data/ are the fallback and what localhost uses.
+// Hosted pages read the newest build from Cloudflare R2 (../07-globe/data-source.js, layer 'ocean', refreshed after each
+// GFS run by the refresh-layers workflow); the files in data/ are the fallback and what localhost uses.
+// One build holds one run's forecast hours (+3 h to +13 h, ocean.json `steps`). The layers show the hour nearest the
+// viewer's clock and move to the next hour by themselves (STEP_CHECK_MS): a small file from R2, nothing asked of NOAA.
+// An ocean.json without steps (older builds) is the single snapshot in wind_gfs.bin / waves_ww3.bin, as before.
 import { layerFile, onLayerUpdate, ageNote } from '../07-globe/data-source.js';
 
 const META_URL = new URL('./data/ocean.json', import.meta.url);
 const WIND_URL = new URL('./data/wind_gfs.bin', import.meta.url);
 const WAVE_URL = new URL('./data/waves_ww3.bin', import.meta.url);
-export const STALE_HOURS = 6;     // the snapshot shows one moment; further than this from now, say it is stale
+export const STALE_HOURS = 6;     // the shown hour is further than this from now: say how old it is
+const STEP_CHECK_MS = 5 * 60 * 1000;
 
-let metaP = null, windP = null, waveP = null;
+let rawP = null, windP = null, waveP = null, stepKey = null, stepTimer = null;
 const ok = (r, what) => { if (!r.ok) throw new Error(what + ' HTTP ' + r.status); return r; };
 const get = async (file, local) => fetch(await layerFile('ocean', file, local), { cache: 'no-cache' });
-// A newer build appeared while the page is open: forget the old one and tell each ocean layer, which reloads.
+// Something new while the page is open (a newer build, or the clock reached the next hour): tell each ocean layer.
 const updateSubs = new Set();
 let subscribed = false;
 export function onOceanUpdate(cb) {
   updateSubs.add(cb);
   if (!subscribed) {
     subscribed = true;
-    onLayerUpdate('ocean', () => { metaP = windP = waveP = null; updateSubs.forEach((f) => f()); });
+    onLayerUpdate('ocean', () => { rawP = windP = waveP = null; updateSubs.forEach((f) => f()); });
   }
 }
+const loadRaw = () => rawP ||= get('ocean.json', META_URL).then((r) => ok(r, 'ocean.json').json()).catch((e) => { rawP = null; throw e; });
+// the step nearest the viewer's clock, or null when the build has no steps
+function nearestStep(m) {
+  const steps = Array.isArray(m.steps) ? m.steps.filter((s) => s && /^[\w.-]+$/.test(s.wind) && /^[\w.-]+$/.test(s.waves)) : [];
+  let best = null;
+  for (const s of steps) if (!best || Math.abs(Date.parse(s.valid) - Date.now()) < Math.abs(Date.parse(best.valid) - Date.now())) best = s;
+  return best;
+}
+// ocean.json as the layers read it: the top-level times and spots replaced by the chosen step's
+const view = (m, s) => (!s ? m : { ...m, valid: s.valid, validWaves: s.valid, spots: s.spots || m.spots, step: s,
+  wind: { ...m.wind, forecastHour: s.forecastHour, source: s.windSource || m.wind.source },
+  waves: { ...m.waves, forecastHour: s.forecastHour, source: s.waveSource || m.waves.source } });
+function watchSteps() {
+  if (stepTimer) return;
+  stepTimer = setInterval(() => {
+    if (!rawP || typeof document !== 'undefined' && document.hidden) return;
+    rawP.then((m) => {
+      const s = nearestStep(m);
+      if (s && s.valid !== stepKey) { stepKey = s.valid; windP = waveP = null; updateSubs.forEach((f) => f()); }
+    }).catch(() => {});
+  }, STEP_CHECK_MS);
+}
 export function loadMeta() {
-  return metaP ||= get('ocean.json', META_URL).then((r) => ok(r, 'ocean.json').json()).catch((e) => { metaP = null; throw e; });
+  return loadRaw().then((m) => { const s = nearestStep(m); if (s) { stepKey = s.valid; watchSteps(); } return view(m, s); });
+}
+// One of the chosen step's files, with its meta; if that file cannot be read, the single snapshot file and the
+// top-level meta that describes it.
+async function stepFile(key, single, singleUrl) {
+  const meta = await loadMeta();
+  if (meta.step) {
+    try { const r = await get(meta.step[key], new URL('./data/' + meta.step[key], import.meta.url)); if (r.ok) return [meta, await r.arrayBuffer()]; }
+    catch (e) { /* fall through to the single file */ }
+  }
+  const r = ok(await get(single, singleUrl), single);
+  return [view(await loadRaw(), null), await r.arrayBuffer()];
 }
 // Wind: { meta, nLat, nLon, lat0, step, u: Float32Array, v: Float32Array } (m/s, rows from the south, columns from 0 E)
 export function loadWind() {
-  return windP ||= Promise.all([loadMeta(), get('wind_gfs.bin', WIND_URL).then((r) => ok(r, 'wind_gfs.bin').arrayBuffer())])
+  return windP ||= stepFile('wind', 'wind_gfs.bin', WIND_URL)
     .then(([meta, buf]) => {
       const g = meta.wind.grid, n = g.nLat * g.nLon;
       if (buf.byteLength !== 2 * n) throw new Error('wind file size does not match ocean.json');
@@ -39,7 +76,7 @@ export function loadWind() {
 }
 // Waves: { meta, nLat, nLon, lat0, step, f: { Thgt, Tper, Tdir, shgt, ... } as Float32Array with NaN for no data }
 export function loadWaves() {
-  return waveP ||= Promise.all([loadMeta(), get('waves_ww3.bin', WAVE_URL).then((r) => ok(r, 'waves_ww3.bin').arrayBuffer())])
+  return waveP ||= stepFile('waves', 'waves_ww3.bin', WAVE_URL)
     .then(([meta, buf]) => {
       const w = meta.waves, g = w.grid, n = g.nLat * g.nLon;
       if (buf.byteLength !== w.fields.length * n) throw new Error('wave file size does not match ocean.json');

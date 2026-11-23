@@ -1,36 +1,109 @@
-# Refresh the globe's data layers without anyone's computer: build them on GitHub's runners on a schedule and upload
-# them to Cloudflare R2 (bucket oceany-layers, folder data/). The globe reads data/latest.json from there
-# (pieces/07-globe/data-source.js). Nothing is committed to git; the data files in the repo are only the fallback.
-# Research and play only: not a forecast or warning service.
+# Refresh the globe's data layers without anyone's computer: check the sources on a schedule, build what changed on
+# GitHub's runners, and upload it to Cloudflare R2 (bucket oceany-layers, folder data/). The globe reads
+# data/latest.json from there (pieces/07-globe/data-source.js). Nothing is committed to git; the data files in the repo
+# are only the fallback. Research and play only: not a forecast or warning service.
+#
+# Two jobs. "check" runs scripts/layer_due.py (standard library only, no install): when the published copy is already
+# the one this run expects it sends no request to NOAA at all and ends in seconds, uploading nothing; otherwise one or
+# two HEAD requests. "build" runs only for the layers whose source has something new.
+# Runs are timed to NOAA's release times; each daily-or-faster layer has one retry slot that only asks NOAA again when
+# the first run found the data missing.
 #
 # Needs three repository secrets (Settings > Secrets and variables > Actions): R2_ACCOUNT_ID, R2_ACCESS_KEY_ID,
 # R2_SECRET_ACCESS_KEY (an R2 API token with Object Read & Write on the oceany-layers bucket only).
-# Run by hand: Actions > Refresh globe layers > Run workflow, and name the layers.
+# Run by hand: Actions > Refresh globe layers > Run workflow, and name the layers (they are still checked first).
 name: Refresh globe layers
 
 on:
-  schedule:
-    - cron: '25 4,10,16,22 * * *'   # wind, waves, swell: about 4.5 h after each GFS / GFS-Wave run (00, 06, 12, 18 UTC)
-    - cron: '40 13 * * *'           # daily: snow and sea ice (IMS, posted about a day late), hurricane records (IBTrACS)
-    - cron: '10 2 3 * *'            # monthly: earthquakes since 1970 (USGS ComCat), US tornado records (SPC)
+  schedule:                         # UTC. Minutes are offset so two schedules never start together.
+    - cron: '50 3,9,15,21 * * *'    # ocean (wind, waves, swell): GFS / GFS-Wave hours 0-12 are on NOMADS about 3 h 35 min
+                                    # after 00/06/12/18 UTC (NCEP production status, 30-day average); one run = +3 h to +13 h
+    - cron: '20 4,10,16,22 * * *'   # ocean retry: asks NOAA only if the run above found the files missing
+    - cron: '40 19 * * *'           # snow and sea ice: the day's IMS file (NSIDC lists it at 14:10, time zone not stated)
+    - cron: '40 21 * * *'           # snow retry: asks only if today's file was missing
+    - cron: '52 13 * * *'           # hurricane records (IBTrACS): has the file changed?
+    - cron: '17 2 * * 1'            # earthquakes since 1970 (USGS ComCat), Mondays
+    - cron: '47 2 3 * *'            # US tornado records (SPC), monthly; also keeps the schedule alive
   workflow_dispatch:
     inputs:
       layers:
-        description: 'Layers to build, space-separated: ocean snow hurricanes tornadoes quakes'
+        description: 'Layers to check and build, space-separated: ocean snow hurricanes tornadoes quakes'
         required: true
         default: 'ocean'
 
 permissions:
   contents: read
-  actions: write          # only for the keep-alive step at the end (GitHub pauses schedules in quiet public repos)
 
-concurrency:              # one run at a time, so two runs never write latest.json together
+concurrency:                        # one run at a time, so two runs never write latest.json together
   group: refresh-layers
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  check:
     if: github.repository == 'Secr3tG/oceany'     # forks do not try to upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write                # only for the keep-alive step (GitHub pauses schedules in quiet public repos)
+    outputs:
+      due: ${{ steps.due.outputs.due }}
+      plan: ${{ steps.due.outputs.plan }}
+      extra: ${{ steps.due.outputs.extra }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/layer_due.py
+          sparse-checkout-cone-mode: false
+
+      - name: What is due
+        id: due
+        env:
+          SCHED: ${{ github.event.schedule }}
+          ASKED: ${{ inputs.layers }}
+        run: |
+          case "$SCHED" in
+            '50 3,9,15,21 * * *'|'20 4,10,16,22 * * *') L="ocean" ;;
+            '40 19 * * *'|'40 21 * * *')               L="snow" ;;
+            '52 13 * * *')   L="hurricanes" ;;
+            '17 2 * * 1')    L="quakes" ;;
+            '47 2 3 * *')    L="tornadoes" ;;
+            *)               L="$ASKED" ;;
+          esac
+          for l in $L; do
+            case "$l" in ocean|snow|hurricanes|tornadoes|quakes) ;; *) echo "::error::unknown layer '$l'"; exit 1 ;; esac
+          done
+          curl -fsS --max-time 20 "https://pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev/data/latest.json?t=$(date +%s)" -o latest.json || : > latest.json
+          python3 scripts/layer_due.py --latest latest.json $L > due.json
+          python3 - <<'EOF'
+          import json, os
+          d = json.load(open("due.json"))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write("due=" + " ".join(d["due"]) + "\n")
+              f.write("plan=" + d["plan"].get("ocean", "") + "\n")
+              f.write("extra=" + json.dumps(d["extra"], separators=(",", ":")) + "\n")
+              f.write("failed=" + " ".join(d["failed"]) + "\n")
+          print("due:", d["due"] or "nothing", "| failed checks:", d["failed"] or "none")
+          EOF
+
+      - name: Keep the schedule alive
+        if: github.event.schedule == '47 2 3 * *'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow enable refresh-layers.yml --repo "$GITHUB_REPOSITORY" || true
+
+      - name: Report sources that could not be checked
+        if: steps.due.outputs.failed != ''
+        env:
+          FAILED: ${{ steps.due.outputs.failed }}
+        run: |
+          echo "::error::source not reachable and the published copy is old: $FAILED"
+          exit 1
+
+  build:
+    needs: check
+    if: always() && needs.check.outputs.due != ''
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -45,28 +118,10 @@ jobs:
       - name: Install the two packages the builders use
         run: pip install --disable-pip-version-check numpy==2.0.2 pillow==11.3.0
 
-      - name: Pick the layers for this run
-        id: pick
-        env:
-          SCHED: ${{ github.event.schedule }}
-          ASKED: ${{ inputs.layers }}
-        run: |
-          case "$SCHED" in
-            '25 4,10,16,22 * * *') L="ocean" ;;
-            '40 13 * * *')         L="snow hurricanes" ;;
-            '10 2 3 * *')          L="quakes tornadoes" ;;
-            *)                     L="$ASKED" ;;
-          esac
-          for l in $L; do
-            case "$l" in ocean|snow|hurricanes|tornadoes|quakes) ;; *) echo "::error::unknown layer '$l'"; exit 1 ;; esac
-          done
-          echo "layers=$L" >> "$GITHUB_OUTPUT"
-          echo "Layers: $L"
-
       # The earthquake builder keeps one CSV per year in raw/ and only downloads the current year again when the
-      # earlier ones are there; the cache saves about 57 requests to USGS each month.
+      # earlier ones are there; the cache saves about 57 requests to USGS each week.
       - name: Restore the earthquake download cache
-        if: contains(steps.pick.outputs.layers, 'quakes')
+        if: contains(needs.check.outputs.due, 'quakes')
         uses: actions/cache@v4
         with:
           path: pieces/12-quakes/raw
@@ -76,11 +131,12 @@ jobs:
       - name: Build
         id: build
         env:
-          LAYERS: ${{ steps.pick.outputs.layers }}
+          LAYERS: ${{ needs.check.outputs.due }}
+          PLAN: ${{ needs.check.outputs.plan }}
         run: |
           build() {
             case "$1" in
-              ocean)      python pieces/11-ocean/build_ocean.py ;;
+              ocean)      python pieces/11-ocean/build_ocean.py --run "$PLAN" ;;
               snow)       python pieces/10-sky/build_snow.py ;;
               hurricanes) python pieces/08-storms/build_hurricanes.py && python pieces/08-storms/build_hurricane_radii.py ;;
               tornadoes)  python pieces/08-storms/build_tornadoes.py ;;
@@ -103,13 +159,8 @@ jobs:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           OK: ${{ steps.build.outputs.ok }}
-        run: python scripts/publish_layers.py $OK --dest r2
-
-      - name: Keep the schedule alive
-        if: github.event.schedule == '10 2 3 * *'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow enable refresh-layers.yml --repo "$GITHUB_REPOSITORY" || true
+          EXTRA: ${{ needs.check.outputs.extra }}
+        run: python scripts/publish_layers.py $OK --extra "$EXTRA" --dest r2
 
       - name: Report failed builds
         if: steps.build.outputs.failed != ''

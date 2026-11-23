@@ -4,6 +4,7 @@
 Run after the layer's build script, from the repo root:
     python3 scripts/publish_layers.py ocean snow --dest r2              (needs the aws CLI and the R2_* variables below)
     python3 scripts/publish_layers.py ocean --dest /some/folder          (test: same layout, written to a folder)
+    --extra '<json>'   per-layer fields from scripts/layer_due.py (the source file's Last-Modified time)
 
 Layout in the bucket (the globe reads it through pieces/07-globe/data-source.js):
     data/latest.json                       short cache; per layer: base folder, files, data time, model run, built-at time
@@ -39,9 +40,13 @@ def iso(s):
 
 # Each layer: its data folder, the files the globe fetches, and how to read its times from its own JSON.
 LAYERS = {
+    # ocean: plus one wind and one wave file per forecast hour, as listed in ocean.json's steps
     "ocean": dict(dir="pieces/11-ocean/data", files=["ocean.json", "wind_gfs.bin", "waves_ww3.bin"],
+                  more=lambda j: [f for s in j.get("steps") or [] for f in (s["wind"], s["waves"])],
                   times=lambda j: dict(dataTime=iso(j.get("valid")), modelRun=iso((j.get("wind") or {}).get("run")),
-                                       builtAt=iso(j.get("built")))),
+                                       builtAt=iso(j.get("built")),
+                                       stepsFrom=iso(((j.get("steps") or [{}])[0]).get("valid")),
+                                       stepsTo=iso(((j.get("steps") or [{}])[-1]).get("valid")))),
     "snow": dict(dir="pieces/10-sky/data", files=["snow_ims24.json", "snow_ims24.bin"],
                  times=lambda j: dict(dataTime=iso(j.get("valid")), builtAt=iso(j.get("built")))),
     "hurricanes": dict(dir="pieces/08-storms/data", files=["tracks.json", "tracks.bin", "density_points.bin", "track_radii.bin"],
@@ -97,7 +102,11 @@ def digest(paths):
 
 def main(argv):
     if "--dest" not in argv: sys.exit(__doc__)
-    i = argv.index("--dest"); dest_arg = argv[i + 1]; names = argv[:i] + argv[i + 2:]
+    i = argv.index("--dest"); dest_arg = argv[i + 1]; argv = argv[:i] + argv[i + 2:]
+    extra = {}                                 # --extra '{"hurricanes": {"sourceModified": ...}}' from layer_due.py
+    if "--extra" in argv:
+        i = argv.index("--extra"); extra = json.loads(argv[i + 1] or "{}"); argv = argv[:i] + argv[i + 2:]
+    names = argv
     bad = [n for n in names if n not in LAYERS]
     if not names or bad: sys.exit(f"layers to publish: {', '.join(LAYERS)} (unknown: {bad})")
     dest = R2() if dest_arg == "r2" else Folder(dest_arg)
@@ -105,30 +114,36 @@ def main(argv):
     raw = dest.read("data/latest.json")
     latest = json.loads(raw) if raw else {"schema": 1, "layers": {}}
     now = datetime.datetime.now(datetime.timezone.utc)
-    changed = []
+    changed, touched = [], []
     for name in names:
         L = LAYERS[name]
-        paths = [os.path.join(ROOT, L["dir"], f) for f in L["files"]]
+        first = os.path.join(ROOT, L["dir"], L["files"][0])
+        meta = json.load(open(first))                          # the layer's own JSON comes first; it must parse
+        files = L["files"] + (L["more"](meta) if "more" in L else [])
+        paths = [os.path.join(ROOT, L["dir"], f) for f in files]
         missing = [p for p in paths if not os.path.exists(p) or os.path.getsize(p) == 0]
         if missing: sys.exit(f"{name}: missing or empty {missing}")
-        meta = json.load(open(paths[0]))                       # the layer's own JSON comes first; it must parse
         sha = digest([p for p in paths if not p.endswith(".json")])   # the data itself; the JSON carries build times
         old = latest["layers"].get(name)
         if old and old.get("sha256") == sha:
+            src = (extra.get(name) or {}).get("sourceModified")
+            if src and src != old.get("sourceModified"):   # remember the source was checked, so it is not rebuilt again
+                old["sourceModified"] = src; touched.append(name)
             print(f"{name}: unchanged since {old.get('builtAt')}, nothing uploaded"); continue
         stamp = now.strftime("%Y%m%dT%H%M%SZ")
         base = f"data/{name}/{stamp}/"
-        for f, p in zip(L["files"], paths):
+        for f, p in zip(files, paths):
             dest.put(base + f, p, LONG_CACHE)
-        entry = {"base": base, "files": L["files"], "dataTime": None, "modelRun": None, "builtAt": None}
+        entry = {"base": base, "files": files, "dataTime": None, "modelRun": None, "builtAt": None}
         entry.update({k: v for k, v in L["times"](meta).items() if v})
+        entry.update({k: v for k, v in (extra.get(name) or {}).items() if k in ("dataTime", "sourceModified") and v})
         entry["builtAt"] = entry["builtAt"] or now.strftime("%Y-%m-%dT%H:%M:%SZ")
         entry["publishedAt"] = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         entry["sha256"] = sha
         latest["layers"][name] = entry
         changed.append(name)
         print(f"{name}: uploaded {len(paths)} files to {base} (data time {entry['dataTime']})")
-    if not changed: return
+    if not changed and not touched: return
     latest["schema"] = 1
     latest["updated"] = now.strftime("%Y-%m-%dT%H:%M:%SZ")
     latest["note"] = "Oceany globe layers. Research and play only: not a forecast or warning service."

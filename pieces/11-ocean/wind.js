@@ -1,5 +1,5 @@
 // 10 m wind for the Oceany globe, over sea and land, as dots that drift along the flow (a flow visualisation: the dots
-// are tracers, not objects). Data: NOAA NCEP GFS, 0.5 degree, from NOMADS, snapshot built by build_ocean.py (see SOURCES.md).
+// are tracers, not objects). Data: NOAA NCEP GFS (0.25 degree file, every 2nd point), from NOMADS, snapshot built by build_ocean.py (see SOURCES.md).
 //
 //   const layer = await createLayer({ THREE, radius, makeDotMaterial, palette });   layer.update(t) every frame
 //   layer.label / .details / .status, layer.setDim(k), layer.setPalette(name, palette)
@@ -146,8 +146,8 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
     const m = meta && meta.wind;
     pts.label = m ? `Wind at 10 m: GFS, valid ${fmtTime(meta.valid)}` : 'Wind at 10 m: NOAA GFS (model)';
     pts.details = `${SAFETY} Model output, not measurement. ` +
-      (m ? `Model: ${m.model}. Run: ${fmtRun(m.run)}. Valid: ${fmtTime(meta.valid)}. ` : 'Model: NOAA NCEP GFS, 0.5 degree. ') +
-      `Wind 10 m above the ground or sea, on the model's 0.5 degree grid (about 55 km), smoothly interpolated between grid points. ` +
+      (m ? `Model: ${m.model}. Run: ${fmtRun(m.run)}. Valid: ${fmtTime(meta.valid)}. ` : 'Model: NOAA NCEP GFS. ') +
+      `Wind 10 m above the ground or sea, on a 0.5 degree grid (every 2nd point of the model's 0.25 degree grid, about 55 km), smoothly interpolated between grid points. ` +
       `The moving dots are tracers, not objects: a flow picture. Each is born at a random place, drifts with the wind for a few seconds and fades. ` +
       `Speed on screen is the real wind speed with time sped up ${TIME_SCALE.toLocaleString('en-GB')} times (1 s = 6 h of wind). ` +
       `The field is frozen at the valid time, so a track shows the wind of that moment, not where the air really went. ` +
