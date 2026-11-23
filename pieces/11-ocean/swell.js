@@ -22,7 +22,7 @@
 // direction by a median 23 degrees, a quarter by over 47, because swell turns and changes period. Trains are born square
 // to the local direction, so they are right by construction.)
 
-import { loadWaves, loadMeta, fmtTime, fmtRun, staleNote, ageHours, STALE_HOURS, SAFETY, rampColours, RAMP_GLSL, LIMB_GLSL, compass } from './ocean_data.js';
+import { loadWaves, loadMeta, onOceanUpdate, fmtTime, fmtRun, staleNote, ageHours, STALE_HOURS, SAFETY, rampColours, RAMP_GLSL, LIMB_GLSL, compass } from './ocean_data.js';
 
 const EXAG = 2000;            // horizontal exaggeration of the front spacing
 const FREQ = 0.15;            // a train moves one front spacing every ~7 s on screen (slow, against the fast wind streaks)
@@ -164,7 +164,7 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
     const t = new THREE.DataTexture(data, nLon, nLat, THREE.RGBAFormat);
     t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping;
     t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true;
-    mat.uniforms.uSwell.value = t; tex0.dispose();
+    const old = mat.uniforms.uSwell.value; mat.uniforms.uSwell.value = t; old.dispose();
     mat.uniforms.uLat0.value = w.lat0; mat.uniforms.uNLat.value = nLat; mat.uniforms.uStep.value = w.step;
     stats = { cells, groundShare: ground / Math.max(1, cells) };
   }
@@ -220,6 +220,7 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
           (hits.length > 1 ? ` Also ${hits.slice(1).map((h) => h.name).join(', ')}.` : '') };
     } catch (e) { return { active: false, where: null, note: '' }; }
   };
+  onOceanUpdate(() => { if (state === 'ok' || state === 'failed') load(); });   // newer build while open (hosted only)
   pts.userData.layer = { get state() { return state; }, get stats() { return stats; }, load, mat };
   text();
   return pts;

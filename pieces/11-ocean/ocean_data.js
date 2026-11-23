@@ -1,6 +1,9 @@
 // Shared loader for the three ocean layers (wind.js, waves.js, swell.js): reads the snapshot that build_ocean.py writes
 // into data/ once, and gives each layer the grids plus the shared wording (model, run, valid time, staleness).
-// Plumbing: the layers call loadOcean() the first time they are shown; nothing is fetched before that.
+// Plumbing: the layers call loadWind()/loadWaves() the first time they are shown; nothing is fetched before that.
+// Hosted pages read the newest build from Cloudflare R2 (../07-globe/data-source.js, layer 'ocean', refreshed every
+// 6 h by the refresh-layers workflow); the files in data/ are the fallback and what localhost uses.
+import { layerFile, onLayerUpdate, ageNote } from '../07-globe/data-source.js';
 
 const META_URL = new URL('./data/ocean.json', import.meta.url);
 const WIND_URL = new URL('./data/wind_gfs.bin', import.meta.url);
@@ -9,12 +12,23 @@ export const STALE_HOURS = 6;     // the snapshot shows one moment; further than
 
 let metaP = null, windP = null, waveP = null;
 const ok = (r, what) => { if (!r.ok) throw new Error(what + ' HTTP ' + r.status); return r; };
+const get = async (file, local) => fetch(await layerFile('ocean', file, local), { cache: 'no-cache' });
+// A newer build appeared while the page is open: forget the old one and tell each ocean layer, which reloads.
+const updateSubs = new Set();
+let subscribed = false;
+export function onOceanUpdate(cb) {
+  updateSubs.add(cb);
+  if (!subscribed) {
+    subscribed = true;
+    onLayerUpdate('ocean', () => { metaP = windP = waveP = null; updateSubs.forEach((f) => f()); });
+  }
+}
 export function loadMeta() {
-  return metaP ||= fetch(META_URL, { cache: 'no-cache' }).then((r) => ok(r, 'ocean.json').json()).catch((e) => { metaP = null; throw e; });
+  return metaP ||= get('ocean.json', META_URL).then((r) => ok(r, 'ocean.json').json()).catch((e) => { metaP = null; throw e; });
 }
 // Wind: { meta, nLat, nLon, lat0, step, u: Float32Array, v: Float32Array } (m/s, rows from the south, columns from 0 E)
 export function loadWind() {
-  return windP ||= Promise.all([loadMeta(), fetch(WIND_URL, { cache: 'no-cache' }).then((r) => ok(r, 'wind_gfs.bin').arrayBuffer())])
+  return windP ||= Promise.all([loadMeta(), get('wind_gfs.bin', WIND_URL).then((r) => ok(r, 'wind_gfs.bin').arrayBuffer())])
     .then(([meta, buf]) => {
       const g = meta.wind.grid, n = g.nLat * g.nLon;
       if (buf.byteLength !== 2 * n) throw new Error('wind file size does not match ocean.json');
@@ -25,7 +39,7 @@ export function loadWind() {
 }
 // Waves: { meta, nLat, nLon, lat0, step, f: { Thgt, Tper, Tdir, shgt, ... } as Float32Array with NaN for no data }
 export function loadWaves() {
-  return waveP ||= Promise.all([loadMeta(), fetch(WAVE_URL, { cache: 'no-cache' }).then((r) => ok(r, 'waves_ww3.bin').arrayBuffer())])
+  return waveP ||= Promise.all([loadMeta(), get('waves_ww3.bin', WAVE_URL).then((r) => ok(r, 'waves_ww3.bin').arrayBuffer())])
     .then(([meta, buf]) => {
       const w = meta.waves, g = w.grid, n = g.nLat * g.nLon;
       if (buf.byteLength !== w.fields.length * n) throw new Error('wave file size does not match ocean.json');
@@ -50,8 +64,7 @@ export const fmtRun = (s) => { const d = new Date(String(s).replace(' UTC', '').
 export const ageHours = (iso) => (Date.now() - new Date(iso).getTime()) / 36e5;
 export const staleNote = (iso) => {
   const h = ageHours(iso);
-  if (Math.abs(h) <= STALE_HOURS) return '';
-  return h > 0 ? ` Stale: valid ${Math.round(h)} h ago; re-run pieces/11-ocean/build_ocean.py.` : ` Valid ${Math.round(-h)} h from now.`;
+  return h < -STALE_HOURS ? ` Valid ${Math.round(-h)} h from now.` : ageNote(iso, STALE_HOURS);
 };
 export const SAFETY = 'Not an official product. Do not use for safety decisions.';
 const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];

@@ -12,6 +12,7 @@
 // Heights: IMS has none; each dot is lifted to the base globe's land height under it (ETOPO1, same exaggeration as the land dots).
 // Static: nothing moves, so update() does no work after loading.
 
+import { layerFile, onLayerUpdate } from '../07-globe/data-source.js';   // hosted: newest build on R2; else data/
 const META_URL = new URL('./data/snow_ims24.json', import.meta.url);
 const BIN_URL = new URL('./data/snow_ims24.bin', import.meta.url);
 // the base globe's own dot file (read only): its ETOPO1 heights, so snow sits on the same lifted, exaggerated land surface
@@ -19,7 +20,7 @@ const EARTH_META_URL = new URL('../07-globe/assets/earth_dots.json', import.meta
 const EARTH_BIN_URL = new URL('../07-globe/assets/earth_dots.bin', import.meta.url);
 const LIFT_R = 0.0002;          // a fixed ~1.3 km above the drawn land (not exaggerated), so snow stays on top of the land dots
 const CELL_KM = 24, EARTH_KM = 6371, D2R = Math.PI / 180;
-const STALE_DAYS = 3;           // analysis older than this: say "stale, re-run build_snow.py"
+const STALE_DAYS = 3;           // analysis older than this: add a calm "Data is N days old" to the status
 // Snow lies on the relief instead of hiding it: see-through (SNOW_OPACITY) and hillshaded per dot from the base globe's
 // heights (same light as the globe: north-west, 45 deg up; slopes exaggerated SHADE_ZF x like the globe's hillshade),
 // so ranges under snow (Alps, Tibet, Rockies, Scandinavia) keep their light and shadow sides and the land tint shows
@@ -269,8 +270,8 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
     state = 'loading'; text();
     try {
       const [m, buf, heightAt] = await Promise.all([
-        fetch(META_URL, { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error('metadata HTTP ' + r.status); return r.json(); }),
-        fetch(BIN_URL, { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error('data HTTP ' + r.status); return r.arrayBuffer(); }),
+        fetch(await layerFile('snow', 'snow_ims24.json', META_URL), { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error('metadata HTTP ' + r.status); return r.json(); }),
+        fetch(await layerFile('snow', 'snow_ims24.bin', BIN_URL), { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error('data HTTP ' + r.status); return r.arrayBuffer(); }),
         loadHeights().catch(() => null),
       ]);
       heightsOk = !!heightAt; heightAtFn = heightAt;
@@ -296,7 +297,7 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
     else {
       const ageDays = (Date.now() - new Date(meta.valid.slice(0, 10) + 'T00:00:00Z').getTime()) / 864e5;
       st = `Snapshot: ${counts.snow.toLocaleString('en-GB')} snow cells, ${counts.ice.toLocaleString('en-GB')} sea-ice cells.` +
-        (ageDays > STALE_DAYS ? ` Stale: the analysis is ${Math.floor(ageDays)} days old; re-run build_snow.py.` : '');
+        (ageDays > STALE_DAYS ? ` Data is ${Math.floor(ageDays)} days old.` : '');
     }
     group.status = st;
     group.userData.onChange?.(group);
@@ -304,6 +305,7 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
 
   // load on first show only; per frame only the close-zone check (a rebuild at most every CLOSE_REBUILD_MS)
   group.update = (t, camera) => { if (!group.visible) return; if (state === 'waiting') load(); else if (state === 'ok') closeFrame(camera); };
+  onLayerUpdate('snow', () => { if (state === 'ok' || state === 'failed') load(); });   // newer analysis while open (hosted only)
   group.setDim = setDim;
   group.setPalette = setPalette;
   group.userData = { snow, ice, get meta() { return meta; }, get counts() { return counts; }, get state() { return state; }, load, close, get zone() { return zoneBuilt; } };

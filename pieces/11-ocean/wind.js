@@ -17,7 +17,7 @@
 // Regional zoom: a second set of NEAR_TRACERS is drawn only around the point under the camera when it is close (as swell's
 // near trains: birth places do not depend on the camera, so nothing slides when the view moves).
 
-import { loadWind, fmtTime, fmtRun, staleNote, SAFETY, rampColours, RAMP_GLSL, LIMB_GLSL } from './ocean_data.js';
+import { loadWind, onOceanUpdate, fmtTime, fmtRun, staleNote, SAFETY, rampColours, RAMP_GLSL, LIMB_GLSL } from './ocean_data.js';
 
 const TRACERS = 12000;         // tracers on the whole globe (each is TAIL dots)
 const NEAR_TRACERS = 60000;    // extra tracers drawn only near the view centre when the camera is close (regional zoom)
@@ -132,7 +132,7 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
     const t = new THREE.DataTexture(data, nLon, nLat, THREE.RGBAFormat);
     t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping;
     t.magFilter = t.minFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true;
-    mat.uniforms.uWind.value = t; tex.dispose();
+    const old = mat.uniforms.uWind.value; mat.uniforms.uWind.value = t; old.dispose();
   }
 
   async function load() {
@@ -170,6 +170,7 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
   };
   pts.setDim = (k) => { mat.uniforms.uOpacity.value = Math.max(0, Math.min(1, k)); };
   pts.setPalette = setPalette;
+  onOceanUpdate(() => { if (state === 'ok' || state === 'failed') load(); });   // newer build while open (hosted only)
   pts.userData.layer = { get state() { return state; }, load, mat };
   text();
   return pts;

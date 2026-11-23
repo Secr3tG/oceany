@@ -27,6 +27,7 @@
 // GPU: one Points buffer of MAX_STORMS x DOTS dots; each dot stores only its slot and random numbers. The vertex shader
 // builds the storm from per-slot uniforms. Per frame JS only sets those uniforms for the few active storms.
 
+import { layerFile } from '../07-globe/data-source.js';   // hosted: newest build on R2; else the files in data/
 import { toXYZ, dotMaterial, densityPoints, makeRamp, dimMaterial, D2R } from './dots_common.js';
 
 const SPACING_DEG = 1.0;        // even dot spacing along the history tracks (about 110 km)
@@ -170,7 +171,7 @@ const VERT_TRACKS = /* glsl */`  // every recorded track since 1980, coloured by
 
 export async function createLayer({ THREE, radius = 1.0, makeDotMaterial, palette } = {}) {
   const url = (f) => new URL('./data/' + f, import.meta.url);
-  const get = (f, kind) => fetch(url(f)).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r[kind](); });
+  const get = async (f, kind) => fetch(await layerFile('hurricanes', f, url(f))).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r[kind](); });
   const [meta, buf, dbuf, rbuf] = await Promise.all([get('tracks.json', 'json'), get('tracks.bin', 'arrayBuffer'),
     get('density_points.bin', 'arrayBuffer'), get('track_radii.bin', 'arrayBuffer').catch(() => null)]);
   const N = meta.meta.points, M = meta.meta.densityPoints, storms = meta.storms;

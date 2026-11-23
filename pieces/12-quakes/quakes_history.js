@@ -13,6 +13,7 @@
 // Limits: the catalogue is less complete before the global network grew (1970s), and depth is often fixed at 10 or 33 km
 // by the location method when it is poorly known. Dots sit on the surface; depth is shown by colour only.
 
+import { layerFile } from '../07-globe/data-source.js';   // hosted: newest build on R2; else the files in data/
 import { LIFT, toXYZ, DEPTH_GLSL, DOT_FRAG, depthUniforms, setDepthUniforms, paletteName, borrowScale } from './quakes_common.js';
 
 const DOT_SIZE = 0.0030;     // world units at M5 (the Earth's dots are 0.0058)
@@ -36,7 +37,7 @@ const VERT = /* glsl */`
 
 export async function createLayer({ THREE, radius = 1.0, makeDotMaterial, palette } = {}) {
   const url = (f) => new URL(f, import.meta.url);
-  const get = (f, kind) => fetch(url(f)).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r[kind](); });
+  const get = async (f, kind) => fetch(await layerFile('quakes', f.replace('./data/', ''), url(f))).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r[kind](); });
   const [meta, buf] = await Promise.all([get('./data/quakes_m5.json', 'json'), get('./data/quakes_m5.bin', 'arrayBuffer')]);
   const N = meta.count;
   const lat = new Int16Array(buf, 0, N), lon = new Int16Array(buf, 2 * N, N), dep = new Uint16Array(buf, 4 * N, N);

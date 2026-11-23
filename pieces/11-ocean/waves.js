@@ -6,7 +6,7 @@
 //   const layer = await createLayer({ THREE, radius, makeDotMaterial, palette });   layer.update(t) every frame
 //   layer.label / .details / .status, layer.setDim(k), layer.setPalette(name, palette)
 
-import { loadWaves, fmtTime, fmtRun, staleNote, SAFETY, rampColours } from './ocean_data.js';
+import { loadWaves, onOceanUpdate, fmtTime, fmtRun, staleNote, SAFETY, rampColours } from './ocean_data.js';
 
 const D2R = Math.PI / 180;
 const LIFT = 0.0012;          // radii above the base sphere (the ocean is at the base radius), so the field sits on the sea dots
@@ -105,6 +105,7 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
   pts.onBeforeRender = (r, s, camera) => { mat.uniforms.uOpacity.value = OPACITY * dim * gain(camera); };
   pts.setDim = (k) => { dim = Math.max(0, Math.min(1, k)); mat.uniforms.uOpacity.value = OPACITY * dim; };
   pts.setPalette = (name, p) => { pal = p || pal; colour(); };
+  onOceanUpdate(() => { if (state === 'ok' || state === 'failed') load(); });   // newer build while open (hosted only)
   pts.userData.layer = { get state() { return state; }, load };
   text();
   return pts;

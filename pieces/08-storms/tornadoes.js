@@ -16,6 +16,7 @@
 // Per-dot attributes on tracks: aYear, aStorm (tornado index), aPhase (0..1 along the path), aRating (0-5, 6 unknown).
 // Dots are ordered by year (userData.setYear(y) limits them to a year by draw range); geometry is never rebuilt.
 
+import { layerFile } from '../07-globe/data-source.js';   // hosted: newest build on R2; else the files in data/
 import { toXYZ, dotMaterial, densityPoints, makeRamp, dimMaterial, D2R } from './dots_common.js';
 
 const mixC = (a, b, f) => [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
@@ -31,7 +32,7 @@ export async function createLayer({ THREE, radius = 1.0, makeDotMaterial, palett
   const pal = palette || { shallow: [0.35, 1, 0.95], mid: [0.1, 0.5, 0.95], deep: [0.03, 0.08, 0.45] };
   let RATING_COLORS = ratingColors(pal);
   const url = (f) => new URL('./data/' + f, import.meta.url);
-  const get = (f, kind) => fetch(url(f)).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r[kind](); });
+  const get = async (f, kind) => fetch(await layerFile('tornadoes', f, url(f))).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r[kind](); });
   const [meta, buf, dbuf] = await Promise.all([get('tornado_tracks.json', 'json'), get('tornado_tracks.bin', 'arrayBuffer'), get('tornado_density_points.bin', 'arrayBuffer')]);
   const N = meta.tornadoes, M = meta.density.points;
   const slat = new Int16Array(buf, 0, N), slon = new Int16Array(buf, 2 * N, N);
