@@ -464,6 +464,7 @@ function glideK(alt) {
   return smooth(Math.log(alt / a0) / Math.log(a1 / a0));
 }
 addEventListener('gesturestart', e => e.preventDefault());   // Safari's own pinch-zoom of the page
+for (const t of ['gesturechange', 'gestureend']) addEventListener(t, e => e.preventDefault(), { passive: false });   // 2026-11-23 night: the rest of Safari's gesture too
 const zRay = new THREE.Raycaster(), zSphere = new THREE.Sphere(new THREE.Vector3(), RADIUS);
 const zHit0 = new THREE.Vector3(), zHit1 = new THREE.Vector3(), zQ = new THREE.Quaternion();
 // Zoom towards the point under the cursor (wheel / pinch): the ground point that was under the cursor when the wheel
@@ -1022,22 +1023,46 @@ const endDrag = e => {
 };
 canvas.addEventListener('pointermove', () => { if (drag && Math.abs(view.n.y) > Math.sin(70 * D2R)) drag.polar = true; });
 // Touch (pointer events with pointerType 'touch' only, so mouse, pen and trackpad keep their own paths):
-// one finger drags (above). Two fingers: the gesture is read once they have moved TOUCH_DECIDE css px together, then kept:
-//  - tilt: both fingers move up or down together (spacing and angle nearly unchanged) → camera tilt, like a right-drag;
-//  - twist: the fingers turn around each other with their spacing nearly unchanged → heading only (deliberate);
-//  - pinch: anything else → zoom only, toward the fingers' midpoint (the ground under it stays under it and follows it).
-// UX 2026-11-23 (first-visitor feedback: "with two fingers the angles keep shifting"): one gesture per touch, decided
-// once and kept; a pinch never turns or tilts the camera. Same askAlt path as the wheel (a pinch past the limit over an
-// unlocked spot only makes the Open button glow). Lifting one finger hands the
-// drag to the finger left down, so the view does not jump.
+// one finger drags (above). Two fingers, the maps way: one gesture per touch, read from how the pair has moved since the
+// second finger came down, then kept until the fingers lift (touchKind):
+//  - tilt: both fingers move up or down together → camera tilt, like a right-drag (up tilts toward the horizon);
+//  - twist: the fingers turn around each other → heading only (the ground turns with the fingers);
+//  - pinch: the spacing changes → zoom only, toward the fingers' midpoint (the ground under it stays under it).
+// UX 2026-11-23 (first-visitor feedback: "with two fingers the angles keep shifting"): a pinch never turns or tilts the
+// camera, a twist never zooms, a tilt never zooms or turns. Same askAlt path as the wheel (a pinch past the limit over an
+// unlocked spot only makes the Open button glow). Lifting one finger hands the drag to the finger left down.
+// 2026-11-23 (night, touch rotate and tilt; Benn on his iPhone: "can't rotate the view on the phone, only zoom"): the
+// old rule wanted a turn 2.5x the spacing change and a vertical move 2.5x the spread, so real twists and two-finger drags
+// almost always locked to pinch. Now the three moves are compared in the same unit, css px over the decision window:
+//   spacing change |Δd|, the arc each finger turned through |Δangle|·d/2, and the pair's common vertical move (counted
+//   only when both fingers move vertically the same way). After TOUCH_DECIDE px of movement (or TOUCH_TURN of turn) the
+//   one that leads by TOUCH_MARGIN wins; a close call waits for more movement, up to TOUCH_LATE px, then the larger one
+//   wins (spacing on a tie). The gesture that wins takes up the movement made while it was being read, so nothing is lost.
 const touches = new Map(); let pinch = null, touchMulti = false;
-const TOUCH_DECIDE = 14;
+const TOUCH_DECIDE = 12, TOUCH_LATE = 28, TOUCH_TURN = 10 * D2R, TOUCH_MARGIN = 1.3;
 const pairOf = () => { const [a, b] = [...touches.values()]; return { d: Math.hypot(a.x - b.x, a.y - b.y), ang: Math.atan2(b.y - a.y, b.x - a.x), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; };
+const pinchStart = () => { const p = pairOf(); return { ...p, start: p, f0: [...touches.values()].map(t => ({ ...t })), kind: null }; };
+function touchKind(P, p) {                                // null = keep reading
+  const s0 = P.start, dd = Math.abs(p.d - s0.d);
+  let da = p.ang - s0.ang; da = Math.abs(Math.atan2(Math.sin(da), Math.cos(da)));
+  const arc = da * s0.d / 2, mx = p.mx - s0.mx, my = p.my - s0.my;
+  const [a1, b1] = [...touches.values()], ya = a1.y - P.f0[0].y, yb = b1.y - P.f0[1].y;
+  const together = ya * yb > 0 && Math.min(Math.abs(ya), Math.abs(yb)) > 0.35 * Math.max(Math.abs(ya), Math.abs(yb));
+  const vert = together && Math.abs(my) > 1.2 * Math.abs(mx) ? Math.abs(my) : 0;
+  const moved = Math.max(dd, arc, Math.hypot(mx, my));
+  if (moved < TOUCH_DECIDE && da < TOUCH_TURN) return null;
+  const top = Math.max(dd, arc, vert);
+  if (vert === top && vert >= TOUCH_MARGIN * Math.max(dd, arc)) return 'tilt';
+  if (arc === top && arc >= 6 && (arc >= TOUCH_MARGIN * Math.max(dd, vert) || (da >= TOUCH_TURN && arc >= dd))) return 'twist';
+  if (dd === top && dd >= TOUCH_MARGIN * Math.max(arc, vert)) return 'pinch';
+  if (moved < TOUCH_LATE) return null;
+  return vert > Math.max(dd, arc) ? 'tilt' : arc > dd ? 'twist' : 'pinch';   // late: the larger one (a two-finger slide with no spacing/turn reads as pinch: the ground follows the midpoint)
+}
 canvas.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'touch') return;
   if (!touches.size) touchMulti = false;
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-  if (touches.size === 2) { drag = null; touchMulti = true; down = null; const p = pairOf(); pinch = { ...p, start: p, kind: null }; zoom.cursor = null; }
+  if (touches.size === 2) { drag = null; touchMulti = true; down = null; pinch = pinchStart(); zoom.cursor = null; }
   else if (touches.size > 2) pinch = null;            // three fingers: nothing (lift back to two to carry on)
 });
 canvas.addEventListener('pointermove', e => {
@@ -1045,20 +1070,15 @@ canvas.addEventListener('pointermove', e => {
   touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (!pinch || touches.size !== 2 || flight) return;
   const p = pairOf(); if (p.d < 1 || pinch.d < 1) return;
-  let dAng = p.ang - pinch.ang; dAng = Math.atan2(Math.sin(dAng), Math.cos(dAng));
-  const dy = p.my - pinch.my;
   if (!pinch.kind) {
-    const s0 = pinch.start, my = p.my - s0.my, mx = p.mx - s0.mx, dd = p.d - s0.d;
-    let da = p.ang - s0.ang; da = Math.atan2(Math.sin(da), Math.cos(da));
-    const spread = Math.abs(dd) + Math.abs(da) * s0.d / 2;     // css px the fingers moved apart / around each other
-    const both = Math.hypot(mx, my);
-    if (Math.max(spread, both) < TOUCH_DECIDE && Math.abs(da) < 6 * D2R) { pinch.ang = p.ang; pinch.my = p.my; return; }   // not decided yet: track only
-    const turn = Math.abs(da) * s0.d / 2;                      // css px the fingers moved around each other
-    pinch.kind = Math.abs(my) > 2.5 * spread && Math.abs(my) > 1.5 * Math.abs(mx) ? 'tilt'
-      : turn > 2.5 * Math.abs(dd) && Math.abs(da) > 5 * D2R ? 'twist' : 'pinch';
+    pinch.kind = touchKind(pinch, p);
+    if (!pinch.kind) return;                             // not decided yet: nothing moves (pinch.d/ang/mx/my stay at the start)
+    if (window.__globe) window.__globe.touchKind = pinch.kind;   // test hook (review/ux/phone3)
     // UX 2026-11-23: a pinch centred within 60 px of a spot zooms to the spot itself (as the wheel does), so it stays put
     if (pinch.kind === 'pinch') { zoom.cursor = null; zoom.spot = null; STICK.r = null; wheelAnchor({ clientX: p.mx, clientY: p.my, target: null }, 60); }
   }
+  let dAng = p.ang - pinch.ang; dAng = Math.atan2(Math.sin(dAng), Math.cos(dAng));
+  const dy = p.my - pinch.my;
   if (pinch.kind === 'twist') {                          // heading only (the ground turns with the fingers)
     if (follow) releaseFollow();
     northEase = false; view.heading -= dAng;
@@ -1077,6 +1097,7 @@ canvas.addEventListener('pointermove', e => {
 const endTouch = e => {
   if (!touches.delete(e.pointerId)) return;
   if (touches.size < 2) pinch = null;
+  else if (touches.size === 2) pinch = pinchStart();     // back from three fingers to two: read a new gesture
   if (touches.size === 1 && touchMulti && !flight) {     // back to one finger: it carries on dragging from where it is
     const [[id, t]] = [...touches.entries()];
     drag = { x: t.x, y: t.y, id, tilt: false, moved: true };

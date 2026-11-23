@@ -14,14 +14,14 @@
 //  - everything else same-origin the viewer fetches (big lookup T*.bin files, 14 MB slice .bin files) is kept the first
 //    time it is fetched online, so a spot works offline for the parts that were used.
 //  - same-origin: network first (a normal reload is fresh), cached copy when the network is gone; tiles: cache first.
-const SHELL = 'reefviewer-shell-5', TILES = 'reefviewer-tiles-3', META = 'reefviewer-meta-1';
+const SHELL = 'reefviewer-shell-6', TILES = 'reefviewer-tiles-3', META = 'reefviewer-meta-1';
 // Oceany's own tiles, same rule as terrain-source.js OWN_BASE: Cloudflare R2 when hosted, tiles-build/tiles/ on this Mac.
 const IS_LOCAL = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
 const OWN_TILES = IS_LOCAL ? new URL('../../07-globe/tiles-build/tiles/', self.location.href).href
                            : 'https://pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev/terrain/';
 const tileUrl = (z, x, y) => `${OWN_TILES}${z}/${x}/${y}.png`;
 const LIVE = ['porto_batel', 'pipeline', 'supertubos', 'guethary', 'hossegor'];
-const SHELL_FILES = ['./', './index.html', './style.css?v=z9', './main.js?v=z9', './play.js?v=c5c', './live.js?v=n2', './tutorial.js?v=c3g',
+const SHELL_FILES = ['./', './index.html', './style.css?v=z9', './main.js?v=z10', './play.js?v=c5c', './live.js?v=n2', './tutorial.js?v=c3g',
   './offline.js?v=o1', './live_core.js?v=n2', './live_lookup.js?v=l4', './swell_model.js?v=c3', './surround.js?v=s5',
   './vendor/three.module.js', './vendor/three.core.js', './vendor/addons/controls/OrbitControls.js',
   '../../07-globe/terrarium.js?v=1', '../../07-globe/terrain-source.js?v=t3', OWN_TILES + 'coverage.json', './data/slices.json',

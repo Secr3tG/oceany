@@ -184,7 +184,7 @@ async function showLayer(label) {
   if (prevViews && prevViews !== L.views) flyTo(L.views.far);   // different scale (own views): fly to this layer's overview
   else if (!fly && !cameraSet) { camera.position.copy(L.views.far.pos); controls.target.copy(L.views.far.target); controls.update(); }
   cameraSet = true;
-  setCamMode(L.reef ? 'fly' : 'orbit');          // free-fly on the reef layer, orbit elsewhere (the button switches)
+  setCamMode(L.reef && !touchFirst() ? 'fly' : 'orbit');   // free-fly on the reef layer, orbit elsewhere (the button switches); touch: orbit (6f)
   const m = cur.meta;
   // Panel title, zoom button names and page title follow the layer.
   document.querySelector('#panel h1').innerHTML = 'Oceany <span class="sub">' + (L.title || 'Klitm&oslash;ller sea floor') + '</span>';
@@ -394,6 +394,13 @@ function stepFly(now) {
 // the camera's height (low = slow and precise, high = fast), and everything is damped so movement flows.
 // A camera jump (flyTo: spot buttons, zoom buttons, the wave-slice view) runs as before and then hands control back.
 let camMode = 'orbit';
+// 2026-11-23 (night, touch rotate and tilt) — 6f. On a phone the reef layer opens in orbit, not fly: Benn could not turn
+// the reef ("one finger only looks around, two fingers throw the camera kilometres"). OrbitControls' own touch is the
+// maps way: one finger turns the reef round the point in view, two fingers pinch to zoom and drag to pan. A touch-first
+// screen (no hover, coarse pointer) starts in orbit; elsewhere the first touch on the canvas switches fly to orbit before
+// any handler sees it (capture phase), unless the Orbit / Fly button was used. The button still picks fly on a phone.
+let camPicked = false, touchSeen = false;
+const touchFirst = () => touchSeen || matchMedia('(hover: none) and (pointer: coarse)').matches;
 const FLY = { yaw: 0, pitch: 0, vel: new THREE.Vector3(), wheel: new THREE.Vector3(), keys: new Set(), last: null, drag: null };
 const flyDir = new THREE.Vector3(), flyTmp = new THREE.Vector3(), flyRight = new THREE.Vector3();
 const FLY_UP = new THREE.Vector3(0, 1, 0);
@@ -499,7 +506,12 @@ canvas.addEventListener('wheel', e => {
   flyTmp.set((e.clientX / window.innerWidth) * 2 - 1, 1 - (e.clientY / window.innerHeight) * 2, 0.5).unproject(camera).sub(camera.position).normalize();
   FLY.wheel.addScaledVector(flyTmp, -dy * 0.006 * flyBase() * 6 * (e.altKey ? 0.2 : 1));   // total glide ~ 0.6 x base speed per 100 px of wheel (impulse x decay rate 6)
 }, { passive: false });
-document.getElementById('cam-mode').addEventListener('click', () => setCamMode(camMode === 'fly' ? 'orbit' : 'fly'));
+document.getElementById('cam-mode').addEventListener('click', () => { camPicked = true; setCamMode(camMode === 'fly' ? 'orbit' : 'fly'); });
+addEventListener('pointerdown', e => {   // 6f: first touch on the reef in (unpicked) fly mode switches to orbit before the canvas sees it
+  if (e.pointerType !== 'touch' || e.target !== canvas) return;
+  touchSeen = true;
+  if (camMode === 'fly' && !camPicked) setCamMode('orbit');
+}, true);
 
 // ---------- 5. UI ----------
 const exagInput = document.getElementById('exag');
