@@ -24,7 +24,7 @@ const LIVE = ['porto_batel', 'pipeline', 'supertubos', 'guethary', 'hossegor'];
 const SHELL_FILES = ['./', './index.html', './style.css?v=z6', './main.js?v=z7', './play.js?v=c5c', './live.js?v=n2', './tutorial.js?v=c3e',
   './offline.js?v=o1', './live_core.js?v=n2', './live_lookup.js?v=l4', './swell_model.js?v=c3', './surround.js?v=s5',
   './vendor/three.module.js', './vendor/three.core.js', './vendor/addons/controls/OrbitControls.js',
-  '../../07-globe/terrarium.js?v=1', '../../07-globe/terrain-source.js?v=t2', OWN_TILES + 'coverage.json', './data/slices.json',
+  '../../07-globe/terrarium.js?v=1', '../../07-globe/terrain-source.js?v=t3', OWN_TILES + 'coverage.json', './data/slices.json',
   '../../06-live-wave/lookup/index.json', '../../06-live-wave/lookup/shore.json',
   '../../06-live-wave/lookup_pipeline/index.json', '../../06-live-wave/lookup_pipeline/shore.json'];
 const LIVE_FILES = LIVE.map(k => `../../../live/${k}.json`);

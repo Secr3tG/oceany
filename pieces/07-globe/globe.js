@@ -16,7 +16,7 @@
 import * as THREE from 'three';
 import { makeDotMaterial, palette, setPalette, PALETTES, updateDotScale, dotScale, dotExag, seaExag, applyCssPalette, landTone, oceanTone, LAND_DOT_D, HUE_MAX, ICE_LAT } from './dots.js';
 import { createTerrain } from './terrain.js';
-import { USE_AWS as TERRAIN_AWS } from './terrain-source.js?v=t2';
+import { USE_AWS as TERRAIN_AWS } from './terrain-source.js?v=t3';
 
 const RADIUS = 1.0;
 const D2R = Math.PI / 180;

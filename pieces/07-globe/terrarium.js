@@ -4,7 +4,7 @@
 //   fetchTerrarium(z, x, y) -> { elev: Float32Array(256 × 256) metres, row-major, north row first; sources: [names] }
 // elevation = R × 256 + G + B / 256 − 32768 m; no averaging. Throws on a network or HTTP error, and for a tile outside
 // the built coverage (the caller treats a throw as a missing tile).
-import { tileUrl, covered, tileSources, coverageReady } from './terrain-source.js?v=t2';
+import { tileUrl, covered, tileSources, coverageReady } from './terrain-source.js?v=t3';
 export const TILE_URL = tileUrl;
 export async function fetchTerrarium(z, x, y) {
   await coverageReady;                                           // covered() knows the spot boxes only once coverage.json is in

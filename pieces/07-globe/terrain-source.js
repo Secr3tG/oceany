@@ -32,5 +32,13 @@ export function tileSources(z, headers) {
   if (USE_AWS) return (headers.get('x-amz-meta-x-imagery-sources') || '').split(',').map(s => s.trim().split('/')[0]).filter(Boolean);
   return z <= 8 ? ['gebco'] : ['copernicus'];   // land only: the seabed (GEBCO at every zoom) has its own readout line
 }
+// Seabed source of one tile: GEBCO_2026 everywhere, EMODnet DTM 2024 (~115 m) where coverage.json's `seabed` rects list
+// the tile (European seas at z9-z10, added 2026-11-23). Used by the readout's seabed line.
+export function seabedOf(z, x, y) {
+  if (!USE_AWS && cov && cov.seabed) for (const sb of cov.seabed) {
+    const rs = sb.rects[z]; if (rs) for (const r of rs) if (x >= r[0] && x <= r[1] && y >= r[2] && y <= r[3]) return sb;
+  }
+  return SEABED;
+}
 export const SEABED = USE_AWS ? { name: 'ETOPO1', m: 1852, label: '1.85 km' } : { name: 'GEBCO_2026', m: 463, label: '460 m' };
 export const MAX_SOURCE_Z = USE_AWS ? 15 : 13;

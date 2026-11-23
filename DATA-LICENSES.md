@@ -14,6 +14,11 @@ is for navigation.
   EMODnet Bathymetry Consortium, https://emodnet.ec.europa.eu/en/bathymetry.
   Downsampled and re-gridded for this viewer. Not for navigation.
   Terms: https://emodnet.ec.europa.eu/en/terms-use-emodnet-online-services-data-and-data-products
+- Globe terrain tiles, European seas at the closer zooms (z9-z10: North Sea, Danish waters,
+  Bay of Biscay, Iberia): EMODnet Bathymetry Consortium (2024). EMODnet Digital Bathymetry
+  (DTM 2024). https://doi.org/10.12770/cf51df64-56f9-4a99-b1aa-36b8d7b743a1. CC BY 4.0.
+  Resampled and merged with GEBCO_2026 and Copernicus DEM. Not for navigation.
+  Details: `pieces/07-globe/tiles-build/SOURCES.md` section 3.
 - Danish waters (50 m): Contains data from the Danish Geodata Agency, Denmark's
   Depth Model, 50 m resolution. Obtained 2026-11-11. Terms:
   https://eng.gst.dk/danish-hydrographic-office/denmark-depth-model

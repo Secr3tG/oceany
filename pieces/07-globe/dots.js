@@ -109,21 +109,29 @@ export function landTone(h, out = [0, 0, 0], lat = 0, lon = 0) {
   if (wi > 0) for (let q = 0; q < 3; q++) out[q] += (palette.ice[q] * LAND_K * (1 + 0.1 * t) - out[q]) * wi;
   return out;
 }
-// Ocean tone by depth d (metres, + down), shared by the base globe and the terrain tiles: dark and calm, the shelf a
-// little lighter than the deep sea (the palette's mid colour → deep colour, both dimmed). With shallow = true (tiles,
-// close in) water under SHALLOW_M glows toward the palette's shallow colour, the reef viewer's look; the base globe
-// leaves that out, so shelves do not print a bright band that reads as a coastline at whole-globe zoom.
-export const SHALLOW_M = 40;
-const SHELF_K = 0.22, DEEP_K = 0.42;
+// Ocean tone by depth d (metres, + down), shared by the base globe and the terrain tiles. 2026-11-23 (Benn: the North Sea
+// read pale cyan and the Norwegian Trench was not readable): a shelf-tuned ramp like the 01-seafloor North Sea view
+// (deepAt 120 m there). The old ramp ran 0-6000 m (square root) with a cyan glow under 40 m, so the shelf (50 m) and the
+// trench (500 m) got nearly one tone and only a pale coastal fringe stood out. Now the tone steps down by depth band:
+//   0 m      a medium blue a little toward the palette's shallow colour (no pale glow)
+//   100 m    the palette's mid colour: the shelf seas (North Sea, Biscay shelf) are one calm blue
+//   250 m    most of the way to deep: shelf break, Norwegian Trench edges, Skagerrak
+//   700 m    the palette's deep colour: trench floor, continental slope
+//   6000 m   a little darker: abyssal plain
+// Multipliers keep the shelf below the land's brightness (land stays the brightest thing). shallow = false (the base
+// globe, whole-globe zoom) pulls the shelf half-way toward the 250 m tone, so shelves do not read as fat coastlines from
+// afar; the tiles (shallow = true, from ~5,000 km down) show the full shelf / trench contrast.
+export const SHALLOW_M = 40;     // tiles: dot size and brightness ease over COAST_M only (terrain.js); kept for imports
+const OCEAN_STOPS = [   // [depth m, weight toward shallow (s), toward deep (dd), brightness]
+  [0, 0.22, 0, 0.29], [100, 0, 0, 0.235], [250, 0, 0.7, 0.29], [700, 0, 1, 0.40], [6000, 0, 1, 0.38]];
 export function oceanTone(d, out = [0, 0, 0], shallow = false) {
-  const p = palette;
-  if (shallow && d < SHALLOW_M) {
-    const w = Math.max(0, d) / SHALLOW_M;
-    for (let q = 0; q < 3; q++) out[q] = (p.shallow[q] + (p.mid[q] - p.shallow[q]) * w) * (0.6 - 0.25 * w);
-    return out;
-  }
-  const u = Math.sqrt(Math.min(Math.max(d, 0) / 6000, 1));
-  for (let q = 0; q < 3; q++) out[q] = p.mid[q] * SHELF_K * (1 - u) + p.deep[q] * DEEP_K * u;
+  const p = palette, S = OCEAN_STOPS;
+  d = Math.max(0, d);
+  let i = 0; while (i < S.length - 2 && d > S[i + 1][0]) i++;
+  const a = S[i], b = S[i + 1], t = Math.min(1, (d - a[0]) / (b[0] - a[0]));
+  let s = a[1] + (b[1] - a[1]) * t, dd = a[2] + (b[2] - a[2]) * t, k = a[3] + (b[3] - a[3]) * t;
+  if (!shallow && d < 250) { const f = 0.5 * (1 - d / 250); s *= 1 - f; dd += (0.7 - dd) * f; k += (0.29 - k) * f; }
+  for (let q = 0; q < 3; q++) out[q] = (p.mid[q] + (p.shallow[q] - p.mid[q]) * s + (p.deep[q] - p.mid[q]) * dd) * k;
   return out;
 }
 export const dotExag = { value: 1 };

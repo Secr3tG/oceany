@@ -20,13 +20,14 @@
 //   relative to the tile's own centre (no float jitter close up) and lifted by elevation × exaggeration in the shader.
 // - Tiles are kept in an LRU cache of CACHE_MAX; the least recently used tiles that are off screen are disposed.
 import * as THREE from 'three';
-import { tileUrl, covered as srcHas, coverageKnown, tileSources, SEABED, USE_AWS } from './terrain-source.js?v=t2';
+import { tileUrl, covered as srcHas, coverageKnown, tileSources, SEABED, seabedOf, USE_AWS } from './terrain-source.js?v=t3';
 import { makeDotMaterial, palette, dotExag, morphT, landTone, oceanTone, SHALLOW_M, LAND_DOT_D, HUE_MAX } from './dots.js';
 
 const R_EARTH = 6371000;
 const N = 128;                 // dots per tile side
 const MIN_Z = 2, MAX_Z = 13;   // z13 with 2x2 averaging ≈ 30 m per dot at Peniche, about the 30 m land data (SRTM / EU-DEM)
-const TARGET_PX = 4;           // split a tile while its dots are further apart than this on screen (css px)
+const TARGET_PX = 2.5;         // split a tile while its dots are further apart than this on screen (css px). 2026-11-23: 4 → 2.5
+                               // (Benn: regional views of Britain / the North Sea were coarse 4 px dots, ~z6 at 1,800 km; now ~z7)
 const CACHE_MAX = 220;         // tiles kept (≈ 0.3 MB each: positions, byte colours, elevations); ~70 MB at most
 const MAX_WANT = 96;           // tiles queued for fetching at once, nearest-first
 const MAX_INFLIGHT = 12;          // AWS: 6 per host name, two host names; ours: same origin (HTTP/2 multiplexes when hosted)
@@ -35,7 +36,10 @@ const DEEP_AT = 6000;          // same colour ramp as the base globe
 // Water deeper than SHALLOW_M: dots drawn SEA_DOT_K × wider (soft, overlapping: the sea floor here is ETOPO1 at
 // ~1.85 km, filled in between, so a smooth field shows no more than the data) and SEA_K × brighter, so close-in water is
 // the same deep blue as the base globe instead of black (measured: deep water ~40 blue, as the base globe). Shallow water keeps fine dots and the reef viewer's glow.
-const SEA_DOT_K = 2.2, SEA_K = 2.0;   // round 2: 0.85 left tile deep water at 0.4× the base globe's (2,6,24 vs 6,16,59 over Biscay)
+// 2026-11-23: 2.2 → 1.7 wide (the seabed is GEBCO 463 m / EMODnet 115 m now, not ETOPO1: a soft 2.2× field blurred the coast
+// by a dot or two); SEA_K 2.0 → 3.2 keeps about the same light per area (additive dots: ∝ width² × colour, 2.2² × 2 ≈ 1.7² × 3.2)
+// while the brightest shelf channel stays near HUE_MAX (0.92; a higher SEA_K would be clipped there and dim the shelf).
+const SEA_DOT_K = 1.7, SEA_K = 3.2, COAST_M = 6;   // COAST_M: water this shallow eases from land dot size to sea dot size   // round 2: 0.85 left tile deep water at 0.4× the base globe's (2,6,24 vs 6,16,59 over Biscay)
 const SEABED_B_MAX = 0.95, SEABED_EXAG = 10, SEABED_B_MIN = 0.6;   // round 3: 1.1 → 0.95 (sea-floor highlights stay under the land's)   // (round 2: 1.25 / 6 still drew bright sinuous ridges on ETOPO1 canyon walls)   // seabed hillshade cap; slope dimming (see colourTile)
 // Land dots are drawn LAND_DOT_D × their spacing wide (TILE_LAND_K × the 0.9-spacing base size), the same as the base
 // globe's land, so land has one brightness from whole globe to close in (dots.js landTone). Replaces LAND_FAR_K (land 2×
@@ -362,7 +366,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
         if (land) { landTone(h, lt, t.latC, t.lonC); c0 = lt[0]; c1 = lt[1]; c2 = lt[2]; }   // same height tone as the base globe (latC: Antarctic ice)
         else {
           ocean++;
-          oceanTone(-h, lt, true); const sk = h < -SHALLOW_M ? SEA_K : 1 + (SEA_K - 1) * Math.max(0, -h) / SHALLOW_M;   // same ramp as the base globe, shallow water glows; brightness eases into the deep water's
+          oceanTone(-h, lt, true); const sk = SEA_K;   // same ramp as the base globe (dots.js); 2026-11-23: one brightness for all water, no pale shallow glow
           c0 = lt[0] * sk; c1 = lt[1] * sk; c2 = lt[2] * sk;
         }
         // hillshade from the north-west: one-sided difference at the tile edge (divided by the real step), so edges
@@ -419,7 +423,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
           unit(la, lo, v).sub(t.center); out = c > POLE_S;
         } else unit(latOf(t.y + (j + 0.5 + jy) / N, n), lonOf(t.x + (i + 0.5 + jx) / N, n), v).sub(t.center);   // relative to tile centre
         pos[3 * k] = v.x; pos[3 * k + 1] = v.y; pos[3 * k + 2] = v.z; sz[k] = s;
-        dk[k] = out ? -1 : e[k] < -SHALLOW_M ? SEA_DOT_K : e[k] > 0 ? TILE_LAND_K : TILE_LAND_K + (SEA_DOT_K - TILE_LAND_K) * Math.max(0, -e[k]) / SHALLOW_M;   // -1: outside a polar cap, not drawn; shallow water eases from the land dot size to the deep one (round 2: its fine 0.9-spacing dots read as black holes along the coast)
+        dk[k] = out ? -1 : e[k] < -COAST_M ? SEA_DOT_K : e[k] > 0 ? TILE_LAND_K : TILE_LAND_K + (SEA_DOT_K - TILE_LAND_K) * Math.max(0, -e[k]) / COAST_M;   // -1: outside a polar cap, not drawn; shallow water eases from the land dot size to the deep one (round 2: its fine 0.9-spacing dots read as black holes along the coast)
       }
     }
     const n2 = n / 2, pw2 = 2 * pw;
@@ -591,8 +595,9 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     const oceanInView = shown.some(t => t.hasOcean);
     const landSrc = [...new Set(shown.flatMap(t => t.sources || []).filter(s => s !== 'etopo1'))];
     const polarInView = shown.some(t => t.polar);
+    const sb = best.polar ? SEABED : seabedOf(best.z, best.x, best.y);   // the seabed source under the middle of the view
     return { polarInView, polarBest: !!best.polar, refine, z: best.z, mPerDot: best.spacingM, tiles: shown.length, dots, cached: cache.size, oceanInView,
-      seabedCoarse: oceanInView && best.spacingM < SEABED_M && !best.polar, landSrc, exag: dotExag.value, detailEnds, seabedName: SEABED.name, seabedLabel: SEABED.label };
+      seabedCoarse: oceanInView && best.spacingM < sb.m * (SEABED_M / SEABED.m) && !best.polar, landSrc, exag: dotExag.value, detailEnds, seabedName: sb.name, seabedLabel: sb.label };
   }
   // Coverage map (round 3): which lat/lon cells a drawn tile covers, by its fade (0..1), as an equirectangular texture the base
   // globe reads (dots.js cover). The base globe fades only under drawn tiles, so a region still loading keeps it.

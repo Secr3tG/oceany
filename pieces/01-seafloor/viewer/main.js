@@ -5,7 +5,7 @@
 // WORTH READING: section 3 (palettes) and section 5 (what the buttons do).
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { USE_AWS, SEABED } from '../../07-globe/terrain-source.js?v=t2';   // same module as terrarium.js: Oceany's own tiles unless ?terrain_src=aws
+import { USE_AWS, SEABED } from '../../07-globe/terrain-source.js?v=t3';   // same module as terrarium.js: Oceany's own tiles unless ?terrain_src=aws
 
 // ---------- 1. Setup: renderer, scene, camera ----------
 const canvas = document.getElementById('scene');

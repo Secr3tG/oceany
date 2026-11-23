@@ -16,7 +16,7 @@
   { "imports": {
       "three": "../01-seafloor/viewer/vendor/three.module.js",
       "three/addons/": "../01-seafloor/viewer/vendor/addons/",
-      "./dots.js": "./dots.js?v=b39", "./terrain.js": "./terrain.js?v=b39" } }
+      "./dots.js": "./dots.js?v=b40", "./terrain.js": "./terrain.js?v=b40" } }
   </script>
   <style>
     :root { --panel: #060e16; --bg: #04060a; --ink: #cfe6f2; --dim: #6b8696; --open: #5ff2ff; --accent: #5ff2ff; --fc: #8fc2d1; --lock: #4a5a66; --hz: #8ca3b8; }
@@ -273,7 +273,7 @@
       <details id="terrain-credits" style="display:none"><summary>Terrain credits</summary>
         <span id="tc-own">Terrain: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa);
         produced using Copernicus WorldDEM-30 and WorldDEM-90 &copy; DLR e.V. 2010-2014 and &copy; Airbus Defence and Space GmbH
-        2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. Modified by Oceany
+        2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. European seas (closer zooms): EMODnet Bathymetry Consortium (2024) EMODnet Digital Bathymetry (DTM 2024), doi:10.12770/cf51df64-56f9-4a99-b1aa-36b8d7b743a1, CC BY 4.0. Modified by Oceany
         (resampled, merged, rounded to 1 m). Not for navigation. The organisations in charge of the Copernicus programme by law or by
         delegation do not incur any liability for any use of the Copernicus WorldDEM-30 or WorldDEM-90. Not endorsed by GEBCO, the IHO or the IOC.</span>
         <span id="tc-aws" hidden>Terrain Tiles on AWS Open Data (Mapzen / Tilezen). Global ETOPO1 terrain data U.S. National Oceanic and Atmospheric Administration;
@@ -322,7 +322,7 @@
         <p>Stars: HYG v4.4 (Hipparcos-Yale-Gliese) by astronexus, <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>, <a href="https://codeberg.org/astronexus/hyg" target="_blank" rel="noopener noreferrer">codeberg.org/astronexus/hyg</a>. Filtered to magnitude 6.5; the filtered file is shared under CC BY-SA 4.0.</p>
         <h3>Land and sea floor</h3>
         <p>ETOPO1: NOAA NGDC. EMODnet Bathymetry (CC BY 4.0), DDM50, DGT/APA lidar, Litto3D.</p>
-        <p>Terrain detail: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa); produced using Copernicus WorldDEM-30 and WorldDEM-90 &copy; DLR e.V. 2010-2014 and &copy; Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. Modified by Oceany (resampled, merged, rounded to 1 m). Not for navigation. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30 or WorldDEM-90. Not endorsed by GEBCO, the IHO or the IOC.</p>
+        <p>Terrain detail: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa); produced using Copernicus WorldDEM-30 and WorldDEM-90 &copy; DLR e.V. 2010-2014 and &copy; Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. European seas (closer zooms): EMODnet Bathymetry Consortium (2024) EMODnet Digital Bathymetry (DTM 2024), doi:10.12770/cf51df64-56f9-4a99-b1aa-36b8d7b743a1, CC BY 4.0. Modified by Oceany (resampled, merged, rounded to 1 m). Not for navigation. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30 or WorldDEM-90. Not endorsed by GEBCO, the IHO or the IOC.</p>
         <p>Pipeline: Office for Coastal Management, 2026: 2013 USACE NCMP Topobathy Lidar DEM (LMSL): Oahu, HI, <a href="https://www.fisheries.noaa.gov/inport/item/65476" target="_blank" rel="noopener noreferrer">fisheries.noaa.gov/inport/item/65476</a>. Resampled.</p>
         <h3>Software</h3>
         <p>three.js, MIT, Copyright (c) 2010-2026 three.js authors.</p>
@@ -346,6 +346,6 @@
   <div id="follow-cap" hidden></div>
   <div id="hint">Drag to move; right-drag or shift-drag to tilt and turn; scroll, pinch or use the slider to zoom. Each dot is one point of ETOPO1 global relief (NOAA): ocean blue by depth; land coloured by height (olive low ground, brown uplands, grey-brown high plateaus, paler only on the highest peaks; the Antarctic and Greenland ice sheets blue-grey). Colour shows height, not vegetation or snow.</div>
   <script type="module" src="./fullscreen.js?v=f1"></script>
-  <script type="module" src="./globe.js?v=b39"></script>
+  <script type="module" src="./globe.js?v=b40"></script>
 </body>
 </html>
