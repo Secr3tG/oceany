@@ -153,6 +153,11 @@
     @media (max-height: 520px) { #zoom-slider { height: 120px; } #tilt-slider { height: 50px; } }
     #zoom.faded { opacity: .3; }
     #zoom #north { font-size: 11px; font-weight: 600; }
+    #zoom #fullscreen { display: grid; place-items: center; padding: 0; }   /* full-screen button (fullscreen.js) */
+    #zoom #fullscreen.on { border-color: var(--open); }
+    #fullscreen-tip { position: fixed; right: 52px; top: 50%; transform: translateY(-50%); max-width: 220px; padding: 8px 10px; border-radius: 8px; z-index: 6;
+      background: color-mix(in srgb, var(--bg) 88%, transparent); border: 1px solid color-mix(in srgb, var(--open) 25%, transparent); font-size: 12px; color: var(--ink); }
+    #fullscreen-tip[hidden] { display: none; }
     /* round 4: a small calm line under the bar (where the follow caption sits), not a box over the rail and the labels */
     #zoom-note { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); max-width: min(520px, calc(100vw - 32px)); font-size: 11.5px; color: var(--dim);
       text-align: center; padding: 3px 10px; background: color-mix(in srgb, var(--bg) 62%, transparent); border-radius: 6px; z-index: 4; transition: opacity .4s; }
@@ -334,11 +339,13 @@
     <button id="tilt-auto" type="button" class="on" aria-pressed="true" title="Tilt follows the zoom">auto</button>
     <div class="sep"></div>
     <button id="north" type="button" aria-label="Turn north up" title="Turn north up">N</button>
+    <button id="fullscreen" type="button" aria-label="Full screen" title="Full screen" aria-pressed="false"><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></button>
   </div>
   <div id="zoom-note" role="status" hidden><span></span> <button type="button" id="zoom-note-terrain">Turn on terrain detail</button></div>
   <div id="card"></div>
   <div id="follow-cap" hidden></div>
   <div id="hint">Drag to move; right-drag or shift-drag to tilt and turn; scroll, pinch or use the slider to zoom. Each dot is one point of ETOPO1 global relief (NOAA): ocean blue by depth; land coloured by height (olive low ground, brown uplands, grey-brown high plateaus, paler only on the highest peaks; the Antarctic and Greenland ice sheets blue-grey). Colour shows height, not vegetation or snow.</div>
+  <script type="module" src="./fullscreen.js?v=f1"></script>
   <script type="module" src="./globe.js?v=b39"></script>
 </body>
 </html>
