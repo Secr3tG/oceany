@@ -29,6 +29,9 @@ bottom shapes. They are not predictions. Nothing here is for navigation.
 
 Live viewer: https://secr3tg.github.io/oceany/
 
+Full Earth experience: https://secr3tg.github.io/oceany/pieces/07-globe/ (a dot globe with storms, sky and ocean layers;
+zoom in to reach the spots). For research and play only. Not a forecast or warning service.
+
 ## Play and tutorial
 
 On the Porto Batel layer you can change the swell height, period, direction and tide with
@@ -60,6 +63,8 @@ The footage is not part of this repository.
 | `pieces/03-breaking-wave/` | 2D particle (SPH) solver for a breaking wave: flume test, Porto Batel, and Pipeline, Supertubos, Guéthary cases |
 | `pieces/04-basque/` | Export of the Guéthary and Hossegor reef maps from Litto3D |
 | `pieces/05-pipeline/` | Reef map of Pipeline, Oahu, from NOAA/USACE topobathy |
+| `pieces/07-globe/` | The whole-Earth dot globe; its terrain tiles (GEBCO_2026, Copernicus DEM) are hosted on Cloudflare R2, not in this repo |
+| `pieces/08-storms/`, `pieces/10-sky/`, `pieces/11-ocean/` | Globe layers: hurricanes and tornadoes, aurora and snow, wind, waves and swell |
 | `tasks/`, `live-data/` | Small side experiments (wave dispersion, Open-Meteo fetch, Copernicus buoys) |
 
 ## Run the viewer
