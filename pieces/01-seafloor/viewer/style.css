@@ -2,9 +2,16 @@
 html, body { margin: 0; height: 100%; background: #04060a; color: #cfe8ee;
   font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
 #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
-#panel { position: fixed; top: 12px; left: 12px; padding: 10px 14px; width: 250px;
+#panel { position: fixed; top: var(--bar-b, 46px); left: 12px; padding: 10px 14px; width: 280px; box-sizing: border-box; z-index: 14;
   background: rgba(6, 12, 18, .72); border: 1px solid #16303a; border-radius: 8px;
-  max-height: calc(100vh - 12px - var(--cap-h, 130px) - var(--cred-h, 16px) - var(--stand-off, 0px) - 46px); overflow-y: auto; }   /* stays clear of the source caption (--cap-h is set from its real height in main.js) */
+  max-height: calc(100vh - var(--bar-b, 46px) - var(--src-h, 0px) - 18px); overflow-y: auto; }   /* stays clear of the sources box (--src-h and --bar-b are set from real heights in main.js) */
+/* Top bar (2026-11-23): Back to globe, Controls, Sources. Always on screen; the panel and the sources box open from it. */
+#top-bar { position: fixed; top: 12px; left: 12px; z-index: 15; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+#top-bar button { background: color-mix(in srgb, #060e16 78%, transparent); backdrop-filter: blur(6px); }
+#top-bar button[aria-expanded=true] { border-color: #5ff2ff; color: #fff; }
+body.panel-shut #panel, body.src-shut #src-box { display: none; }
+/* Sources box: the layer's source caption above the credits, bottom left (as before), closable with Sources. */
+#src-box { position: fixed; left: 12px; bottom: 6px; right: 300px; pointer-events: none; z-index: 3; }
 #panel h1 { font-size: 14px; margin: 0 0 8px; font-weight: 600; letter-spacing: .03em; }
 #panel input[type=range] { width: 100%; }
 #exag-text { color: #7fe3f0; margin-bottom: 8px; }
@@ -19,8 +26,7 @@ button:hover { color: #fff; }
 .tag.dim { color: #aab; font-size: 11px; }
 #tip { position: fixed; display: none; pointer-events: none; padding: 3px 8px;
   background: rgba(0, 0, 0, .75); border: 1px solid #2a5260; border-radius: 4px; }
-#caption { position: fixed; left: 12px; bottom: calc(var(--cred-h, 16px) + 12px);   /* sits above the credits, whatever their height (--cred-h set in main.js) */
-  max-width: min(520px, 80vw);
+#caption { max-width: min(520px, 80vw); margin-bottom: 6px; pointer-events: auto;
   color: #7d97a0; font-size: 12px; }
 #status { position: fixed; right: 12px; bottom: 10px; color: #7d97a0; font-size: 12px; }
 #panel .row { flex-wrap: wrap; }
@@ -43,7 +49,7 @@ button:hover { color: #fff; }
 #loading.err { color: #ff8a8a; border-color: #7a2f2f; }
 #panel h1 .sub { display: block; font-size: 12px; font-weight: 400; color: #9ab; letter-spacing: 0; }
 
-#credits { position: fixed; left: 12px; bottom: 6px; right: 300px; color: #5f7882; font-size: 10px; line-height: 1.3; pointer-events: none; }
+#credits { color: #5f7882; font-size: 10px; line-height: 1.3; }
 #key { margin-top: 8px; font-size: 12px; color: #9ab; }
 #key summary { cursor: pointer; color: #cfe8ee; }
 #key ul { margin: 4px 0 0; padding-left: 16px; }
@@ -58,7 +64,7 @@ button:hover { color: #fff; }
 .intro-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; flex-wrap: wrap; }
 .intro-btns button { padding: 7px 14px; }
 @media (max-width: 600px), (pointer: coarse) { #intro .intro-desk { display: none; } #intro .intro-phone { display: inline; } }
-@media (max-width: 600px) { #credits { right: 12px; bottom: 4px; font-size: 9px; } #caption { bottom: calc(var(--cred-h, 60px) + var(--stand-h, 16px) + 12px); } #status { display: none; } }
+@media (max-width: 600px) { #status { display: none; } }
 #globe-fade { position: fixed; inset: 0; background: #04060a; opacity: 0; pointer-events: none; z-index: 30;
   display: flex; align-items: center; justify-content: center; }
 #globe-fade-hint { color: #7fe3f0; font-size: 13px; letter-spacing: .03em; opacity: 0; }
@@ -89,10 +95,35 @@ button:hover { color: #fff; }
 /* Standing notice, same type style as the globe's #notice-standing (pieces/07-globe): small, dim, calm, on a faint backing. */
 #standing { position: fixed; right: 16px; bottom: 30px; max-width: 270px; text-align: right; line-height: 1.35; font-size: 11px; color: #6b8696; opacity: .9; z-index: 26; pointer-events: none;
   background: color-mix(in srgb, #04060a 72%, transparent); padding: 3px 7px; border-radius: 6px; backdrop-filter: blur(4px); }
-@media (max-width: 600px) { #standing { left: 8px; right: 8px; bottom: calc(var(--cred-h, 60px) + 6px); max-width: none; text-align: center; } :root { --stand-off: var(--stand-h, 16px); } }
+
 
 /* Offline line (offline.js): small, calm, top centre; only while saved data is being served. */
 #offline-note { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 27; font-size: 11px; line-height: 1.35; color: #8fb0c0; background: rgba(4,8,14,.6); padding: 3px 10px; border-radius: 10px; pointer-events: none; white-space: nowrap; }
 @media (max-width: 600px) { #offline-note { white-space: normal; text-align: center; max-width: calc(100vw - 32px); } }
 /* UX 2026-11-23: 44 px touch targets on phones (buttons in the panel, the zoom bar and the Back to globe button) */
 @media (max-width: 600px), (pointer: coarse) { button { min-height: 44px; } #zoom button { width: 44px; height: 44px; } #zoom-slider { width: 30px; } }
+
+/* Phone layout 2026-11-23 (Benn's iPhone: the panel covered half the screen and the source text ran over its buttons).
+   On a phone or touch screen the panel and the sources box start closed behind Controls and Sources in the top bar;
+   the 3D view, Back to globe and the standing line are all that is on screen. Open, each is a sheet under the top bar
+   that stops above the standing line and left of the zoom bar, so nothing overlaps. Look: the globe's controls
+   (pieces/07-globe): system-ui, pill buttons with a thin cyan border, dark translucent panels with blur. */
+@media (max-width: 600px), (pointer: coarse) {
+  body:not(.panel-open) #panel, body:not(.src-open) #src-box { display: none; }
+  button { border-radius: 22px; padding: 0 14px; border: 1px solid color-mix(in srgb, #5ff2ff 25%, transparent); color: #b8d3de;
+    font: 13px/1.2 system-ui, -apple-system, sans-serif; }
+  button.on, button[aria-expanded=true] { border-color: #5ff2ff; color: #fff; }
+  #panel, #src-box { background: color-mix(in srgb, #060e16 82%, transparent); border: 1px solid color-mix(in srgb, #5ff2ff 15%, transparent);
+    border-radius: 10px; backdrop-filter: blur(6px); font: 13px/1.4 system-ui, -apple-system, sans-serif; }
+}
+@media (max-width: 600px) {
+  #top-bar { top: 8px; left: 8px; right: 60px; flex-wrap: nowrap; gap: 4px; } #top-bar button { padding: 0 10px; font-size: 13px; white-space: nowrap; }   /* one row down to 360 px wide */
+  body.panel-open #tut-offer, body.src-open #tut-offer { display: none; }   /* an open sheet takes the screen; the offer returns when it closes */
+  #panel, #src-box { left: 8px; right: 68px; width: auto; top: var(--bar-b, 60px); bottom: auto; box-sizing: border-box; padding: 10px 14px;
+    max-height: calc(100vh - var(--bar-b, 60px) - var(--stand-h, 20px) - 20px); max-height: calc(100dvh - var(--bar-b, 60px) - var(--stand-h, 20px) - 20px);
+    overflow-y: auto; pointer-events: auto; }
+  #caption { max-width: none; }
+  #credits { font-size: 10px; }
+  #standing { left: 8px; right: 8px; bottom: 8px; max-width: none; text-align: center; }
+  #loading, #offline-note { top: calc(var(--bar-b, 60px) + 4px); }
+}

@@ -28,12 +28,13 @@ export function latLonToVector3(lat, lon, r = RADIUS) {
 // ---------- renderer, scene, camera ----------
 const canvas = document.getElementById('globe');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });   // MSAA does nothing for round point sprites
-// LITE: a phone or tablet (primary pointer is a finger) or a small screen; ?lite=1 / ?lite=0 forces it. Draws at most
-// 1.5 device px per css px (a phone at 3× would fill 4× the pixels of 1.5× for dots that are soft anyway) and asks the
-// terrain for fewer tiles (terrain.js lite). Dot sizes are set in css px, so the look stays the same, only cheaper.
+// LITE: a phone or tablet (primary pointer is a finger) or a small screen; ?lite=1 / ?lite=0 forces it. Asks the
+// terrain for fewer tiles in the cache (terrain.js lite). Dot sizes are set in css px, so the look stays the same, only cheaper.
 const LITE = (() => { const q = new URLSearchParams(location.search).get('lite'); if (q === '1' || q === '0') return q === '1';
   return matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 500; })();
-renderer.setPixelRatio(Math.min(devicePixelRatio, LITE ? 1.5 : 2));
+// phone 2026-11-23 late: the LITE cap 1.5 → 2 (same as desktop). At 1.5 a 3× iPhone stretched every frame 2×, which with
+// the later tile split below read as soft blobs at Peniche; 390×844 at 2× is still a quarter of a desktop's pixels.
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 const scene = new THREE.Scene();
 // palette.bg and .night are CSS-style sRGB values (as the page's colours); the renderer converts its clear colour and
 // MeshBasicMaterial colours from linear, so they are read as sRGB here (read as linear they came out grey: #222b38)
@@ -1579,7 +1580,8 @@ const spin = { on: new URLSearchParams(location.search).get('spin') !== '0',   /
 const spinBtn = document.getElementById('spin-btn'), spinBox = document.getElementById('spin-toggle');
 function setSpin(on) { spin.on = on; spinBtn.setAttribute('aria-pressed', String(on)); spinBox.checked = on; spin.quietUntil = 0;
   const sb = document.getElementById('spin-speed-box'); if (sb) sb.hidden = !on; }   // UX 2026-11-23: speed shows only while spinning   // toggles within a visit only, not remembered
-spinBtn.onclick = () => setSpin(!spin.on); spinBox.onchange = () => setSpin(spinBox.checked);
+const spinAsk = on => { setSpin(on); if (on && zoom.target < SPIN_OFF_ALT && !flight && !arrival) { releaseFollow(); zoom.cursor = null; zoom.target = clampAlt(SPIN_FULL); } };   // phone 2026-11-23 late
+spinBtn.onclick = () => spinAsk(!spin.on); spinBox.onchange = () => spinAsk(spinBox.checked);
 setSpin(spin.on);
 // speed slider: log scale 0…1000 → ×1…×SPIN_SPEED_MAX, rounded to two significant figures; snaps to the ×1 notch
 const speedSlider = document.getElementById('spin-speed'), speedOut = document.getElementById('spin-speed-out'), speedReal = document.getElementById('spin-real');
@@ -1601,7 +1603,12 @@ function setSpeed(s) {
   speedReal.setAttribute('aria-pressed', String(real));
 }
 speedSlider.addEventListener('input', () => setSpeed(speedFromSlider(+speedSlider.value)));
-speedReal.onclick = () => { setSpeed(1); if (!spin.on) setSpin(true); };
+speedReal.onclick = () => { setSpeed(1); if (!spin.on) spinAsk(true); };
+// phone 2026-11-23 late: on a phone (≤600 px) the speed controls sit in the View panel under the Spin checkbox, so the bar
+// is one row; back in the bar when the window is wider
+{ const mq = matchMedia('(max-width: 600px)'), box = document.getElementById('spin-speed-box'), holder = document.getElementById('spin-speed-holder');
+  const place = () => { if (mq.matches) holder.appendChild(box); else spinBtn.after(box); };
+  if (box && holder) { place(); mq.addEventListener('change', place); } }
 setSpeed(SPIN_SPEED_DEFAULT);
 const spinPause = () => { spin.quietUntil = performance.now() + SPIN_RESUME_MS; };
 canvas.addEventListener('pointerdown', () => { zoom.cursor = null; });   // a drag ends any zoom-to-cursor hold
@@ -1609,7 +1616,12 @@ canvas.addEventListener('pointerdown', spinPause); canvas.addEventListener('whee
 for (const el of [slider, tiltSlider, document.getElementById('zoom-in'), document.getElementById('zoom-out'), tiltAuto]) el.addEventListener('pointerdown', spinPause);
 addEventListener('keydown', e => { if (e.target !== speedSlider) { spinPause(); zoom.cursor = null; } });
 const spinQ = new THREE.Quaternion(), yAxis = new THREE.Vector3(0, 1, 0);
+// phone 2026-11-23 late: Spin is for the whole globe. Closer than SPIN_OFF_ALT (1 radius, ~6,400 km up: about a
+// continent across the screen) it switches itself off, button and checkbox too, whatever brought the camera down (pinch,
+// wheel, +, slider, a fly-to, a return from the viewer). Asking for Spin while close lifts the view back out to SPIN_FULL.
+const SPIN_OFF_ALT = 1.0;
 function spinFrame(now, dt) {
+  if (spin.on && view.alt < SPIN_OFF_ALT && zoom.target < SPIN_OFF_ALT) { setSpin(false); spin.k = 0; }
   const busy = !!(drag || flight || follow || arrival) || card.style.display === 'block' || now < spin.quietUntil;
   const zoomK = smooth((Math.log(view.alt) - Math.log(SPIN_NONE)) / (Math.log(SPIN_FULL) - Math.log(SPIN_NONE)));
   const want = spin.on && !busy ? zoomK : 0;

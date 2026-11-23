@@ -204,7 +204,7 @@ const CSS = `
 .tut-nav button:disabled { opacity: .4; }
 .tut-skip { display: block; width: 100%; margin-top: 6px; background: none; border: none; color: #7d97a0; text-decoration: underline; }
 #tut-open { margin-top: 6px; }
-#tut-offer { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); width: min(460px, calc(100vw - 24px)); box-sizing: border-box; z-index: 20;
+#tut-offer { position: fixed; left: 50%; bottom: calc(var(--src-h, 0px) + 18px); transform: translateX(-50%); width: min(460px, calc(100vw - 24px)); box-sizing: border-box; z-index: 20;
   display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 12px; background: rgba(6,14,22,.88); border: 1px solid rgba(120,200,230,.3);
   color: #dfeff5; font-size: 13px; line-height: 1.4; backdrop-filter: blur(6px); }
 #tut-offer .to-text { flex: 1 1 auto; min-width: 0; }
@@ -214,7 +214,10 @@ const CSS = `
 #tut-offer .to-x { min-width: 44px; padding: 0; font-size: 20px; }
 @media (max-width: 600px) {
   body.tut-open #panel { display: none; }   /* the panel would sit under the tour card on a phone; close the tour to get it back */
-  #tut { left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 52vh; font-size: 13px; }
+  #tut { left: 8px; right: 8px; bottom: calc(var(--stand-h, 20px) + 14px); width: auto; max-height: 52vh; font-size: 13px; }   /* above the standing line */
+  /* 2026-11-23 phone layout: the offer sits just above the standing line, one or two lines high (the place name is on the map) */
+  #tut-offer { bottom: calc(var(--stand-h, 20px) + 14px); padding: 6px 6px 6px 12px; font-size: 12px; }
+  #tut-offer .to-text b { display: none; }
 }`;
 
 async function init() {

@@ -1409,18 +1409,33 @@ function placeSketch(show) {                          // every frame: sit at the
   }
 }
 
-// PLUMBING: keep the left panel clear of the source caption. The caption's height changes with pane width, so the CSS
-// max-height of #panel reads the variable --cap-h, which is refreshed whenever the caption is resized.
-const capBox = document.getElementById('caption');
-const setCapH = () => document.documentElement.style.setProperty('--cap-h', capBox.offsetHeight + 'px');
-setCapH(); new ResizeObserver(setCapH).observe(capBox); new MutationObserver(setCapH).observe(capBox, { childList: true, subtree: true, characterData: true });
-addEventListener('resize', () => { setCapH(); setCredH(); setStandH(); });   // also when the pane is hidden and observers sleep
-const credBox = document.getElementById('credits');   // the caption sits on top of the credits block (style.css uses --cred-h)
-const setCredH = () => document.documentElement.style.setProperty('--cred-h', credBox.offsetHeight + 'px');
-setCredH(); new ResizeObserver(setCredH).observe(credBox);
-const standBox = document.getElementById('standing');   // the standing notice; on phones it sits above the credits (style.css uses --stand-h)
-const setStandH = () => document.documentElement.style.setProperty('--stand-h', standBox.offsetHeight + 'px');
-setStandH(); new ResizeObserver(setStandH).observe(standBox);
+// PLUMBING: keep the panel clear of the top bar and the sources box. style.css reads --bar-b (bottom of the top bar),
+// --src-h (height of the sources box, 0 while closed) and --stand-h (the standing line, phones); refreshed on resize.
+const root = document.documentElement, barBox = document.getElementById('top-bar'), srcBox = document.getElementById('src-box'), standBox = document.getElementById('standing');
+const setBoxVars = () => {
+  root.style.setProperty('--bar-b', Math.round(barBox.getBoundingClientRect().bottom + 8) + 'px');
+  root.style.setProperty('--src-h', (getComputedStyle(srcBox).position === 'fixed' && srcBox.offsetHeight ? srcBox.offsetHeight + 12 : 0) + 'px');
+  root.style.setProperty('--stand-h', standBox.offsetHeight + 'px');
+};
+[barBox, srcBox, standBox].forEach(b => new ResizeObserver(setBoxVars).observe(b));
+new MutationObserver(setBoxVars).observe(srcBox, { childList: true, subtree: true, characterData: true });
+addEventListener('resize', setBoxVars); setBoxVars();   // also when the pane is hidden and observers sleep
+// Controls / Sources toggles (2026-11-23 phone layout). Phone or touch screen: both start closed, and on a narrow screen
+// opening one closes the other (they share the space under the top bar). Desktop: both start open, as before, except
+// on arrival from the globe, where only the reef, Back to globe, the two toggles and the standing line show.
+const PHONE = matchMedia('(max-width: 600px), (pointer: coarse)'), NARROW = matchMedia('(max-width: 600px)');
+const fromGlobe = new URLSearchParams(location.search).get('from') === 'globe';
+const UIBOX = { panel: { el: 'panel', btn: 'panel-toggle', open: 'panel-open', shut: 'panel-shut' }, src: { el: 'src-box', btn: 'src-toggle', open: 'src-open', shut: 'src-shut' } };
+function setBox(k, on) {
+  const u = UIBOX[k]; document.body.classList.toggle(u.open, on); document.body.classList.toggle(u.shut, !on);
+  document.getElementById(u.btn).setAttribute('aria-expanded', on);
+  if (on && NARROW.matches) { const o = k === 'panel' ? 'src' : 'panel'; if (document.body.classList.contains(UIBOX[o].open)) setBox(o, false); }
+  setBoxVars();
+}
+const boxOpen = k => document.body.classList.contains(UIBOX[k].open);
+setBox('panel', !PHONE.matches && !fromGlobe); setBox('src', !PHONE.matches && !fromGlobe);
+document.getElementById('panel-toggle').onclick = () => setBox('panel', !boxOpen('panel'));
+document.getElementById('src-toggle').onclick = () => setBox('src', !boxOpen('src'));
 
 // ---------- 6d. Back to the globe: zooming out past the reef patch continues onto the whole-Earth globe ----------
 // Reef layers only. Once the camera is more than EXIT.start (scaled to the patch) from the middle of the lidar box
@@ -1573,9 +1588,27 @@ function zoomFrame(now) {
 // middle of the lidar box, facing the same compass heading with the same tilt from straight down, and eases in to the
 // layer's overview while the black fades on time (the globe already faded out). The mirror of 6d.
 const ARRIVE = { pending: null, fly: null, t0: 0 };
+// Where the arrival ends (2026-11-23, Benn on his iPhone: "it opens flat or far out and only reads as 3D fully zoomed in").
+// Not the layer's 6-7 km overview but a close, tilted look at the layer's own reef: from the sea side, turned ARR.turn
+// degrees off the spot's sea bearing so the reef is seen at a slant, ARR.tilt degrees down, at a distance where about
+// ARR.width metres span the screen (portrait phones: the height of the screen carries the depth instead). The focus sits
+// ARR.out metres seaward of the take-off, so the reef, not the land, fills the frame.
+const ARR = { turn: 35, tilt: 30, width: 700, out: 200, dMin: 600, dMax: 1000 };
+function arrivalView() {
+  const tags = cur.spotTags, title = (cur.cfg.title || '').toLowerCase();
+  const t = tags.find(s => title.startsWith(s.name.toLowerCase())) || tags[0];
+  if (!t) return cur.cfg.views.far;
+  const sc = (cur.cfg.spotCams && cur.cfg.spotCams[t.name]) || {}, b = sc.sea != null ? sc.sea * Math.PI / 180 : null;
+  const n = b != null ? [Math.sin(b), -Math.cos(b)] : (cur.cfg.seaDir || [-0.698, 0.716]);   // unit (x, z) toward open sea
+  const at = sc.at ? [sc.at[0], -sc.at[1]] : [t.x, t.z];
+  const a = ARR.turn * Math.PI / 180, o = [n[0] * Math.cos(a) - n[1] * Math.sin(a), n[0] * Math.sin(a) + n[1] * Math.cos(a)];
+  const k = Math.tan(camera.fov / 2 * Math.PI / 180), D = Math.min(ARR.dMax, Math.max(ARR.dMin, ARR.width / (2 * k * Math.max(camera.aspect, 0.6))));
+  const p = ARR.tilt * Math.PI / 180, fx = at[0] + n[0] * ARR.out, fz = at[1] + n[1] * ARR.out, fy = -4 * cur.cfg.exag;   // aim a little below sea level, at the reef
+  return { pos: v3(fx + o[0] * D * Math.cos(p), fy + D * Math.sin(p), fz + o[1] * D * Math.cos(p)), target: v3(fx, fy, fz) };
+}
 function startArrival() {
   const a = ARRIVE.pending; ARRIVE.pending = null;
-  const r = exitRange(), far = cur.cfg.views.far, c = v3(r.cx, 0, r.cz);
+  const r = exitRange(), far = arrivalView(), c = v3(r.cx, 0, r.cz);
   const D1 = far.pos.distanceTo(far.target), D0 = Math.min(r.end * 0.97, Math.max(D1 * 1.5, a.d || r.end));
   const h = a.h * Math.PI / 180, p = Math.min(85, Math.max(0, a.p)) * Math.PI / 180;
   const u1 = far.pos.clone().sub(far.target).normalize();
@@ -1666,4 +1699,4 @@ if (wantLayer && LAYERS[wantLayer] && LAYERS[wantLayer].reef) {   // came from t
 }
 requestAnimationFrame(animate);
 // Debug hook (lets the browser console inspect the scene and test hover; harmless to leave in).
-window.__viewer = { ZB, ARRIVE, zoomSet, zoomMin, zoomMax, exitRange, get fly() { return fly; }, DATA_VERSION, LAYERS, tagFree, tick: drawFrame, renderer, BEACH, beachView, flySpot, setViewMode, bedHeightAt, marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js
+window.__viewer = { ZB, ARRIVE, ARR, arrivalView, zoomSet, zoomMin, zoomMax, exitRange, get fly() { return fly; }, DATA_VERSION, LAYERS, tagFree, tick: drawFrame, renderer, BEACH, beachView, flySpot, setViewMode, bedHeightAt, marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js

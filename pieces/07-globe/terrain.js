@@ -106,9 +106,14 @@ const parKey = d => d.polar ? `p${d.polar}/${d.z - 1}/${d.x >> 1}/${d.y >> 1}` :
 // answered, decoded, built and first drawn (performance.now ms). Off (no cost) otherwise.
 const tlog = (t, k) => { const L = globalThis.__terrainLog; if (!L) return; if (!t.tm) { t.tm = { key: t.key, z: t.z }; L.push(t.tm); } t.tm[k] ??= performance.now(); };
 export function createTerrain({ scene, camera, renderer, baseElev = null, lite = false }) {
-  // lite (phone / touch screen, set by globe.js): dots split a little later (×1.25 spacing), fewer tiles per view and in
-  // the cache (phone memory). Dot sizes follow the spacing, so the land keeps its brightness.
-  const TPX = TARGET_PX * (lite ? 1.25 : 1), BUDGET = lite ? 100 : TILE_BUDGET, CACHE = lite ? 140 : CACHE_MAX;
+  // lite (phone / touch screen, set by globe.js). Phone 2026-11-23 late: a portrait phone keeps the desktop's 40° across
+  // (globe.js fitFov), so the same stretch of coast is ~390 css px wide instead of ~1,440: at the desktop's 2.5 px split
+  // (and the old ×1.25 on top) Peniche stopped at z12 (59 m dots) from 15 km where desktop reaches z13 (30 m), and read as
+  // blobs. Lite now splits at a spacing scaled by the screen's short side (390/900 → ×0.45), i.e. about as many dots across
+  // the view as on desktop, and gets a larger tile budget and cache to carry them (was 100 / 140).
+  let TPX = TARGET_PX;
+  const BUDGET = lite ? 140 : TILE_BUDGET, CACHE = lite ? 200 : CACHE_MAX;
+  const liteTpx = () => TARGET_PX * Math.max(0.45, Math.min(1, Math.min(innerWidth, innerHeight) / 900));
   const group = new THREE.Group(); group.visible = false; scene.add(group);
   const cache = new Map();                // key -> tile { ...desc, state, points, elev, sources, hasOcean, used }
   const queue = [];                       // decoded tiles waiting to be built (a few per frame)
@@ -493,6 +498,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     }
   }
   function update(now) {
+    if (lite) TPX = liteTpx();   // phone 2026-11-23 late (rotation and resizes change the short side)
     if (!enabled) return;
     frameNo++;
     morphT.value = TPX * refine * renderer.getPixelRatio();

@@ -16,7 +16,7 @@
   { "imports": {
       "three": "../01-seafloor/viewer/vendor/three.module.js",
       "three/addons/": "../01-seafloor/viewer/vendor/addons/",
-      "./dots.js": "./dots.js?v=b42", "./terrain.js": "./terrain.js?v=b42" } }
+      "./dots.js": "./dots.js?v=b43", "./terrain.js": "./terrain.js?v=b43" } }
   </script>
   <style>
     :root { --panel: #060e16; --bg: #04060a; --ink: #cfe6f2; --dim: #6b8696; --open: #5ff2ff; --accent: #5ff2ff; --fc: #8fc2d1; --lock: #4a5a66; --hz: #8ca3b8; }
@@ -164,7 +164,7 @@
     #zoom-note[hidden] { display: none; }
     .offline-cue { position: fixed; top: 62px; right: 16px; font-size: 11px; color: var(--dim); padding: 3px 10px; border-radius: 6px; z-index: 4; pointer-events: none;
       background: color-mix(in srgb, var(--bg) 62%, transparent); } .offline-cue[hidden] { display: none; }
-    @media (max-width: 600px) { .offline-cue { top: 132px; left: 16px; right: auto; } }
+    @media (max-width: 600px) { .offline-cue { top: 90px; left: 16px; right: auto; } }
     #zoom-note button { all: unset; color: var(--open); cursor: pointer; border-bottom: 1px dotted currentColor; }
     #zoom-note button[hidden] { display: none; }
     /* UX 2026-11-23: the offered way into a spot's 3D viewer (globe.js enterFrame); nothing opens it by itself */
@@ -175,6 +175,15 @@
     #open-spot:hover, #open-spot:focus-visible, #open-spot.nudge { box-shadow: 0 0 14px color-mix(in srgb, var(--open) 55%, transparent); outline: none; }
     @media (max-width: 600px) { #open-spot { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 80px); left: calc(50% - 28px); } }
     #spin-speed-box[hidden] { display: none; }
+    /* phone 2026-11-23 late: the speed controls inside the View panel */
+    #spin-speed-holder #spin-speed-box { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 2px 0 6px 24px; }
+    #spin-speed-holder #spin-speed-box[hidden] { display: none; }
+    #spin-speed-holder #spin-real { all: unset; box-sizing: border-box; min-height: 44px; padding: 0 12px; display: inline-flex; align-items: center; border-radius: 7px; font-size: 12px; color: var(--dim); cursor: pointer;
+      border: 1px solid color-mix(in srgb, var(--open) 25%, transparent); }
+    #spin-speed-holder #spin-real[aria-pressed=true] { color: var(--ink); border-color: var(--open); }
+    #spin-speed-holder .notched { flex: 1 1 120px; min-height: 44px; }
+    #spin-speed-holder #spin-speed { width: 100%; height: 44px; }
+    #spin-speed-holder #spin-speed-out { display: block; flex-basis: 100%; min-width: 0; padding-left: 0; white-space: normal; }
     /* UX 2026-11-23: first-visit welcome (globe.js): one line on what this is, one suggested first action */
     #welcome { position: fixed; left: 50%; bottom: 48px; transform: translateX(-50%); width: min(440px, calc(100vw - 32px)); box-sizing: border-box; z-index: 7;
       padding: 14px 16px 12px; border-radius: 12px; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid color-mix(in srgb, var(--open) 28%, transparent);
@@ -211,7 +220,7 @@
     #follow-cap { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--ink); white-space: nowrap; max-width: calc(100vw - 32px);
       overflow: hidden; text-overflow: ellipsis; background: color-mix(in srgb, var(--bg) 72%, transparent); padding: 3px 10px; border-radius: 6px; z-index: 4; pointer-events: none; }
     #follow-cap[hidden] { display: none; }
-    @media (max-width: 600px) { #follow-cap { top: 104px; } }
+    @media (max-width: 600px) { #follow-cap { top: 62px; } }   /* phone 2026-11-23 late: one-row bar (was 104) */
     #hint { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: var(--dim); font-size: 12px; text-align: center;
       width: max-content; max-width: min(820px, calc(100vw - 150px));
       background: color-mix(in srgb, var(--bg) 72%, transparent); padding: 3px 10px; border-radius: 6px; backdrop-filter: blur(4px); }   /* shrink-to-fit made it half the window: 4 lines on a tablet */
@@ -226,21 +235,25 @@
     .geo-name { position: absolute; left: 0; top: 0; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); white-space: nowrap;
       pointer-events: none; opacity: 0; transition: opacity .3s; }
     .geo-name.sea { font-style: italic; letter-spacing: .12em; text-transform: none; }
-    /* phone: the bar wraps to two rows (sections + Home, then Spin and its speed), touch-sized; the compass stays top right;
+    /* phone: the bar is one row (sections + Home; Spin and its speed sit in the View panel), touch-sized; the compass stays top right;
        the zoom bar shrinks to + and − at the bottom right (pinch zooms); the hint is one line; cards and panel fit and scroll */
     @media (max-width: 600px) {
       #bar { left: 8px; right: 54px; top: 8px; flex-wrap: wrap; padding: 2px 4px; row-gap: 0; }
       #bar button { min-height: 44px; padding: 0 7px; box-sizing: border-box; }   /* UX 2026-11-23: 44 px touch targets */
       #bar .gap { display: none; }
-      #spin-speed-box { flex: 1 1 auto; min-width: 0; }
-      #spin-speed-box .notched, #spin-speed-box input { flex: 1 1 auto; min-width: 60px; }
+      /* phone 2026-11-23 late: one calm row (Oceany, Layers, Spots, View, About, Home); Spin, Real speed and the speed
+         slider live in the View panel (globe.js moves #spin-speed-box there; the panel's Spin checkbox is the switch) */
+      #bar { flex-wrap: nowrap; padding: 0 2px 0 8px; gap: 0; }
+      #bar #spin-btn { display: none; }
+      #bar button { padding: 0 5px; gap: 4px; }
+      #bar .name { margin-right: 0; }
       #compass { top: 10px; right: 8px; width: 44px; height: 44px; }
-      #panel { top: 104px; left: 8px; right: 8px; max-width: none; max-height: calc(100vh - 180px); }
+      #panel { top: 62px; left: 8px; right: 8px; max-width: none; max-height: calc(100vh - 138px); }   /* phone 2026-11-23 late: one-row bar (was 104 / 180) */
       #zoom { top: auto; bottom: 64px; right: 10px; transform: none; padding: 4px; gap: 6px; }
       #zoom-slider, #tilt-slider, #zoom .tl, #zoom .sep, #tilt-auto, #zoom #north { display: none !important; }
       #zoom button { width: 44px; height: 44px; }
       #zoom.faded { opacity: .6; }
-      #zoom-note { top: 104px; } #zoom-note button { display: inline-block; min-height: 44px; line-height: 44px; }
+      #zoom-note { top: 62px; } #zoom-note button { display: inline-block; min-height: 44px; line-height: 44px; }
       #card { left: 8px; right: 70px; bottom: 40px; width: auto; max-width: none; max-height: calc(100vh - 150px); }   /* the zoom buttons stay free on the right; b38: was 50vh, which cut the longest cards (up to 510 px) and scrolled; now the top stays below the bar (94 px) */
       #notice-standing { bottom: 8px !important; right: 8px; max-width: none; left: 8px; text-align: center; }
     }
@@ -289,6 +302,7 @@
     <section data-sec="view" hidden>
       <h2>View</h2>
       <label class="layer"><input type="checkbox" id="spin-toggle"> Spin the globe (pauses while you look around)</label>
+      <div id="spin-speed-holder"></div>   <!-- phone 2026-11-23 late: the bar's speed controls move here on a phone -->
       <label class="layer"><input type="checkbox" id="terrain-toggle"> Ground detail close up (land and sea-floor relief; comes on by itself as you zoom in)</label>
       <div id="terrain-readout" style="display:none"></div>
       <details id="terrain-credits" style="display:none"><summary>Terrain credits</summary>
@@ -372,6 +386,6 @@
   </div>
   <div id="hint">Drag to move; right-drag or shift-drag to tilt and turn; scroll, pinch or use the slider to zoom. Each dot is one point of ETOPO1 global relief (NOAA): ocean blue by depth; land coloured by height (olive low ground, brown uplands, grey-brown high plateaus, paler only on the highest peaks; the Antarctic and Greenland ice sheets blue-grey). Colour shows height, not vegetation or snow.</div>
   <script type="module" src="./fullscreen.js?v=f1"></script>
-  <script type="module" src="./globe.js?v=b42"></script>
+  <script type="module" src="./globe.js?v=b43"></script>
 </body>
 </html>
