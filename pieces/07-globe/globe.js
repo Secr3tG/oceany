@@ -132,7 +132,7 @@ function resize() {
   renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = fitFov(); camera.updateProjectionMatrix();
   updateDotScale(renderer, camera);
 }
-addEventListener('resize', resize); resize();
+addEventListener('resize', resize); visualViewport?.addEventListener('resize', resize); resize();   // phones: the address bar shows and hides without a window resize
 
 // ---------- regions ----------
 const { regions, wantedSpots } = await (await fetch('./regions.json', { cache: 'no-cache' })).json();

@@ -21,7 +21,7 @@
   <style>
     :root { --panel: #060e16; --bg: #04060a; --ink: #cfe6f2; --dim: #6b8696; --open: #5ff2ff; --accent: #5ff2ff; --fc: #8fc2d1; --lock: #4a5a66; --hz: #8ca3b8; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, sans-serif; overflow: hidden; }
-    canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none; }
+    canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }   /* b39 phone: was 100vw x 100vh; on phones 100vh includes the hidden address bar, so the picture (sized to innerHeight) was stretched tall: an egg-shaped globe */
     /* Top bar: the name, one dot-button per panel section (one open at a time) and the spin toggle. The globe is clear on load. */
     #bar { position: fixed; top: 16px; left: 16px; display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 12px; z-index: 5;
       background: color-mix(in srgb, var(--panel) 78%, transparent); border: 1px solid color-mix(in srgb, var(--open) 15%, transparent); border-radius: 10px; backdrop-filter: blur(6px); }
