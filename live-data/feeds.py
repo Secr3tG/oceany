@@ -374,5 +374,194 @@ def ndbc(spot, station, label):
                   attribution="NOAA National Data Buoy Center", licence="US public domain", browser_cors=False)
 
 
+# ---------------------------------------------------------------- NOAA/NCEP GFS-Wave (WAVEWATCH III), NOMADS grib filter
+# Public domain (NWS disclaimer, https://www.weather.gov/disclaimer: "may be used without charge for any lawful purpose").
+# Access: https://nomads.ncep.noaa.gov/cgi-bin/filter_gfswave.pl (OpenDAP on NOMADS was retired 23 Feb 2026, SCN 25-81).
+# NOMADS asks scripts to wait 10 s between fetches (https://nomads.ncep.noaa.gov/info.php?page=gribfilter, read 2026-11-23),
+# so the job fetches one small subregion per forecast step and per region, caches every file, and sleeps 10 s between calls.
+# GRIB names -> meaning (NCEP WW3 output): HTSGW total Hs; PERPW period of the spectral peak (WW3 writes 1/fp under the
+# "primary wave mean period" code); DIRPW peak direction; SWELL/SWPER/SWDIR swell partitions 1, 2 (partition peak period);
+# WVHGT/WVPER/WVDIR wind sea; WIND/WDIR the GFS 10 m wind that drives the wave model. Directions are "coming from".
+NOMADS = "https://nomads.ncep.noaa.gov"
+GFSW_REGIONS = {   # one box per group of spots, lon -180..180 as the filter takes it
+    "europe": dict(toplat=60, bottomlat=30, leftlon=-12, rightlon=36),
+    "hawaii": dict(toplat=25, bottomlat=18, leftlon=-162, rightlon=-152),
+}
+GFSW_STEPS = list(range(0, 121, 3)) + list(range(126, 241, 6))   # 3-hourly to 5 days, 6-hourly to 10 days
+GFSW_WAIT_S = 10
+GFSW_VARS = ["HTSGW", "PERPW", "DIRPW", "WVHGT", "WVPER", "WVDIR", "SWELL", "SWPER", "SWDIR", "WIND", "WDIR"]
+_GFSW_KEY = {(10, 0, 3, 1): "hs", (10, 0, 11, 1): "tp", (10, 0, 10, 1): "dir",
+             (10, 0, 5, 1): "wind_sea_hs", (10, 0, 6, 1): "wind_sea_tp", (10, 0, 4, 1): "wind_sea_dir",
+             (10, 0, 8, 241, 1): "swell_hs", (10, 0, 9, 241, 1): "swell_tp", (10, 0, 7, 241, 1): "swell_dir",
+             (10, 0, 8, 241, 2): "swell2_hs", (10, 0, 9, 241, 2): "swell2_tp", (10, 0, 7, 241, 2): "swell2_dir",
+             (0, 2, 1, 1): "wind_speed", (0, 2, 0, 1): "wind_dir"}
+_gfsw_mem = {}
+_last_nomads = [0.0]
+
+
+def _nomads_get(url, **kw):
+    wait = GFSW_WAIT_S - (time.time() - _last_nomads[0])
+    if wait > 0:
+        time.sleep(wait)
+    try:
+        return requests.get(url, timeout=90, headers=UA, **kw)
+    finally:
+        _last_nomads[0] = time.time()
+
+
+def gfswave_latest_run():
+    """Newest GFS-Wave cycle whose last step we use (f240) is on NOMADS. Returns datetime of the cycle (UTC)."""
+    t = now_utc() - dt.timedelta(hours=3)
+    cyc = t.replace(hour=t.hour - t.hour % 6, minute=0, second=0, microsecond=0)
+    for _ in range(6):
+        u = (f"{NOMADS}/pub/data/nccf/com/gfs/prod/gfs.{cyc:%Y%m%d}/{cyc:%H}/wave/gridded/"
+             f"gfswave.t{cyc:%H}z.global.0p25.f{GFSW_STEPS[-1]:03d}.grib2.idx")
+        r = _nomads_get(u)
+        if r.status_code == 200:
+            return cyc
+        cyc -= dt.timedelta(hours=6)
+    raise RuntimeError("no complete GFS-Wave cycle found on NOMADS in the last 36 h")
+
+
+def gfswave_region(region):
+    """All steps of the newest cycle for one region: (cycle, lats, lons, [(valid datetime, {key: 2-D array})]).
+    Files are cached under cache/gfswave/<cycle>/; a rerun for the same cycle makes no NOMADS calls."""
+    import grib2_simple
+    if region in _gfsw_mem:
+        return _gfsw_mem[region]
+    cyc = _gfsw_mem.get("_cycle") or gfswave_latest_run()
+    _gfsw_mem["_cycle"] = cyc
+    d = os.path.join(CACHE, "gfswave", f"{cyc:%Y%m%d%H}"); os.makedirs(d, exist_ok=True)
+    box = GFSW_REGIONS[region]
+    steps, lats, lons, missing = [], None, None, []
+    for f in GFSW_STEPS:
+        path = os.path.join(d, f"{region}_f{f:03d}.grib2")
+        if not os.path.exists(path):
+            p = {"dir": f"/gfs.{cyc:%Y%m%d}/{cyc:%H}/wave/gridded", "file": f"gfswave.t{cyc:%H}z.global.0p25.f{f:03d}.grib2",
+                 "lev_surface": "on", "lev_1_in_sequence": "on", "lev_2_in_sequence": "on", "subregion": "", **box}
+            p.update({f"var_{v}": "on" for v in GFSW_VARS})
+            r = _nomads_get(f"{NOMADS}/cgi-bin/filter_gfswave.pl", params=p)
+            if r.status_code != 200 or not r.content.startswith(b"GRIB"):
+                missing.append(f"f{f:03d} HTTP {r.status_code}"); continue
+            with open(path + ".part", "wb") as fh:
+                fh.write(r.content)
+            os.replace(path + ".part", path)
+        fields, valid = {}, None
+        for m in grib2_simple.messages(open(path, "rb").read()):
+            k = _GFSW_KEY.get((m["discipline"], m["category"], m["number"]) + ((241, int(m["surface"][1])) if m["surface"][0] == 241 else (1,)))
+            if k:
+                fields[k] = m["values"]; valid = m["valid"]; lats, lons = m["lats"], m["lons"]
+        if valid is not None:
+            steps.append((valid, fields))
+    if not steps:
+        raise RuntimeError("no GFS-Wave step could be read: " + "; ".join(missing[:5]))
+    out = (cyc, lats, lons, steps, missing)
+    _gfsw_mem[region] = out
+    return out
+
+
+def gfs_wave(spot, label="NOAA GFS-Wave 0.25 deg", region=None, max_km=40):
+    import numpy as np
+    region = region or next(k for k, b in GFSW_REGIONS.items()
+                            if b["bottomlat"] <= spot["lat"] <= b["toplat"] and b["leftlon"] <= spot["lon"] <= b["rightlon"])
+    cyc, lats, lons, steps, missing = gfswave_region(region)
+    # nearest cell with a wave value (land and ice cells are empty in the GRIB bitmap)
+    wet = ~np.isnan(steps[0][1]["hs"])
+    LA, LO = np.meshgrid(lats, lons, indexing="ij")
+    cl = math.cos(math.radians(spot["lat"]))
+    dlon = ((LO - spot["lon"] % 360) + 180) % 360 - 180
+    dist = np.where(wet, 111.195 * np.hypot(LA - spot["lat"], dlon * cl), np.inf)
+    i, j = np.unravel_index(np.argmin(dist), dist.shape)
+    km = float(dist[i, j])
+    if km > max_km:
+        raise RuntimeError(f"nearest wet GFS-Wave cell is {km:.0f} km away (limit {max_km} km)")
+    recs = []
+    for valid, f in steps:
+        g = lambda k, nd=2: num(f[k][i, j], nd) if k in f else None
+        recs.append(clean(dict(time_utc=iso(valid), hs=g("hs"), tp=g("tp"), dir=g("dir", 0),
+                               swell_hs=g("swell_hs"), swell_tp=g("swell_tp"), swell_tp_kind="peak" if g("swell_tp") is not None else None,
+                               swell_dir=g("swell_dir", 0), swell2_hs=g("swell2_hs"), swell2_tp=g("swell2_tp"), swell2_dir=g("swell2_dir", 0),
+                               wind_sea_hs=g("wind_sea_hs"), wind_sea_tp=g("wind_sea_tp"), wind_sea_dir=g("wind_sea_dir", 0),
+                               wind_speed=g("wind_speed", 1), wind_dir=g("wind_dir", 0))))
+    recs = [r for r in recs if "hs" in r]
+    plon = float(lons[j]) if lons[j] <= 180 else float(lons[j]) - 360
+    return result(label, "forecast", recs, model="NCEP GFS-Wave (WAVEWATCH III) global 0.25 deg", run_utc=iso(cyc),
+                  run_label=f"{cyc:%d %b} {cyc:%H}Z", steps="3-hourly to 120 h, 6-hourly to 240 h",
+                  point=dict(lat=round(float(lats[i]), 3), lon=round(plon, 3), km_from_spot=round(km, 1),
+                             note="nearest GFS-Wave 0.25 deg cell with wave data"),
+                  periods="tp = peak period of the whole sea (PERPW); swell_tp, swell2_tp, wind_sea_tp = partition peak periods",
+                  source_url=f"{NOMADS}/cgi-bin/filter_gfswave.pl",
+                  attribution="NOAA/NCEP GFS-Wave (public domain), processed by Oceany. Not an official NOAA product.",
+                  licence="US Government work, public domain (NWS disclaimer https://www.weather.gov/disclaimer)",
+                  browser_cors=False, notes=("missing steps: " + ", ".join(missing)) if missing else None)
+
+
+# ---------------------------------------------------------------- Copernicus Marine regional sea level (tide + surge)
+# The physics products below state that their model includes tides (product descriptions via copernicusmarine.describe,
+# 2026-11-23): IBI "tidal forcing, surges"; NWS "hydrodynamic-wave model system with tides"; MED "including tides".
+CM_SL_DOI = {"cmems_mod_ibi_phy_anfc_0.027deg-2D_PT15M-i": "10.48670/moi-00027",   # IBI_ANALYSISFORECAST_PHY_005_001
+             "cmems_mod_nws_phy-ssh_anfc_1.5km-2D_PT15M-i": "10.48670/moi-00054",  # NWSHELF_ANALYSISFORECAST_PHY_004_013
+             "cmems_mod_med_phy-ssh_anfc_4.2km_PT15M-i": "10.48670/mds-00359"}     # MEDSEA_ANALYSISFORECAST_PHY_006_013
+
+
+def cmems_sea_level(spot, dataset, label, pad=0.06, days_ahead=10):
+    import copernicusmarine as cm
+    t0 = now_utc() - dt.timedelta(hours=HOURS_BACK); t1 = now_utc() + dt.timedelta(days=days_ahead)
+    ds = cm.open_dataset(dataset_id=dataset, variables=["zos"], minimum_latitude=spot["lat"] - pad,
+                         maximum_latitude=spot["lat"] + pad, minimum_longitude=spot["lon"] - pad,
+                         maximum_longitude=spot["lon"] + pad, start_datetime=iso(t0), end_datetime=iso(t1))
+    da = ds["zos"].load()
+    if "depth" in da.dims:
+        da = da.isel(depth=0)
+    a0 = da.isel(time=0)
+    cl = math.cos(math.radians(spot["lat"]))
+    dist = ((a0.latitude - spot["lat"]) ** 2 + ((a0.longitude - spot["lon"]) * cl) ** 2).where(a0.notnull())
+    idx = dist.argmin(dim=("latitude", "longitude"))
+    pt = da.isel(latitude=int(idx["latitude"]), longitude=int(idx["longitude"]))
+    plat, plon = float(pt.latitude), float(pt.longitude)
+    km = 111.195 * math.sqrt((plat - spot["lat"]) ** 2 + ((plon - spot["lon"]) * cl) ** 2)
+    recs = []
+    for i in range(pt.time.size):
+        t = str(pt.time.values[i])[:16]
+        if t[14:16] != "00":
+            continue                                  # keep full hours of the 15-minute series
+        v = num(pt.values[i], 3)
+        if v is not None:
+            recs.append(dict(time_utc=t, sea_level=v))
+    vals = [r["sea_level"] for r in recs]
+    mean = sum(vals) / len(vals) if vals else None
+    # zos sits on the model's own reference level (window means -0.2 to -0.5 m on 2026-11-23), not on local mean sea
+    # level. Subtracting the window mean (6-12 days) puts it on an approximate MSL; it also removes any surge that lasts
+    # the whole window. Raw value kept as sea_level_zos.
+    for r in recs:
+        r["sea_level_zos"] = r["sea_level"]; r["sea_level"] = round(r["sea_level"] - mean, 3)
+    return result(label, "tide", recs, dataset=dataset, doi=CM_SL_DOI.get(dataset),
+                  point=dict(lat=round(plat, 4), lon=round(plon, 4), km_from_spot=round(km, 1), note="nearest wet model cell"),
+                  sea_level_datum=("approximate mean sea level: model sea surface height zos (tide + surge) minus its mean over this window "
+                                   f"({mean:+.2f} m); uncertain by about 0.1-0.2 m, and a surge lasting the whole window is removed too") if mean is not None else None,
+                  window_mean_m=None if mean is None else round(mean, 3),
+                  attribution="E.U. Copernicus Marine Service Information", licence="Copernicus Marine Service licence (free, attribution)",
+                  browser_cors=False)
+
+
+# ---------------------------------------------------------------- NOAA CO-OPS tide predictions (US stations)
+# Public domain: tidesandcurrents.noaa.gov/disclaimers.html "may be used freely by the public"; NOS asks for attribution.
+def coops_tide(spot, station, label, days_ahead=10):
+    t0 = now_utc() - dt.timedelta(hours=HOURS_BACK)
+    r = requests.get("https://api.tidesandcurrents.noaa.gov/api/prod/datagetter", timeout=30, headers=UA, params=dict(
+        product="predictions", application="oceany_research", begin_date=t0.strftime("%Y%m%d %H:%M"),
+        range=24 * days_ahead + HOURS_BACK, datum="MSL", station=station, time_zone="gmt", units="metric", interval="h",
+        format="json"))
+    r.raise_for_status(); j = r.json()
+    if "predictions" not in j:
+        raise RuntimeError(str(j.get("error"))[:200])
+    recs = [dict(time_utc=p["t"].replace(" ", "T"), sea_level=num(p["v"], 3)) for p in j["predictions"]]
+    return result(label, "tide", recs, point=dict(station=station),
+                  sea_level_datum="MSL at the station (astronomical tide prediction; no surge)",
+                  attribution="NOAA NOS CO-OPS tide predictions (public domain)",
+                  licence="US Government work, public domain (tidesandcurrents.noaa.gov/disclaimers.html)", browser_cors=True)
+
+
 FETCHERS = dict(open_meteo=open_meteo, cmems_wave=cmems_wave, cmems_insitu=cmems_insitu, kyst_buoy=kyst_buoy,
-                dmi_wam=dmi_wam, dmi_water_level=dmi_water_level, ndbc=ndbc)
+                dmi_wam=dmi_wam, dmi_water_level=dmi_water_level, ndbc=ndbc,
+                gfs_wave=gfs_wave, cmems_sea_level=cmems_sea_level, coops_tide=coops_tide)

@@ -221,6 +221,13 @@ async function init() {
   // Mid-tour: carry on where you were. The intro is shown once; dismissal is remembered under INTRO_KEY.
   const intro = document.getElementById('intro'), seenIntro = () => { try { return !!localStorage.getItem(INTRO_KEY); } catch (e) { return false; } };
   const doneIntro = () => { try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) { /* private mode: shown again next visit */ } if (intro) intro.style.display = 'none'; };
+  // The intro box never blocks zooming: a wheel over it goes to the viewer's zoom; wheeling out also dismisses it (as "Just explore").
+  if (intro) intro.addEventListener('wheel', e => {
+    if (intro.style.display === 'none') return;
+    e.preventDefault();
+    const cv = document.getElementById('scene'); if (cv) cv.dispatchEvent(new WheelEvent('wheel', { deltaX: e.deltaX, deltaY: e.deltaY, deltaMode: e.deltaMode, ctrlKey: e.ctrlKey, altKey: e.altKey, clientX: e.clientX, clientY: e.clientY, bubbles: true, cancelable: true }));
+    if (e.deltaY > 0) { const go = document.getElementById('intro-go'); if (go) go.click(); }
+  }, { passive: false });
   if (S.open) { doneIntro(); open(S.step); }
   else if (intro && !seenIntro()) {
     intro.style.display = '';

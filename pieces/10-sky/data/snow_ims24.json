@@ -1,0 +1,12 @@
+{
+ "source": "https://noaadata.apps.nsidc.org/NOAA/G02156/24km/2026/ims2026326_00UTC_24km_v1.3.asc.gz",
+ "valid": "2026-11-22 00 UTC",
+ "dataDayOfYear": "2026325",
+ "processed": "Sat Nov 21 22:01:19 2026",
+ "cellKm": 24,
+ "count": 72784,
+ "snow": 58076,
+ "ice": 14708,
+ "built": "2026-11-22T22:10+00:00",
+ "layout": "int16 lat*100 [count], int16 lon*100 [count], uint8 code [count]; 3 sea/lake ice, 4 snow on land"
+}

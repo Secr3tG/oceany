@@ -4,14 +4,15 @@
 // WHAT YOU SHOULD UNDERSTAND: periodFor() and readout(). PLUMBING: the rest.
 
 export const MSL_MINUS_LAT = 1.66, DATUM_UNC = '0.1-0.3 m', MAX_SNAPSHOT_AGE_H = 48;
-export const SPOT = { lat: 39.3195, lon: -9.3558 };          // same request point as live-data/open_meteo_marine.py
-export const OM_URL = 'https://marine-api.open-meteo.com/v1/marine';
-export const OM_FIELDS = ['swell_wave_height', 'swell_wave_period', 'swell_wave_peak_period', 'swell_wave_direction',
-  'wave_height', 'wind_wave_height', 'wind_wave_period', 'wind_wave_direction', 'sea_level_height_msl'];
+export const SPOT = { lat: 39.3195, lon: -9.3558 };          // Porto Batel's point (live-data/spots.py)
+// No browser call to any outside host: everything comes from the same-origin snapshot live/<spot>.json, written by
+// live-data/build_snapshot.py --public (NOAA GFS-Wave, Copernicus, DMI, NOAA CO-OPS). Open-Meteo was removed on 2026-11-23
+// (its free tier is non-commercial).
+export const DISCLAIMER = ['For research and play only. Not a forecast or warning service.', 'Not an official product. Do not use for safety decisions.'];
 
 // ---------- one table for every spot (mirrors live-data/spots.py; test_live_core.mjs checks the two agree) ----------
-// lat/lon: the Open-Meteo request point (spots.py). snapshot: a public file live/<key>.json exists (spots.py `public`).
-// tide: how Open-Meteo's sea level (MSL, tide + surge) becomes the water level on the spot's map:
+// lat/lon: the spot's point (spots.py). snapshot: a public file live/<key>.json exists (spots.py `public`; every spot now).
+// tide: how the snapshot's sea level (MSL: Copernicus tide + surge, or NOAA CO-OPS tide) becomes the water level on the map:
 //   mslToMap = metres added to get "above the map datum". Only Peniche has a measured offset (LAT = MSL - 1.66 m).
 // swell: what the forecast hour can drive on screen.
 //   'play'  the "Play with the swell" sliders (Porto Batel); 'model' the same swell model run in the browser on that map's
@@ -23,38 +24,37 @@ export const OM_FIELDS = ['swell_wave_height', 'swell_wave_period', 'swell_wave_
 const PENICHE_TIDE = { datum: 'LAT', mslToMap: MSL_MINUS_LAT, unc: DATUM_UNC, words: 'above lowest tide (LAT)',
   how: `Tide above lowest tide (LAT) = forecast sea level + ${MSL_MINUS_LAT} m (Peniche offset, notes/forecast-fields.md), uncertain by ${DATUM_UNC}.` };
 const MSL_TIDE = { datum: 'MSL', mslToMap: 0, words: 'relative to mean sea level',
-  how: 'Sea level relative to mean sea level (Open-Meteo, tide + surge). No chart-datum offset is known for this spot, so none is applied.' };
+  how: 'Sea level relative to (approximate) mean sea level, from the Copernicus regional model (tide + surge). No chart-datum offset is known for this spot, so none is applied.' };
 const NORTH_SEA = ['EMODnet ~115 m', 'Danish model 50 m', 'North Sea (zoomed out)'];
 export const LIVE_SPOTS = {
   porto_batel: { name: 'Porto Batel', lat: 39.3195, lon: -9.3558, snapshot: true, stageA: { lookup: '../../06-live-wave/lookup/', site: 'porto_batel' }, tide: PENICHE_TIDE,
-    swell: { mode: 'play' }, layers: ['Reef maps: Consolação and Porto Batel'], snapWhat: 'Copernicus',
+    swell: { mode: 'play' }, layers: ['Reef maps: Consolação and Porto Batel'], snapWhat: 'NOAA / Copernicus',
     also: 'Consolação, 1 km away on the same map, shares this forecast point.' },
-  supertubos: { name: 'Supertubos', lat: 39.3398, lon: -9.3619, snapshot: false, tide: PENICHE_TIDE,
+  supertubos: { name: 'Supertubos', lat: 39.3398, lon: -9.3619, snapshot: true, tide: PENICHE_TIDE,
     swell: { mode: 'model', grid: 'supertubos', file: 'data/reefs_wide.json' }, layers: ['Reef map: Supertubos, Peniche'],
-    noSnap: 'No snapshot for this spot (Copernicus IBI is published for Porto Batel only): Open-Meteo only.' },
+    snapWhat: 'NOAA / Copernicus' },
   pipeline: { name: 'Pipeline', lat: 21.665, lon: -158.053, snapshot: true, stageA: { lookup: '../../06-live-wave/lookup_pipeline/', site: 'pipeline' },
     tide: { datum: 'LMSL', mslToMap: 0, words: 'above local mean sea level (LMSL, the lidar datum)',
-      how: 'Open-Meteo sea level (MSL) is taken as the lidar\'s LMSL; the difference between the two is not checked. Spring range here is only ~0.6 m.' },
-    swell: { mode: 'model', grid: 'pipeline', file: 'data/pipeline.json' }, layers: ['Reef map: Pipeline, Oahu'], snapWhat: 'model-run',
-    noSnap: 'No snapshot for this spot: Open-Meteo only. The NDBC 51201 buoy stays out of the public file until its terms are settled (data from CDIP, which asks that data are not altered).',
+      how: 'NOAA CO-OPS tide prediction for Honolulu (MSL, about 45 km away on the south shore) is taken as the tide on the lidar\'s LMSL at Pipeline; timing and range differ a little and are not checked. Astronomical tide only, no surge. Spring range here is only ~0.6 m.' },
+    swell: { mode: 'model', grid: 'pipeline', file: 'data/pipeline.json' }, layers: ['Reef map: Pipeline, Oahu'], snapWhat: 'NOAA',
     also: 'The NDBC 51201 buoy (Waimea Bay) stays out of the public file until its terms are settled (data from CDIP, which asks that data are not altered).',
     credit: 'Reef model bed: Derived from 2013 USACE NCMP Topobathy Lidar DEM (LMSL): Oahu, HI (NOAA OCM dataset 9365), collected by USACE JALBTCX, distributed by NOAA Office for Coastal Management. US Government work, provided as-is, not endorsed by NOAA or USACE.' },
-  guethary: { name: 'Guéthary / Parlementia', lat: 43.427718, lon: -1.611053, snapshot: false,
+  guethary: { name: 'Guéthary / Parlementia', lat: 43.427718, lon: -1.611053, snapshot: true,
     tide: { datum: 'IGN69', mslToMap: 0, words: 'above IGN69 (within ~0.2 m of mean sea level here)',
-      how: 'Open-Meteo sea level (MSL) is used as height above IGN69, whose zero lies within ~0.2 m of mean level on this coast.' },
+      how: 'Copernicus IBI sea level (approximate MSL, tide + surge) is used as height above IGN69, whose zero lies within ~0.2 m of mean level on this coast.' },
     swell: { mode: 'model', grid: 'guethary', file: 'data/guethary.json' }, layers: ['Reef map: Guéthary / Parlementia, France'],
-    noSnap: 'No snapshot for this spot: Open-Meteo only.' },
-  hossegor: { name: 'Hossegor / La Gravière', lat: 43.67562, lon: -1.443375, snapshot: false,
+    snapWhat: 'NOAA / Copernicus' },
+  hossegor: { name: 'Hossegor / La Gravière', lat: 43.67562, lon: -1.443375, snapshot: true,
     tide: { datum: 'IGN69', mslToMap: 0, words: 'above IGN69 (within ~0.2 m of mean sea level here)',
-      how: 'Open-Meteo sea level (MSL) is used as height above IGN69, whose zero lies within ~0.2 m of mean level on this coast.' },
+      how: 'Copernicus IBI sea level (approximate MSL, tide + surge) is used as height above IGN69, whose zero lies within ~0.2 m of mean level on this coast.' },
     swell: { mode: 'model', grid: 'hossegor', file: 'data/hossegor.json' }, layers: ['Reef map: Hossegor / La Gravière, France'],
-    noSnap: 'No snapshot for this spot: Open-Meteo only.' },
+    snapWhat: 'NOAA / Copernicus' },
   klitmoller: { name: 'Klitmøller', lat: 57.04, lon: 8.49, snapshot: true, tide: MSL_TIDE, swell: null, layers: NORTH_SEA,
-    snapWhat: 'Copernicus / DMI' },
+    snapWhat: 'NOAA / Copernicus / DMI' },
   hvide_sande: { name: 'Hvide Sande', lat: 56.00, lon: 8.10, snapshot: true, tide: MSL_TIDE, swell: null, layers: NORTH_SEA,
-    snapWhat: 'Copernicus / DMI' },
+    snapWhat: 'NOAA / Copernicus / DMI' },
   tel_aviv: { name: 'Tel Aviv', lat: 32.08, lon: 34.76, snapshot: true, tide: MSL_TIDE, swell: null, layers: [],
-    snapWhat: 'Copernicus' },
+    snapWhat: 'NOAA / Copernicus' },
 };
 for (const [k, v] of Object.entries(LIVE_SPOTS)) v.key = k;
 // Spots offered on a viewer layer: the ones drawn on it first, then the forecast-only spots (no map in the viewer).
@@ -65,12 +65,12 @@ export function spotsForLayer(label) {
 export const snapshotPath = key => `live/${key}.json`;
 export const PROFILE = { offsets: Array.from({ length: 49 }, (_, i) => -600 + 25 * i), lineDeg: 236, alongDeg: 326 };
 export const ATTR = {
-  om: 'Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo.com</a> (CC BY 4.0); wave models as credited by Open-Meteo (M&eacute;t&eacute;o-France MFWAM, generated using E.U. Copernicus Marine Service Information; ECMWF; DWD; NOAA).',
+  gfs: 'Waves and wind: NOAA/NCEP GFS-Wave (WAVEWATCH III) and GFS, public domain, processed by Oceany. Not an official NOAA product.',
   cm: 'Generated using E.U. Copernicus Marine Service Information; <a href="https://doi.org/10.48670/moi-00025" target="_blank" rel="noopener">https://doi.org/10.48670/moi-00025</a> (IBI wave analysis and forecast).',
 };
 
 // The table and Stage A take one regular wave of period Tp; the period that sets its wavelength over the reef is the
-// swell's spectral peak. Open-Meteo gives the swell peak period for about 3 days, then only the swell mean period.
+// swell's spectral peak. NOAA GFS-Wave gives the swell partition's peak period for the whole run.
 // (Copernicus: the snapshot already applies build_snapshot.stage_a_period.)
 export function periodFor(peak, mean) { return peak != null ? [peak, 'peak'] : [mean, 'mean (swell partition)']; }
 
@@ -78,25 +78,9 @@ const latlon = (lat, lon) => `${Math.abs(lat).toFixed(3)} ${lat >= 0 ? 'N' : 'S'
 const toMap = (sl, spot) => sl == null ? null : +(sl + spot.tide.mslToMap).toFixed(3);
 // Wind sea / total sea of one hour, or null when the source has none.
 const windOf = (hs, tp, dir) => hs == null ? null : { hs, tp: tp ?? null, dir: dir ?? null };
-
-// Open-Meteo for one spot. Porto Batel (Stage A) needs every hour complete with sea level; elsewhere sea level may be missing.
-export async function fetchOpenMeteo(fetchFn, spot = LIVE_SPOTS.porto_batel) {
-  const q = new URLSearchParams({ latitude: spot.lat, longitude: spot.lon, hourly: OM_FIELDS.join(','), forecast_days: 10, past_days: 1, timezone: 'GMT' });
-  const r = await fetchFn(`${OM_URL}?${q}`);
-  if (!r.ok) throw new Error('Open-Meteo HTTP ' + r.status);
-  const d = await r.json(), h = d.hourly, col = k => h[k] || [];
-  const m = { name: 'Open-Meteo', key: 'om', source: 'Open-Meteo Marine + Forecast', feed: 'open_meteo', attr: ATTR.om,
-    t: [], hs: [], tp: [], kind: [], dir: [], tide: [], exact: [], wind: [], total: [], point: latlon(+d.latitude, +d.longitude) };
-  h.time.forEach((t, i) => {
-    const hs = h.swell_wave_height[i], dir = h.swell_wave_direction[i], sl = col('sea_level_height_msl')[i];
-    const [tp, kind] = periodFor(col('swell_wave_peak_period')[i], col('swell_wave_period')[i]);
-    if (hs == null || dir == null || tp == null || (spot.stageA && sl == null)) return;
-    m.t.push(t); m.hs.push(hs); m.tp.push(tp); m.kind.push(kind); m.dir.push(dir); m.tide.push(toMap(sl, spot)); m.exact.push(null);
-    m.wind.push(windOf(col('wind_wave_height')[i], col('wind_wave_period')[i], col('wind_wave_direction')[i])); m.total.push(col('wave_height')[i] ?? null);
-  });
-  if (!m.t.length) throw new Error('Open-Meteo returned no complete hours');
-  return m;
-}
+const col = (sm, k) => sm[k] || sm.t.map(() => null);
+const W10 = (sm, i) => sm.wind_speed && sm.wind_speed[i] != null ? { speed: sm.wind_speed[i], dir: sm.wind_dir ? sm.wind_dir[i] : null } : null;
+const runOf = sm => ({ model: sm.model_name || null, run: sm.run_label || null, runUtc: sm.run_utc || null });
 
 // build_snapshot.pack_profiles: two base-36 digits of s/2 per profile, '--' = no break
 export function unpackProfiles(x) {
@@ -110,34 +94,38 @@ function exactList(sm) {   // snapshot model columns -> per-hour exact records (
   return sm.t.map((_, i) => e.state[i] == null ? null : { state: e.state[i], break_house: e.break_house[i], breaker_H_house: e.breaker_H_house[i],
     peel_angle_near: e.peel_angle_near[i], peel_speed_near: e.peel_speed_near[i], break_s: unpackProfiles(e.break_s[i]) });
 }
-const FEED_KEY = { open_meteo: 'omSnap', cmems_wave: 'cm', dmi_wam: 'dmi' };
-const shortName = sm => sm.feed === 'open_meteo' ? 'Open-Meteo (snapshot)' : sm.feed === 'dmi_wam' ? 'DMI WAM'
+const FEED_KEY = { gfs_wave: 'gfs', cmems_wave: 'cm', dmi_wam: 'dmi' };
+const shortName = sm => sm.feed === 'gfs_wave' ? 'NOAA GFS-Wave' : sm.feed === 'dmi_wam' ? 'DMI WAM'
   : /IBI/.test(sm.model || sm.source || '') ? 'Copernicus IBI' : (sm.source || sm.model || sm.feed).replace(/ wave /, ' ');
 // Columns of a non-Stage-A snapshot model (build_snapshot.public_spot) -> the panel's model shape. Hours without swell are dropped.
 function genericModel(sm, spot) {
-  const m = { name: shortName(sm), key: FEED_KEY[sm.feed] || sm.feed, source: sm.source, feed: sm.feed, doi: sm.doi, provider: sm.provider,
-    t: [], hs: [], tp: [], kind: [], dir: [], tide: [], exact: [], wind: [], total: [], point: sm.point && sm.point.lat != null ? latlon(sm.point.lat, sm.point.lon) : '' };
+  const m = { name: shortName(sm), key: FEED_KEY[sm.feed] || sm.feed, source: sm.source, feed: sm.feed, doi: sm.doi, provider: sm.provider, ...runOf(sm),
+    t: [], hs: [], tp: [], kind: [], dir: [], tide: [], exact: [], wind: [], total: [], w10: [], point: sm.point && sm.point.lat != null ? latlon(sm.point.lat, sm.point.lon) : '' };
   sm.t.forEach((t, i) => {
     if (sm.swell_hs[i] == null || sm.swell_tp[i] == null || sm.swell_dir[i] == null) return;
     m.t.push(t); m.hs.push(sm.swell_hs[i]); m.tp.push(sm.swell_tp[i]); m.kind.push(sm.swell_tp_kind[i] === 'peak' ? 'peak' : 'mean (swell partition)');
     m.dir.push(sm.swell_dir[i]); m.tide.push(toMap(sm.sea_level_msl[i], spot)); m.exact.push(null);
-    m.wind.push(windOf(sm.wind_sea_hs[i], sm.wind_sea_tp[i], sm.wind_sea_dir[i])); m.total.push(sm.hs[i] ?? null);
+    m.wind.push(windOf(sm.wind_sea_hs[i], sm.wind_sea_tp[i], sm.wind_sea_dir[i])); m.total.push(sm.hs[i] ?? null); m.w10.push(W10(sm, i));
   });
   return m;
 }
 export function parseSnapshot(d, nowMs, spot = LIVE_SPOTS.porto_batel) {
   const age = (nowMs - Date.parse(d.built_utc + 'Z')) / 3.6e6;
   if (!(age <= MAX_SNAPSHOT_AGE_H)) return { state: 'stale', age };
-  const out = { state: 'ok', age, models: {}, observations: d.observations || [], comparison: d.comparison || [], built: d.built_utc, excluded: d.excluded || {} };
+  const tideMeta = !d.tide ? null : (d.tide.feed && typeof d.tide.feed === 'object') ? d.tide.feed : (d.tide.source && typeof d.tide.feed === 'string' ? d.tide : null);
+  const out = { state: 'ok', age, models: {}, observations: d.observations || [], comparison: d.comparison || [], built: d.built_utc, excluded: d.excluded || {},
+    tide: tideMeta };
   for (const sm of d.models || []) {
-    const m = spot.stageA ? { name: sm.feed === 'cmems_wave' ? 'Copernicus IBI' : 'Open-Meteo (snapshot)', key: sm.feed === 'cmems_wave' ? 'cm' : 'omSnap',
-      source: sm.model, feed: sm.feed, doi: sm.doi || (sm.feed === 'cmems_wave' ? '10.48670/moi-00025' : undefined),
-      attr: sm.feed === 'cmems_wave' ? ATTR.cm : ATTR.om, t: sm.t, hs: sm.hs, tp: sm.tp, kind: sm.tp_kind, dir: sm.dir, tide: sm.tide_lat,
-      exact: exactList(sm), wind: sm.t.map(() => null), total: sm.t.map(() => null), point: sm.point ? latlon(sm.point.lat, sm.point.lon) : '' }
+    const cmw = sm.feed === 'cmems_wave';
+    const m = spot.stageA ? { name: cmw ? 'Copernicus IBI' : shortName(sm), key: FEED_KEY[sm.feed] || sm.feed, ...runOf(sm),
+      source: sm.model, feed: sm.feed, doi: sm.doi || (cmw ? '10.48670/moi-00025' : undefined),
+      attr: cmw ? ATTR.cm : ATTR.gfs, t: sm.t, hs: sm.hs, tp: sm.tp, kind: sm.tp_kind, dir: sm.dir, tide: sm.tide_lat,
+      exact: exactList(sm), wind: sm.t.map((_, i) => windOf(col(sm, 'wind_sea_hs')[i], col(sm, 'wind_sea_tp')[i], col(sm, 'wind_sea_dir')[i])),
+      total: col(sm, 'total_hs'), w10: sm.t.map((_, i) => W10(sm, i)), point: sm.point ? latlon(sm.point.lat, sm.point.lon) : '' }
       : genericModel(sm, spot);
     if (m.t.length) out.models[m.key] = m;
   }
-  if (!out.models.cm && !out.models.dmi) out.state = 'nocm';
+  if (!Object.keys(out.models).length) out.state = 'empty';
   return out;
 }
 export async function fetchSnapshot(fetchFn, url, nowMs, spot) {
@@ -146,7 +134,7 @@ export async function fetchSnapshot(fetchFn, url, nowMs, spot) {
   return parseSnapshot(await r.json(), nowMs, spot);
 }
 
-// A browser Open-Meteo hour gets the snapshot's exact run only if the snapshot ran the very same inputs for that hour.
+// Not used by the viewer any more (no browser model call since 2026-11-23); kept because pieces/06-live-wave/lookup/test_live_core.mjs imports it.
 export function attachExact(om, omSnap) {
   if (!om || !omSnap) return 0;
   const idx = new Map(omSnap.t.map((t, i) => [t, i])); let n = 0;
@@ -159,46 +147,52 @@ export function attachExact(om, omSnap) {
   return n;
 }
 
-// Load everything for one spot; never throws. Returns models (key -> model), status notes, the attribution keys in use,
+// Load everything for one spot from its same-origin snapshot; never throws. Returns models (key -> model), status notes,
 // the credit lines (HTML) for exactly the sources shown, and the snapshot's buoy observations and model-vs-buoy numbers.
 export async function loadModels({ fetchFn, snapshotUrl, nowMs, spot = LIVE_SPOTS.porto_batel }) {
-  const want = spot.snapshot && snapshotUrl;
-  const [om, sn] = await Promise.allSettled([fetchOpenMeteo(fetchFn, spot), want ? fetchSnapshot(fetchFn, snapshotUrl, nowMs, spot) : Promise.resolve({ state: 'none' })]);
-  const models = {}, notes = [], attr = [], what = spot.snapWhat || 'Copernicus';
-  if (om.status === 'fulfilled') { models.om = om.value; attr.push('om'); }
-  else notes.push(`Open-Meteo failed (${(om.reason && om.reason.message) || om.reason}).`);
-  const s = sn.status === 'fulfilled' ? sn.value : { state: 'absent' };
-  if (s.state === 'ok' || s.state === 'nocm') {
-    if (models.om) { const n = spot.stageA ? attachExact(models.om, s.models.omSnap) : 0; if (n) notes.push(`${n} Open-Meteo hours match the snapshot's model runs.`); }
-    else if (s.models.omSnap) { models.om = s.models.omSnap; attr.push('om'); notes.push('Open-Meteo from the snapshot instead.'); }
-    for (const k of ['cm', 'dmi']) if (s.models[k]) { models[k] = s.models[k]; attr.push(k); }
-    const got = [s.models.cm && s.models.cm.name, s.models.dmi && 'DMI WAM'].filter(Boolean);
-    if (got.length) notes.push(`${got.join(' and ')} from a snapshot ${s.age.toFixed(0)} h old.`);
-    else if (what !== 'model-run') notes.push(`The snapshot has no ${what} data: Open-Meteo only.`);
-    else notes.push(`Model-run snapshot ${s.age.toFixed(0)} h old (Open-Meteo hours with exact reef-model runs).`);
-  } else if (s.state === 'stale') notes.push(`${what} snapshot is ${s.age.toFixed(0)} h old (over ${MAX_SNAPSHOT_AGE_H} h): not used; Open-Meteo only.`);
-  else if (s.state === 'none') notes.push(spot.noSnap || 'No snapshot for this spot: Open-Meteo only.');
-  else notes.push(what === 'model-run' ? 'No model-run snapshot published: Open-Meteo only, reef model interpolated from the precomputed table.' : `No ${what} snapshot published: Open-Meteo only.`);
-  const fresh = s.state === 'ok' || s.state === 'nocm';
+  let s;
+  try { s = spot.snapshot && snapshotUrl ? await fetchSnapshot(fetchFn, snapshotUrl, nowMs, spot) : { state: 'none' }; }
+  catch (e) { s = { state: 'absent', why: e.message }; }
+  const models = {}, notes = [];
+  const fresh = s.state === 'ok';
+  if (fresh) {
+    for (const k of ['cm', 'dmi', 'gfs']) if (s.models[k]) models[k] = s.models[k];
+    for (const [k, m] of Object.entries(s.models)) if (!models[k]) models[k] = m;
+    notes.push(`Snapshot built ${s.built.replace('T', ' ')} UTC (${s.age.toFixed(0)} h ago).`);
+    if (!s.tide) notes.push('Tide: not available for this spot right now.');
+  } else if (s.state === 'stale') notes.push(`The newest snapshot is ${s.age.toFixed(0)} h old (over ${MAX_SNAPSHOT_AGE_H} h), so it is not shown.`);
+  else if (s.state === 'empty') notes.push('The snapshot has no model data.');
+  else notes.push('No forecast snapshot is published for this spot right now.');
   const observations = fresh ? s.observations : [], comparison = fresh ? s.comparison : [];
-  return { models, notes, attr: [...new Set(attr)], ok: Object.keys(models).length > 0, snapshot: s.state,
-    observations, comparison, credits: [...credits(models, observations, fresh ? s.built : null), ...(spot.credit ? [spot.credit] : [])] };
+  return { models, notes, attr: Object.keys(models), ok: Object.keys(models).length > 0, snapshot: s.state, tide: fresh ? s.tide : null,
+    built: fresh ? s.built : null, observations, comparison,
+    credits: [...credits(models, observations, fresh ? s.built : null, fresh ? s.tide : null), ...(spot.credit ? [spot.credit] : [])] };
 }
 
 // ---------- credit lines, one per source actually shown ----------
 const doiLink = d => `<a href="https://doi.org/${d}" target="_blank" rel="noopener">https://doi.org/${d}</a>`;
-export function credits(models, observations = [], built = null) {
+export function credits(models, observations = [], built = null, tide = null) {
   const L = [];
-  if (models.om) L.push(ATTR.om);
+  if (models.gfs) L.push(ATTR.gfs);
   const cm = [];
   if (models.cm) cm.push(`${doiLink(models.cm.doi || '10.48670/moi-00025')} (${models.cm.name} wave analysis and forecast)`);
+  if (tide && tide.feed === 'cmems_sea_level' && tide.doi) cm.push(`${doiLink(tide.doi)} (${tide.source.replace('Copernicus ', '')}, physics analysis and forecast)`);
   for (const o of observations) if (o.feed === 'cmems_insitu') cm.push(`${doiLink(o.doi || '10.48670/moi-00036')} (in-situ buoy ${o.source.replace(/ \(.*/, '')}${o.provider ? '; data provider: ' + o.provider : ''})`);
   if (cm.length) L.push('Generated using E.U. Copernicus Marine Service Information; ' + cm.join(', ') + '.');
   const dmi = !!models.dmi || observations.some(o => o.feed === 'dmi_water_level');
   if (dmi) L.push(`Kilde: DMI (${[models.dmi && 'WAM wave forecast', observations.some(o => o.feed === 'dmi_water_level') && 'water level'].filter(Boolean).join(', ')}, ` +
     `<a href="https://www.dmi.dk/friedata" target="_blank" rel="noopener">DMI open data</a>, CC BY 4.0${built ? ', retrieved ' + built.replace('T', ' ') + ' UTC' : ''}). ` +
     'Model-vs-buoy numbers: baseret p&aring; data fra DMI og efterf&oslash;lgende bearbejdet.');
+  if (tide && tide.feed === 'coops_tide') L.push('Tide: NOAA NOS CO-OPS tide predictions (public domain), Honolulu station 1612340. Not an official NOAA product.');
   return L;
+}
+
+// Which model, which run, which hour: "NOAA/NCEP GFS-Wave global 0.25 deg, run 22 Nov 18Z, valid 23 Nov 06:00 UTC".
+export function runLine(m, t, built = null) {
+  const v = new Date(t + 'Z'), valid = `${v.getUTCDate()} ${v.toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' })} ${t.slice(11, 16)} UTC`;
+  const name = m.model ? m.model.replace(' (WAVEWATCH III)', '').replace('NCEP ', 'NOAA/NCEP ') : m.name;
+  if (m.run) return `${name}, run ${m.run}, valid ${valid}`;
+  return `${name}${built ? `, retrieved ${built.replace('T', ' ')} UTC` : ''}, valid ${valid}`;
 }
 
 // ---------- readouts for spots without the reef model ----------
@@ -206,12 +200,14 @@ const deg = d => d == null ? '' : `, from <b>${Math.round(d)}&deg; ${compass(d)}
 const kindTag = k => k === 'peak' ? '' : ` <span class="flag">(${k.startsWith('peak') ? 'whole-sea peak' : 'mean period'})</span>`;
 export function swellLine(p) { return `Swell <b>${p.hs.toFixed(1)} m</b>, <b>${p.tp.toFixed(1)} s</b>${kindTag(p.kind)}${deg(p.dir)}`; }
 export function windLine(p) {
-  if (!p.wind) return null;
+  const w10 = p.w10 ? `10 m wind <b>${(p.w10.speed * 3.6).toFixed(0)} km/h</b> (${p.w10.speed.toFixed(1)} m/s)${p.w10.dir != null ? `, from ${Math.round(p.w10.dir)}&deg; ${compass(p.w10.dir)}` : ''}` : null;
+  if (!p.wind) return w10 || (p.total != null ? `Total sea ${p.total.toFixed(1)} m` : null);
+  if (w10) return windLine({ ...p, w10: null }) + '<br>' + w10;
   return `Wind sea ${p.wind.hs.toFixed(1)} m${p.wind.tp != null ? `, ${p.wind.tp.toFixed(1)} s` : ''}${p.wind.dir != null ? `, from ${Math.round(p.wind.dir)}&deg; ${compass(p.wind.dir)}` : ''}` +
     (p.total != null ? `; total sea ${p.total.toFixed(1)} m` : '');
 }
 export function tideLine(p, spot) {
-  if (p.tide == null) return '<span class="flag">No sea level for this hour.</span>';
+  if (p.tide == null) return 'Tide: <b>not available</b> for this hour.';
   const T = spot.tide;
   if (T.datum === 'MSL') return `Sea level <b>${p.tide >= 0 ? '+' : ''}${p.tide.toFixed(2)} m</b> relative to mean sea level (forecast tide + surge)`;
   return `Tide <b>${p.tide.toFixed(2)} m</b> ${T.words}${T.unc ? ` (&plusmn; ${T.unc} datum)` : ''}`;
@@ -307,7 +303,7 @@ const compass = b => ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SS
 export function readout(p, r) {
   const L = [], pipe = r.site === 'pipeline';
   L.push(`Swell <b>${p.hs.toFixed(1)} m</b>, <b>${p.tp.toFixed(1)} s</b>${p.kind === 'peak' ? '' : ` <span class="flag">(${p.kind.startsWith('peak') ? 'whole-sea peak' : 'mean period'})</span>`}, from <b>${Math.round(p.dir)}&deg; ${compass(p.dir)}</b>`);
-  L.push(pipe ? `Tide <b>${p.tide >= 0 ? '+' : ''}${p.tide.toFixed(2)} m</b> above local mean sea level (Open-Meteo MSL taken as LMSL, not checked)`
+  L.push(pipe ? `Tide <b>${p.tide >= 0 ? '+' : ''}${p.tide.toFixed(2)} m</b> above local mean sea level (CO-OPS Honolulu MSL taken as LMSL at Pipeline, not checked)`
     : `Tide <b>${p.tide.toFixed(2)} m</b> above lowest tide (&plusmn; ${DATUM_UNC} datum)`);
   L.push(r.source === 'exact' ? '<span class="src">Model run for this hour (exact Stage A).</span>'
     : '<span class="src">Interpolated from the precomputed table (the snapshot has no run for this hour).</span>');

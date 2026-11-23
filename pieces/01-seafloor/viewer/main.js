@@ -5,6 +5,7 @@
 // WORTH READING: section 3 (palettes) and section 5 (what the buttons do).
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { USE_AWS, SEABED } from '../../07-globe/terrain-source.js?v=t2';   // same module as terrarium.js: Oceany's own tiles unless ?terrain_src=aws
 
 // ---------- 1. Setup: renderer, scene, camera ----------
 const canvas = document.getElementById('scene');
@@ -160,7 +161,7 @@ async function showLayer(label) {
     // Named spots (reef layer only): one HTML label each, placed every frame in animate().
     const spotTags = Object.entries(d.meta.spots || {}).map(([name, s]) => {
       const el = document.createElement('div');
-      el.className = 'tag'; el.textContent = s.label || name; el.style.color = '#ff6b6b'; el.style.display = 'none';
+      el.className = 'tag'; el.textContent = s.label || name; el.style.color = '#5ff2ff';   // the globe's colour for unlocked spots el.style.display = 'none';
       document.body.appendChild(el);
       return { el, name, x: s.x_m, z: -s.y_m };
     });
@@ -205,6 +206,7 @@ async function showLayer(label) {
   document.getElementById('caption').innerHTML = m.caption ? m.caption : (
     `${m.source}, ${m.resolution}, depths relative to ${m.datum}. ${m.reef_note} ` +
     `<br>${m.attribution}` + (m.datum === 'MSL' ? ' <a href="https://dataforsyningen.dk/data/4817" target="_blank" rel="noopener">terms</a>' : ''));
+  surroundPts.visible = false; ensureSurround(label);   // the surroundings follow once their tiles are in (reef layers only)
   document.getElementById('status').textContent = `${cur.N.toLocaleString()} points`;
   [...layerBox.children].forEach(b => b.classList.toggle('on', b.textContent === label));
 }
@@ -272,6 +274,98 @@ function applyPalette(name) {
     const fm = v => Math.round(v * 10) / 10;
     ks.textContent = `${nm[0]} at 0 m, ${nm[1]} at ${fm(DEEP_AT / 2)} m, ${nm[2]} at ${DEEP_AT} m and deeper (this layer). Land, above zero, is drawn dim.`;
   }
+  colourSurround();
+}
+
+// ---------- 3b. Reef layers: the surroundings (surround.js) ----------
+// Coast and sea floor for ~5 km around the lidar from the globe's terrain tiles: same dot shader and palette as the
+// lidar, but dimmer (SURROUND_BRIGHT), sparser (30 m land, ~150 m sea) and fading out with distance. Built once per
+// layer; on any failure there is simply no surround. Heights: tile elevations are about mean sea level, the
+// Portuguese lidar is relative to LAT, so they are shifted by MSL_ABOVE_LAT there (Peniche, about 2.0 m).
+const SURROUND_BRIGHT = 0.42;
+const MSL_ABOVE_LAT = 2.0;
+const surroundMat = new THREE.ShaderMaterial({
+  uniforms: { uExag: material.uniforms.uExag, uScale: material.uniforms.uScale, uLandCap: material.uniforms.uLandCap,
+    uMaxPx: material.uniforms.uMaxPx, uDim: material.uniforms.uDim, uBright: { value: SURROUND_BRIGHT } },   // shared with the lidar: same stretch, size scale and dimming
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: `
+    uniform float uExag, uScale, uLandCap, uMaxPx;
+    attribute float aDepth, aSize, aFade; attribute vec3 aColor;
+    varying vec3 vColor;
+    void main() {
+      vec3 p = position;
+      float z = aDepth < 0.0 ? -min(-aDepth, uLandCap) : aDepth;
+      p.y = -z * uExag - 0.5;                      // half a metre under the lidar's frame, so the two never sit on one plane
+      vec4 mv = modelViewMatrix * vec4(p, 1.0);
+      gl_PointSize = min(uMaxPx, max(1.5, aSize * uScale / -mv.z));
+      gl_Position = projectionMatrix * mv;
+      vColor = aColor * aFade;
+    }`,
+  fragmentShader: `
+    uniform float uDim, uBright; varying vec3 vColor;
+    void main() {
+      float r = length(gl_PointCoord - 0.5) * 2.0;
+      if (r > 1.0) discard;
+      float glow = pow(1.0 - r, 2.0);
+      gl_FragColor = vec4(vColor * uDim * uBright, glow * 0.85);
+    }`,
+});
+const surroundPts = new THREE.Points(new THREE.BufferGeometry(), surroundMat);
+surroundPts.frustumCulled = false; surroundPts.visible = false; scene.add(surroundPts);
+const surroundCache = {};                    // layer label -> built surround (or null), a promise while building
+async function ensureSurround(label) {
+  const L = LAYERS[label], c = cache[label];
+  if (!L.reef || !c) { surroundPts.visible = false; setSurroundNote(); return; }
+  if (!(label in surroundCache)) {
+    surroundCache[label] = (async () => {
+      try {
+        const { buildSurround } = await import('./surround.js?v=s5');
+        const s = await buildSurround({ meta: c.meta, pos: c.pos, N: c.N });
+        if (!s) return null;
+        const off = /^LAT/.test(c.meta.datum || '') ? MSL_ABOVE_LAT : 0;
+        s.depth = s.elev.map(h => -h - off);   // viewer depth: down positive, land negative
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(s.pos, 3));
+        g.setAttribute('aDepth', new THREE.BufferAttribute(s.depth, 1));
+        g.setAttribute('aSize', new THREE.BufferAttribute(s.size, 1));
+        g.setAttribute('aFade', new THREE.BufferAttribute(s.fade, 1));
+        s.colorAttr = new THREE.BufferAttribute(new Float32Array(s.count * 3), 3);
+        g.setAttribute('aColor', s.colorAttr);
+        s.g = g; s.deepAt = L.deepAt; s.palette = null;
+        return s;
+      } catch (e) { console.info('Oceany viewer: no surroundings for this layer:', e && (e.message || String(e))); return null; }
+    })();
+  }
+  const s = await surroundCache[label];
+  if (!cur || cur !== c) return;               // the layer changed while the tiles loaded
+  surroundCache[label] = s;
+  if (!s) { surroundPts.visible = false; setSurroundNote(); return; }
+  surroundPts.geometry = s.g; surroundPts.visible = true; cur.surround = s;
+  colourSurround(); setSurroundNote();
+}
+function colourSurround() {
+  const s = cur && cur.surround; if (!s || s.palette === currentPalette) return;
+  const p = PALETTES[currentPalette], DEEP_AT = s.deepAt, a = s.colorAttr.array;   // same ramp as applyPalette
+  for (let i = 0; i < s.count; i++) {
+    const d = s.depth[i];
+    const c = d <= 0 ? p.land.map(v => v * (0.7 + Math.min(-d, 20) / 40))
+      : (t => t < 0.5 ? mix(p.shallow, p.mid, t * 2) : mix(p.mid, p.deep, (t - 0.5) * 2))(Math.min(d / DEEP_AT, 1));
+    a.set(c, 3 * i);
+  }
+  s.colorAttr.needsUpdate = true; s.palette = currentPalette;
+}
+function setSurroundNote() {                   // one caption line saying what the dimmer dots are
+  let el = document.getElementById('surround-note');
+  const s = cur && cur.surround && surroundPts.visible ? cur.surround : null;
+  if (!s) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'surround-note'; }
+  const land = s.sources.filter(x => x !== 'etopo1');
+  el.textContent = USE_AWS
+    ? `Surroundings (dimmer dots): global terrain tiles (AWS Terrain Tiles, test switch), ~${Math.round(s.landM)} m per dot on land, ` +
+      `~${Math.round(s.seaM / 10) * 10} m at sea, coarse. Seabed there is low-resolution and approximate (mostly ETOPO1, a ~1.85 km grid)` + (land.length ? `; land from ${land.join(', ')}.` : '.')
+    : `Surroundings (dimmer dots): Oceany terrain tiles, ~${Math.round(s.landM)} m per dot on land (Copernicus DEM, a surface model: trees and buildings included), ` +
+      `~${Math.round(s.seaM / 10) * 10} m apart at sea. Seabed there is from ${SEABED.name}, measured only about every ${SEABED.label}, so it is coarse and approximate. Not for navigation.`;
+  document.getElementById('caption').appendChild(el);
 }
 
 // ---------- 4. Controls and camera moves ----------
@@ -288,9 +382,9 @@ function flyTo(view) {
 }
 function stepFly(now) {
   if (!fly) return;
-  const k = Math.min((now - fly.t0) / 1600, 1), e = k * k * (3 - 2 * k);   // ease in and out
-  camera.position.lerpVectors(fly.p0, fly.view.pos, e);
-  controls.target.lerpVectors(fly.g0, fly.view.target, e);
+  const k = Math.min((now - fly.t0) / (fly.dur || 1600), 1), e = fly.ease ? fly.ease(k) : k * k * (3 - 2 * k);   // ease in and out
+  if (fly.path) fly.path(e);                       // a flight with its own path (the arrival from the globe)
+  else { camera.position.lerpVectors(fly.p0, fly.view.pos, e); controls.target.lerpVectors(fly.g0, fly.view.target, e); }
   if (k >= 1) { fly = null; FLY.jump = true; }    // fly mode takes the final view even when the whole jump fell between two frames (slow or hidden tab)
 }
 
@@ -400,6 +494,7 @@ canvas.addEventListener('contextmenu', e => { if (camMode === 'fly') e.preventDe
 canvas.addEventListener('wheel', e => {
   if (camMode !== 'fly') return;
   e.preventDefault(); fly = null;
+  if (cur && cur.cfg.reef) { zoomWheel(e); return; }   // reef layers: the zoom bar's eased log zoom toward the pointer (section 6e)
   const px = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1, dy = Math.max(-300, Math.min(300, e.deltaY * px));
   flyTmp.set((e.clientX / window.innerWidth) * 2 - 1, 1 - (e.clientY / window.innerHeight) * 2, 0.5).unproject(camera).sub(camera.position).normalize();
   FLY.wheel.addScaledVector(flyTmp, -dy * 0.006 * flyBase() * 6 * (e.altKey ? 0.2 : 1));   // total glide ~ 0.6 x base speed per 100 px of wheel (impulse x decay rate 6)
@@ -637,7 +732,7 @@ function pick() {
 
 // ---------- 6b. Reef layer: "My marks" (Shift+click a point to mark where you surf) ----------
 const MARK_KEY = 'oceany.reef.marks';
-const MARK_COL = 0x3dffa0;                          // green: distinct from the red spot labels
+const MARK_COL = 0x3dffa0;                          // green: distinct from the cyan spot labels
 const marks = [];                                   // { name, x, z, depth, near, lat, lon } (plain data)
 const markVis = new WeakMap();                      // mark -> { grp, el }
 const markGroup = new THREE.Group(); scene.add(markGroup);
@@ -1213,7 +1308,7 @@ document.getElementById('bw-on').addEventListener('change', async e => {
 // filming position. 2026-11-14: the separate rock-contact pin (39.3192267, -9.3562366, on the dry shelf) was
 // removed; the observer places the contact in the take-off zone, and the footage puts the take-off at the outer
 // break about 115 m (90-145 m) from the camera, matching this mark.
-// Orange diamonds at sea level (distinct from the green shift+click marks and the red spot names).
+// Orange diamonds at sea level (distinct from the green shift+click marks and the cyan spot names).
 const SKETCH_COL = 0xff9f43;
 const SKETCH = [
   // Moved 2026-11-12 from 39.3191039, -9.3565475 (placed on a high-tide image,
@@ -1317,7 +1412,204 @@ function placeSketch(show) {                          // every frame: sit at the
 // PLUMBING: keep the left panel clear of the source caption. The caption's height changes with pane width, so the CSS
 // max-height of #panel reads the variable --cap-h, which is refreshed whenever the caption is resized.
 const capBox = document.getElementById('caption');
-new ResizeObserver(() => document.documentElement.style.setProperty('--cap-h', capBox.offsetHeight + 'px')).observe(capBox);
+const setCapH = () => document.documentElement.style.setProperty('--cap-h', capBox.offsetHeight + 'px');
+setCapH(); new ResizeObserver(setCapH).observe(capBox); new MutationObserver(setCapH).observe(capBox, { childList: true, subtree: true, characterData: true });
+addEventListener('resize', () => { setCapH(); setCredH(); setStandH(); });   // also when the pane is hidden and observers sleep
+const credBox = document.getElementById('credits');   // the caption sits on top of the credits block (style.css uses --cred-h)
+const setCredH = () => document.documentElement.style.setProperty('--cred-h', credBox.offsetHeight + 'px');
+setCredH(); new ResizeObserver(setCredH).observe(credBox);
+const standBox = document.getElementById('standing');   // the standing notice; on phones it sits above the credits (style.css uses --stand-h)
+const setStandH = () => document.documentElement.style.setProperty('--stand-h', standBox.offsetHeight + 'px');
+setStandH(); new ResizeObserver(setStandH).observe(standBox);
+
+// ---------- 6d. Back to the globe: zooming out past the reef patch continues onto the whole-Earth globe ----------
+// Reef layers only. Once the camera is more than EXIT.start (scaled to the patch) from the middle of the lidar box
+// the view fades to black; at EXIT.end it opens the globe (pieces/07-globe) with ?from=<spot>&at=lat,lon&d=&h=&p=,
+// and the globe arrives low over the same spot, facing the same way, and eases out (the mirror of the fly-in).
+// Coming back with the browser's Back button resets the camera to the layer's overview (no bounce back out).
+const EXIT = { gone: false, fade: 0 };
+const fadeEl = document.getElementById('globe-fade'), fadeHint = document.getElementById('globe-fade-hint');
+const GLOBE_URL = '../../07-globe/index.html';
+function exitRange() {                             // [start, end] distances (m) from the box middle, per layer, cached
+  if (cur.exitR) return cur.exitR;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (let i = 0; i < cur.N; i++) { const x = cur.pos[3 * i], z = cur.pos[3 * i + 2]; x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+  const half = Math.hypot(x1 - x0, z1 - z0) / 2, start = Math.max(9000, 2 * half + 6000);   // well past the far view and the 5 km surround
+  return (cur.exitR = { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, start, end: start * 1.6 });
+}
+function globeHref() {                             // the globe, arriving over this layer's spot as the camera sees it now
+  const L = cur && cur.cfg, o = cur && cur.meta && cur.meta.origin;
+  if (!L || !o || !L.reef) return GLOBE_URL;
+  const r = exitRange(), ll = toLatLon(r.cx, r.cz);
+  camera.getWorldDirection(flyDir);
+  const dx = camera.position.x - r.cx, dz = camera.position.z - r.cz, dy = Math.max(1, camera.position.y);
+  const d = Math.hypot(dx, dy, dz), tilt = Math.atan2(Math.hypot(dx, dz), dy) * 180 / Math.PI;   // angle from straight down
+  const head = ((Math.atan2(flyDir.x, -flyDir.z) * 180 / Math.PI) + 360) % 360;                 // compass: 0 north, 90 east
+  const q = new URLSearchParams({ from: L.spot || '', at: ll.lat.toFixed(5) + ',' + ll.lon.toFixed(5), d: Math.round(d), h: Math.round(head), p: Math.round(tilt) });
+  return GLOBE_URL + '?' + q.toString();
+}
+function goToGlobe() { if (EXIT.gone) return; EXIT.gone = true; fadeEl.style.opacity = 1; location.href = globeHref(); }
+document.getElementById('to-globe').addEventListener('click', () => {   // button: pull out to the exit distance, then go
+  if (!cur || !cur.cfg.reef) { location.href = GLOBE_URL; return; }
+  const r = exitRange(), dir = flyTmp.set(camera.position.x - r.cx, 0, camera.position.z - r.cz);
+  if (dir.lengthSq() < 1) dir.set(0, 0, 1); dir.normalize();
+  setBeachActive(false);
+  flyTo({ pos: v3(r.cx + dir.x * r.end * 0.75, r.end * 0.66, r.cz + dir.z * r.end * 0.75), target: v3(r.cx, 0, r.cz) });
+  EXIT.button = performance.now();
+});
+function stepExit(now) {                           // every frame, reef layers: cheap distance test and the fade
+  if (EXIT.gone || !cur || !cur.cfg.reef) { if (!EXIT.gone && EXIT.fade) { EXIT.fade = 0; fadeEl.style.opacity = 0; } return; }
+  if (arriveFade(now)) return;                     // arriving from the globe: the fade runs on time, not distance (section 6e)
+  const r = exitRange(), d = Math.max(Math.hypot(camera.position.x - r.cx, camera.position.y, camera.position.z - r.cz), ZB.d || 0);   // ZB.d: zoom distance (to the point the view centre looks at)
+  let f = smooth01(r.start, r.end, d);
+  if (EXIT.button) { f = Math.max(f, smooth01(0, 1600, now - EXIT.button)); if (now - EXIT.button > 1600) { goToGlobe(); return; } }
+  if (Math.abs(f - EXIT.fade) > 0.002) {
+    EXIT.fade = f; fadeEl.style.opacity = f.toFixed(3);
+    fadeHint.style.opacity = EXIT.button ? 0 : Math.min(1, f * 3).toFixed(2);
+  }
+  if (d >= r.end) goToGlobe();
+}
+addEventListener('pageshow', e => {                // back from the globe (page restored from the cache): start over at the overview
+  if (!e.persisted || !EXIT.gone) return;
+  EXIT.gone = false; EXIT.button = 0; EXIT.fade = 0; fadeEl.style.opacity = 0; fadeHint.style.opacity = 0;
+  fly = null;
+  if (cur) { camera.position.copy(cur.cfg.views.far.pos); controls.target.copy(cur.cfg.views.far.target); camera.lookAt(controls.target); FLY.jump = true; FLY.wheel.set(0, 0, 0); FLY.vel.set(0, 0, 0); }
+});
+
+// ---------- 6e. Zoom bar: the globe's zoom control, and the arrival from the globe ----------
+// Reef layers only. The bar sits where the globe's does and works the same way: a log slider (top = closest, bottom =
+// "Earth"), +/- buttons, arrow keys on the focused slider, and an eased wheel/trackpad/pinch zoom toward the pointer.
+// Zoom distance ZB.d = camera to the sea-level point the view centre looks at; zooming scales the camera about that
+// point (or about the sea-level point under the pointer), so the heading and tilt never change. Inner end: where one
+// lidar cell would span ZB_CELL_PX on screen (closer only makes the dots bigger, it shows no more detail). Outer end:
+// EXIT.start, where the fade to the globe begins; pushing on past it (wheel, - button, slider held at the bottom, arrow
+// down) runs into the hand-off of 6d. Anything else that moves the camera (presets, keys, flights) just moves the slider.
+const ZB = { target: 0, d: 0, active: false, cursor: null, held: false, last: 0, noteUntil: 0 };
+const zbBar = document.getElementById('zoom'), zbSlider = document.getElementById('zoom-slider'), zbNote = document.getElementById('zoom-note');
+const ZB_MAX = 1000, ZB_CELL_PX = 48;
+function lidarCellM() {                            // grid cell of the layer (m), the larger side, from its resolution text
+  if (cur.cellM) return cur.cellM;
+  const t = String(cur.meta.resolution || '').split('(')[0], m = [...t.matchAll(/(\d+(?:\.\d+)?)\s*m\b/g)].map(x => +x[1]);
+  return (cur.cellM = m.length ? Math.max(...m) : 10);
+}
+const zoomMin = () => lidarCellM() * innerHeight / (2 * Math.tan(camera.fov / 2 * Math.PI / 180)) / ZB_CELL_PX;
+const zoomMax = () => exitRange().start;
+const zbF = new THREE.Vector3(), zbP = new THREE.Vector3();
+function zoomFocus(out, nx = 0, ny = 0) {          // sea-level point on the ray through (nx, ny) in NDC; a near point if the ray misses
+  out.set(nx, ny, 0.5).unproject(camera).sub(camera.position).normalize();
+  const t = out.y < -0.02 && camera.position.y > 0 ? camera.position.y / -out.y : NaN;
+  return out.multiplyScalar(Number.isFinite(t) ? Math.min(t, exitRange().end * 2) : Math.max(150, 2 * Math.abs(camera.position.y))).add(camera.position);
+}
+const sliderFromD = d => Math.round(ZB_MAX * Math.max(0, Math.min(1, Math.log(zoomMax() / d) / Math.log(zoomMax() / zoomMin()))));
+const dFromSlider = v => zoomMax() * Math.exp(-v / ZB_MAX * Math.log(zoomMax() / zoomMin()));
+function showZoomNote() {
+  zbNote.textContent = `Closest view the data supports: the lidar here has one point every ~${Math.round(lidarCellM())} m, so going closer would only make the dots bigger, not show more detail.`;
+  ZB.noteUntil = performance.now() + 3500;
+}
+function zoomSet(t, cursor = null) {               // every zoom input ends here: new eased target distance
+  if (!cur || !cur.cfg.reef || EXIT.gone) return;
+  const lo = Math.min(zoomMin(), ZB.d || Infinity), hi = exitRange().end * 1.05;
+  if (t <= zoomMin() * 1.001) showZoomNote();
+  ZB.target = Math.max(lo, Math.min(hi, t)); ZB.active = true; ZB.cursor = cursor; fly = null;
+}
+const zbBase = () => (ZB.active ? ZB.target : ZB.d);
+function zoomWheel(e) {                            // same feel as the globe: pixels normalised, a pinch (ctrlKey) is stronger
+  const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1), k = e.ctrlKey ? 0.01 : 0.002;
+  zoomSet(zbBase() * Math.exp(Math.max(-1, Math.min(1, px * k))), [e.clientX / innerWidth * 2 - 1, 1 - e.clientY / innerHeight * 2]);
+}
+const zoomOutStep = () => { const b = zbBase(); zoomSet(b >= zoomMax() * 0.98 ? b * 1.3 : dFromSlider(sliderFromD(b) - 80)); };
+document.getElementById('zb-in').onclick = () => zoomSet(dFromSlider(sliderFromD(zbBase()) + 80));
+document.getElementById('zb-out').onclick = zoomOutStep;
+zbSlider.addEventListener('input', () => zoomSet(dFromSlider(+zbSlider.value)));
+zbSlider.addEventListener('pointerdown', () => { ZB.held = true; });
+addEventListener('pointerup', () => { ZB.held = false; });
+zbSlider.addEventListener('keydown', e => {        // at the ends the slider itself cannot move: carry on out to the globe, or say why it stops
+  const up = ['ArrowUp', 'ArrowRight', 'PageUp', 'End'].includes(e.key), down = ['ArrowDown', 'ArrowLeft', 'PageDown', 'Home'].includes(e.key);
+  if (down && +zbSlider.value <= 0) { e.preventDefault(); zoomOutStep(); }
+  else if (up && +zbSlider.value >= ZB_MAX) { e.preventDefault(); showZoomNote(); }
+});
+addEventListener('pointermove', e => {             // faint until the pointer comes near it, as on the globe
+  const b = zbBar.getBoundingClientRect(), dx = Math.max(b.left - e.clientX, 0, e.clientX - b.right), dy = Math.max(b.top - e.clientY, 0, e.clientY - b.bottom);
+  zbBar.classList.toggle('faded', Math.hypot(dx, dy) > 110 && !zbBar.contains(document.activeElement));
+});
+zbBar.classList.add('faded');
+zbBar.addEventListener('focusin', () => zbBar.classList.remove('faded'));
+function zoomFrame(now) {
+  const dt = ZB.last ? Math.min(0.1, (now - ZB.last) / 1000) : 0; ZB.last = now;
+  const on = !!(cur && cur.cfg.reef) && !EXIT.gone;
+  if (zbBar.hidden === on) zbBar.hidden = !on;
+  if (!on) { ZB.d = 0; ZB.active = false; zbNote.hidden = true; return; }
+  if (ARRIVE.pending && cur.cfg === LAYERS[ARRIVE.pending.layer]) startArrival();
+  ZB.d = camera.position.distanceTo(zoomFocus(zbF));
+  if (fly) ZB.active = false;
+  if (ZB.held && !fly) {
+    if (+zbSlider.value <= 0) zoomSet(Math.max(zbBase(), zoomMax()) * Math.exp(dt * 1.2));   // held at the Earth end: keep going out
+    else if (+zbSlider.value >= ZB_MAX) showZoomNote();
+  }
+  if (ZB.active) {
+    const g = Math.log(ZB.target / ZB.d);
+    if (Math.abs(g) < 2e-3) { ZB.active = false; ZB.cursor = null; }
+    else {
+      const k = Math.exp(Math.max(-0.25, Math.min(0.25, g * Math.min(1, dt * 10))));   // eased, at most x1.28 per frame (the globe's rate)
+      const c = ZB.cursor ? zoomFocus(zbP, ZB.cursor[0], ZB.cursor[1]) : zbF;
+      camera.position.sub(c).multiplyScalar(k).add(c);
+      if (camMode !== 'fly') controls.target.sub(c).multiplyScalar(k).add(c);
+      ZB.d *= k;
+    }
+  }
+  const v = sliderFromD(zbBase()), gap = Math.abs(v - +zbSlider.value);
+  if (!ZB.held && (document.activeElement !== zbSlider ? gap > 12 : gap > 40)) zbSlider.value = v;
+  const noteOn = now < ZB.noteUntil;
+  if (zbNote.hidden === noteOn) zbNote.hidden = !noteOn;
+}
+// Arrival from the globe (?layer=<label>&from=globe&d=<m>&h=<deg>&p=<deg>, sent when you zoom in past the globe's closest
+// zoom over this spot, or click it): the camera starts at the globe's distance (kept within the outer range) over the
+// middle of the lidar box, facing the same compass heading with the same tilt from straight down, and eases in to the
+// layer's overview while the black fades on time (the globe already faded out). The mirror of 6d.
+const ARRIVE = { pending: null, fly: null, t0: 0 };
+function startArrival() {
+  const a = ARRIVE.pending; ARRIVE.pending = null;
+  const r = exitRange(), far = cur.cfg.views.far, c = v3(r.cx, 0, r.cz);
+  const D1 = far.pos.distanceTo(far.target), D0 = Math.min(r.end * 0.97, Math.max(D1 * 1.5, a.d || r.end));
+  const h = a.h * Math.PI / 180, p = Math.min(85, Math.max(0, a.p)) * Math.PI / 180;
+  const u1 = far.pos.clone().sub(far.target).normalize();
+  const h1 = Math.atan2(-u1.x, u1.z), p1 = Math.acos(Math.min(1, u1.y)), dh = Math.atan2(Math.sin(h1 - h), Math.cos(h1 - h));   // the overview's heading/tilt; shortest turn
+  const g = new THREE.Vector3(), u = new THREE.Vector3();
+  if (BEACH.active) setBeachActive(false);
+  ARRIVE.fly = fly = { t0: performance.now(), dur: 3000, ease: k => 1 - Math.pow(1 - k, 3),   // ease-out: the zoom carries on at speed, then settles
+    path: e => {
+      const w = e * e * (3 - 2 * e), hh = h + dh * w, pp = p + (p1 - p) * w;   // heading and tilt turn as angles (no swing through straight down), gently at first
+      g.lerpVectors(c, far.target, e); u.set(-Math.sin(hh) * Math.sin(pp), Math.cos(pp), Math.cos(hh) * Math.sin(pp));
+      camera.position.copy(g).addScaledVector(u, Math.exp(Math.log(D0) + (Math.log(D1) - Math.log(D0)) * e)); controls.target.copy(g);
+    } };
+  fly.path(0); camera.lookAt(controls.target);
+  ARRIVE.t0 = ARRIVE.began = performance.now();   // began: ms since this page started loading (how long the screen stayed dark)
+}
+function arriveFade(now) {                         // from stepExit: true while the arrival owns the fade
+  if (!ARRIVE.t0 && !ARRIVE.pending) return false;
+  if (ARRIVE.pending) { fadeEl.style.opacity = 1; return true; }   // still loading the layer: stay dark
+  const f = 1 - smooth01(100, 1000, now - ARRIVE.t0);
+  EXIT.fade = f; fadeEl.style.opacity = f.toFixed(3); fadeHint.style.opacity = 0;
+  if (fly !== ARRIVE.fly) { ARRIVE.t0 = 0; ARRIVE.fly = null; return false; }   // arrived, or the user took over
+  return true;
+}
+
+// Reef labels: at an oblique view several can land on one spot and pile up. Placed in priority order (spot names,
+// channel, sketch pins, your marks); a label whose box would overlap one already placed is hidden for that frame.
+const tagBoxes = [];
+function declutterTags(els) {
+  tagBoxes.length = 0;
+  for (const el of els) tagFree(el);
+}
+function tagFree(el) {                             // also used by live.js for its own label, after this frame's labels
+  {
+    if (!el || el.style.display === 'none') return;
+    if (!el._wh || !el._wh[0]) el._wh = [el.offsetWidth, el.offsetHeight];   // fixed text: measured once
+    const [w, h] = el._wh, x0 = parseFloat(el.style.left) + 8, y0 = parseFloat(el.style.top) - h / 2, x1 = x0 + w, y1 = y0 + h;   // CSS: translate(8px, -50%)
+    if (tagBoxes.some(b => x0 < b[2] && x1 > b[0] && y0 < b[3] && y1 > b[1])) { el.style.display = 'none'; return; }
+    tagBoxes.push([x0, y0, x1, y1]);
+  }
+}
 
 // ---------- 7. Loop ----------
 let frame = 0;
@@ -1328,6 +1620,7 @@ function animate(now) {
 function drawFrame(now) {                          // one frame (also the debug hook __viewer.tick, for stepping a hidden tab)
   stepFly(now);
   if (camMode === 'fly') stepFree(now); else controls.update();
+  zoomFrame(now);
   updateSwell(now);
   updateBW(now);
   if (frame++ % 3 === 0) pick();                   // picking is the costly part, so not every frame
@@ -1335,15 +1628,36 @@ function drawFrame(now) {                          // one frame (also the debug 
     labelShore.style.display = 'none'; labelVillage.style.display = 'none';
     cur.spotTags.forEach(t => placeLabel(t.el, t.x, 40, t.z));
     placeMarks(true); placeSketch(!!cur.cfg.portugal);
+    declutterTags([...cur.spotTags.map(t => t.el), keyhole.el, bwLabel, ...SKETCH.map(s => s.el), ...marks.map(m => markVis.get(m).el)]);
+    stepExit(now);
     renderer.render(scene, camera); return;
   }
   placeMarks(false); placeSketch(false);
   placeLabel(labelShore, 0, 400 * (cur ? cur.cfg.mark : 1), 0);
   if (cur && cur.cfg.wide) labelVillage.style.display = 'none'; else placeLabel(labelVillage, villageX, 0, 0);
   if (cur && cur.cfg.wide) cur.lineTags.forEach(t => placeLabel(t.el, t.x, 0, t.z));   // line labels, wide layer only
+  stepExit(now);
   renderer.render(scene, camera);
 }
-layerBox.firstChild.click();
+// ?layer=<exact LAYERS label> opens that layer first (used by the globe front page, pieces/07-globe); otherwise the first layer.
+const wantLayer = new URLSearchParams(location.search).get('layer');
+{ // arriving from the globe (6e): note the heading/tilt/distance, go dark until the layer is in, and drop the parameters
+  // from the address at once so a reload or Back never replays the arrival
+  const q = new URLSearchParams(location.search);
+  if (q.get('from') === 'globe' && wantLayer && LAYERS[wantLayer] && LAYERS[wantLayer].reef) {
+    const num = (k, def) => { const v = parseFloat(q.get(k)); return Number.isFinite(v) ? v : def; };
+    ARRIVE.pending = { layer: wantLayer, h: num('h', 0), p: num('p', 45), d: num('d', 0) };
+    fadeEl.style.opacity = 1;
+  }
+  if (q.has('from')) { ['from', 'd', 'h', 'p'].forEach(k => q.delete(k)); history.replaceState(history.state, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); }
+}
+([...layerBox.children].find(b => b.textContent === wantLayer) || layerBox.firstChild).click();
+if (wantLayer && LAYERS[wantLayer] && LAYERS[wantLayer].reef) {   // came from the globe to a reef spot: the first-visit intro names that spot, not the North Sea
+  const intro = document.getElementById('intro'), L = LAYERS[wantLayer];
+  intro.querySelector('h2').textContent = L.title;
+  intro.querySelector('p').textContent = `The sea floor at ${L.title} from lidar, as a 3D point cloud, set in its coast from coarse global terrain tiles (the dimmer dots). ` +
+    'Fly in to see the reef up close; keep zooming out (wheel or pinch) to go back to the globe.';
+}
 requestAnimationFrame(animate);
 // Debug hook (lets the browser console inspect the scene and test hover; harmless to leave in).
-window.__viewer = { DATA_VERSION, LAYERS, tick: drawFrame, renderer, BEACH, beachView, flySpot, setViewMode, bedHeightAt, marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js
+window.__viewer = { ZB, ARRIVE, zoomSet, zoomMin, zoomMax, exitRange, get fly() { return fly; }, DATA_VERSION, LAYERS, tagFree, tick: drawFrame, renderer, BEACH, beachView, flySpot, setViewMode, bedHeightAt, marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js

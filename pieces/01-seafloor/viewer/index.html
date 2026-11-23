@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Oceany - how the North Sea hits the Danish coast</title>
-  <link rel="stylesheet" href="style.css?v=c2d">
+  <link rel="stylesheet" href="style.css?v=z6">
   <!-- The import map tells the browser where "three" lives, so main.js and
        OrbitControls.js can both say: import ... from 'three'. No bundler needed. -->
   <script type="importmap">
@@ -17,6 +17,7 @@
   <canvas id="scene"></canvas>
 
   <div id="panel">
+    <div class="row" style="margin:0 0 6px"><button id="to-globe" title="Zoom back out to the whole Earth (or keep zooming out with the wheel)">&larr; Back to globe</button></div>
     <h1>Oceany <span class="sub">Klitm&oslash;ller sea floor</span></h1>
     <label>Vertical stretch
       <input id="exag" type="range" min="1" max="200" step="1" value="60">
@@ -71,7 +72,9 @@
     <p class="intro-ctl"><span class="intro-desk"><b>Controls:</b> drag to look, W/A/S/D to move, E/Space up, Q/C down, wheel to glide, Shift fast. The spot buttons put you on the shore for a beach view.</span><span class="intro-phone"><b>Controls:</b> one finger to look, pinch to move forward and back, two fingers to pan.</span></p>
     <div class="intro-btns"><button id="intro-tour" class="on">Take the tour</button><button id="intro-go">Just explore</button></div>
   </div>
-  <div id="credits">Bathymetry: EMODnet Bathymetry (CC BY 4.0); Danish depth model 50 m, Klimadatastyrelsen; Porto Batel and Supertubos lidar 2011, DGT and APA via EMODnet (CC BY 4.0); Pipeline: NOAA OCM / USACE JALBTCX 2013 lidar (US Government work); Gu&eacute;thary and Hossegor: Shom - IGN Litto3D (Etalab 2.0). Not for navigation. Live forecast: Open-Meteo (CC BY 4.0), E.U. Copernicus Marine Service, DMI (CC BY 4.0). 3D: three.js (MIT). Full list in DATA-LICENSES.md.</div>
+  <div id="credits">Bathymetry: EMODnet Bathymetry (CC BY 4.0); Danish depth model 50 m, Klimadatastyrelsen; Porto Batel and Supertubos lidar 2011, DGT and APA via EMODnet (CC BY 4.0); Pipeline: NOAA OCM / USACE JALBTCX 2013 lidar (US Government work); Gu&eacute;thary and Hossegor: Shom - IGN Litto3D (Etalab 2.0). Surroundings: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa); produced using Copernicus WorldDEM-30 and WorldDEM-90 &copy; DLR e.V. 2010-2014 and &copy; Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. Modified by Oceany (resampled, merged, rounded to 1 m). The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30 or WorldDEM-90. Not endorsed by GEBCO, the IHO or the IOC. Not for navigation. Live forecast: NOAA/NCEP GFS-Wave and NOAA CO-OPS (public domain, not an official NOAA product), E.U. Copernicus Marine Service, DMI (CC BY 4.0). 3D: three.js (MIT). Full list in DATA-LICENSES.md.</div>
+
+  <div id="standing">For research and play only. Not a forecast or warning service.</div>
 
   <div id="label-shore" class="tag">Klitm&oslash;ller (shoreline)</div>
   <div id="label-village" class="tag dim">village</div>
@@ -79,10 +82,19 @@
   <div id="caption"></div>
   <div id="status">loading...</div>
   <div id="loading" style="display:none"></div>
+  <div id="zoom" role="group" aria-label="Zoom" hidden>
+    <button id="zb-in" type="button" aria-label="Zoom in">+</button>
+    <input id="zoom-slider" type="range" min="0" max="1000" step="25" value="500" aria-label="Zoom, from the closest view the lidar supports to the whole Earth">
+    <button id="zb-out" type="button" aria-label="Zoom out">&minus;</button>
+    <span class="zb-end" title="Keep zooming out for the globe" aria-hidden="true"><i class="zb-globe"></i>Earth</span>
+  </div>
+  <div id="zoom-note" role="status" hidden></div>
+  <div id="globe-fade"><span id="globe-fade-hint">Keep zooming out for the globe</span></div>
 
-  <script type="module" src="main.js?v=c6q"></script>
+  <script src="offline.js?v=o1"></script>
+  <script type="module" src="main.js?v=z7"></script>
   <script type="module" src="play.js?v=c5c"></script>
-  <script type="module" src="live.js?v=l5"></script>
-  <script type="module" src="tutorial.js?v=c3d"></script>
+  <script type="module" src="live.js?v=n2"></script>
+  <script type="module" src="tutorial.js?v=c3e"></script>
 </body>
 </html>

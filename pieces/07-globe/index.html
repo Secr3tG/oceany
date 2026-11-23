@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Oceany globe</title>
+  <link rel="icon" href="assets/icons/icon-192.png" type="image/png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon-180.png">
+  <meta name="theme-color" content="#04060a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Oceany">
+  <script type="importmap">
+  { "imports": {
+      "three": "../01-seafloor/viewer/vendor/three.module.js",
+      "three/addons/": "../01-seafloor/viewer/vendor/addons/",
+      "./dots.js": "./dots.js?v=b39", "./terrain.js": "./terrain.js?v=b39" } }
+  </script>
+  <style>
+    :root { --panel: #060e16; --bg: #04060a; --ink: #cfe6f2; --dim: #6b8696; --open: #5ff2ff; --accent: #5ff2ff; --fc: #8fc2d1; --lock: #4a5a66; --hz: #8ca3b8; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, sans-serif; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; cursor: grab; touch-action: none; }
+    /* Top bar: the name, one dot-button per panel section (one open at a time) and the spin toggle. The globe is clear on load. */
+    #bar { position: fixed; top: 16px; left: 16px; display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 12px; z-index: 5;
+      background: color-mix(in srgb, var(--panel) 78%, transparent); border: 1px solid color-mix(in srgb, var(--open) 15%, transparent); border-radius: 10px; backdrop-filter: blur(6px); }
+    #bar .name { font-size: 14px; font-weight: 600; letter-spacing: .06em; margin-right: 8px; }
+    #bar button { all: unset; display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 7px; font-size: 12px; color: var(--dim); cursor: pointer; transition: color .15s, background .15s; }
+    #bar button::before { content: ''; width: 5px; height: 5px; border-radius: 50%; border: 1px solid currentColor; transition: background .15s, box-shadow .15s; }
+    #bar button:hover, #bar button:focus-visible { color: var(--ink); background: color-mix(in srgb, var(--open) 8%, transparent); }
+    #bar button[aria-expanded=true], #bar button[aria-pressed=true] { color: var(--ink); }
+    #bar button[aria-expanded=true]::before, #bar button[aria-pressed=true]::before { background: var(--open); border-color: var(--open); box-shadow: 0 0 6px var(--open); }
+    #spin-speed-box { display: inline-flex; align-items: center; gap: 4px; }
+    #spin-speed-box .notched { position: relative; display: inline-flex; align-items: center; }
+    /* the ×1 notch: a short tick at the slider's left end, where it snaps */
+    #spin-speed-box .notched::before { content: ''; position: absolute; left: 0; top: 50%; width: 1px; height: 8px; margin-top: -4px; background: color-mix(in srgb, var(--open) 55%, transparent); pointer-events: none; }
+    #spin-speed { width: 92px; height: 18px; margin: 0; }
+    #spin-speed-out { font-size: 12px; color: var(--dim); min-width: 13.5em; padding-left: 4px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    #spin-real[aria-pressed=true] ~ #spin-speed-out { color: var(--ink); }
+    @media (max-width: 900px) { #spin-speed-out { display: none; } }
+    #bar .gap { width: 1px; height: 16px; margin: 0 4px; background: color-mix(in srgb, var(--open) 18%, transparent); }
+    #panel { position: fixed; top: 60px; left: 16px; width: 280px; max-width: calc(100vw - 32px); background: color-mix(in srgb, var(--panel) 82%, transparent);
+      border: 1px solid color-mix(in srgb, var(--open) 15%, transparent); border-radius: 10px; padding: 12px 16px; backdrop-filter: blur(6px);
+      max-height: calc(100vh - 140px); overflow-y: auto; box-sizing: border-box; z-index: 5; }
+    #panel[hidden], #panel section[hidden] { display: none; }
+    #panel section > h2:first-child { margin-top: 0; }
+    .line { font-size: 11px; color: var(--dim); margin: 6px 0 2px; }
+    h1 { margin: 0 0 2px; font-size: 18px; letter-spacing: .04em; }
+    .sub { color: var(--dim); font-size: 12px; margin-bottom: 10px; }
+    h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim); margin: 12px 0 4px; font-weight: 600; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li button { all: unset; display: flex; gap: 8px; align-items: center; width: 100%; padding: 3px 0; cursor: pointer; }
+    li button:hover { color: var(--ink); filter: brightness(1.25); } li button:focus-visible { outline: 1px solid var(--open); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+    .unlocked .dot { background: var(--open); box-shadow: 0 0 8px var(--open); }
+    .forecast-only .dot { background: var(--fc); } .forecast-only { color: color-mix(in srgb, var(--fc) 55%, var(--ink)); }
+    .locked .dot { background: var(--lock); } .locked { color: var(--lock); }
+    .tag { margin-left: auto; font-size: 11px; color: var(--dim); }
+    #palettes { display: flex; gap: 6px; }
+    #palettes button { background: none; border: 1px solid color-mix(in srgb, var(--open) 20%, transparent); color: var(--dim); border-radius: 6px; padding: 3px 9px; font: inherit; font-size: 12px; cursor: pointer; }
+    #palettes button.on { color: var(--ink); border-color: var(--open); }
+    label.layer { display: flex; gap: 8px; align-items: center; padding: 2px 0; cursor: pointer; }
+    /* checkboxes: a ring that fills with a glowing dot when on (the house dot) */
+    input[type=checkbox] { appearance: none; -webkit-appearance: none; flex: none; width: 13px; height: 13px; margin: 0; border-radius: 50%;
+      border: 1px solid color-mix(in srgb, var(--open) 45%, transparent); background: none; cursor: pointer; display: grid; place-content: center; }
+    input[type=checkbox]::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--open); box-shadow: 0 0 6px var(--open); transform: scale(0); transition: transform .12s; }
+    input[type=checkbox]:checked { border-color: var(--open); }
+    input[type=checkbox]:checked::before { transform: scale(1); }
+    input[type=checkbox]:focus-visible { outline: 1px solid var(--open); outline-offset: 2px; }
+    input[type=checkbox]:disabled { border-color: color-mix(in srgb, var(--lock) 70%, transparent); cursor: default; }
+    /* range sliders: a thin line and a glowing dot */
+    input[type=range] { -webkit-appearance: none; appearance: none; background: none; --acc: var(--open); }
+    input[type=range]::-webkit-slider-runnable-track { width: 2px; height: 2px; background: color-mix(in srgb, var(--acc) 30%, transparent); border-radius: 1px; }
+    input[type=range]::-moz-range-track { width: 2px; height: 2px; background: color-mix(in srgb, var(--acc) 30%, transparent); border-radius: 1px; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 8px var(--acc); border: none; margin: 0 -4.5px; }
+    input[type=range]::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 8px var(--acc); border: none; }
+    .state { margin-left: 6px; font-size: 11px; color: var(--dim); }
+    #terrain-readout { font-size: 11px; color: var(--dim); margin: 4px 0 2px; }
+    #terrain-readout .warn { color: var(--fc); }
+    #terrain-credits { font-size: 10px; color: var(--dim); margin-top: 4px; max-height: 120px; overflow: auto; }
+    .layer-info { margin: 2px 0 8px 22px; font-size: 11px; color: var(--dim); }
+    .layer-more { all: unset; font-size: 11px; color: var(--dim); cursor: pointer; border-bottom: 1px dotted currentColor; margin-top: 3px; display: inline-block; }
+    .layer-more:hover, .layer-more.on, .layer-more:focus-visible { color: var(--ink); }
+    .layer-details { margin-top: 4px; line-height: 1.45; color: var(--dim); max-height: 160px; overflow-y: auto; }
+    .layer-status { color: var(--ink); margin-top: 3px; }
+    .layer-modes { display: flex; gap: 4px; margin-bottom: 4px; }
+    .layer-modes button { background: none; border: 1px solid color-mix(in srgb, var(--open) 20%, transparent); color: var(--dim); border-radius: 5px; padding: 1px 7px; font: inherit; cursor: pointer; }
+    .layer-modes button.on { color: var(--ink); border-color: var(--open); }
+    label.layer.missing { color: var(--lock); }
+    /* Cards: one type style for every kind (the panel's system font, 13px); the kind only sets the accent colour.
+       wanted / research: the accent dimmed (research has a dashed edge; round 4: no second hue); hazard: calm blue-grey, no glow or scan lines; own spots: cyan. */
+    #card { --acc: var(--open); position: fixed; right: 64px; bottom: 60px; width: 280px; max-width: calc(100vw - 32px); background: color-mix(in srgb, var(--bg) 88%, transparent);
+      border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); border-radius: 10px; padding: 12px 14px; display: none; font-size: 13px; backdrop-filter: blur(6px); }
+    #card.wanted { --acc: var(--fc); box-shadow: 0 0 18px color-mix(in srgb, var(--fc) 14%, transparent);
+      background-image: repeating-linear-gradient(0deg, color-mix(in srgb, var(--fc) 4%, transparent) 0 1px, transparent 1px 3px); }
+    #card.hazard { --acc: var(--hz); }
+    #card div { margin: 3px 0; }
+    #card .c-name { font-weight: 600; margin-bottom: 4px; color: var(--acc); }
+    #card .w-head { color: var(--acc); font-size: 11px; font-weight: 600; letter-spacing: .22em; margin-bottom: 4px; }
+    #card .w-name { color: var(--ink); font-weight: 600; font-size: 14px; letter-spacing: .02em; }
+    #card .w-sub { color: var(--acc); opacity: .75; font-size: 11px; letter-spacing: .2em;   /* b38: was 10px */ margin: -2px 0 6px !important; }
+    #card.research { border-style: dashed; }
+    #card .w-foot { color: var(--acc); margin-top: 8px; }
+    li.wanted .dot { background: none; border: 1px dashed var(--fc); width: 7px; height: 7px; }
+    li.wanted.k-hazard .dot { border-color: var(--hz); } li.k-hazard { color: color-mix(in srgb, var(--hz) 60%, var(--ink)); }
+    #wanted-list { max-height: 168px; overflow-y: auto; font-size: 13px; }
+    #wanted-list .tag { margin-left: auto; }
+    #wanted-filter { display: flex; gap: 4px; margin-bottom: 4px; }
+    #wanted-filter button { background: none; border: 1px solid color-mix(in srgb, var(--fc) 20%, transparent); color: var(--dim); border-radius: 5px; padding: 1px 7px; font: inherit; font-size: 12px; cursor: pointer; }
+    #wanted-filter button.on { color: var(--fc); border-color: color-mix(in srgb, var(--fc) 60%, transparent); }
+    #wanted-filter button.k-hazard.on { color: var(--hz); border-color: color-mix(in srgb, var(--hz) 60%, transparent); }
+    #wanted-count { font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+    #card { max-height: 60vh; overflow-y: auto; box-sizing: border-box; }
+    #card .w-country { color: var(--dim); margin-top: -2px; }
+    #card .w-why { margin-top: 6px !important; }
+    #card .w-known { color: color-mix(in srgb, var(--acc) 30%, var(--ink)); }
+    #card .w-part { margin-top: 4px !important; } #card .w-part b { font-weight: 600; color: color-mix(in srgb, var(--acc) 45%, var(--ink)); }
+    #card .w-src { margin-top: 6px; font-size: 11px; color: var(--dim); } #card .w-src summary { cursor: pointer; } #card .w-src a { color: var(--dim); }
+    #card .w-link a { color: var(--acc); }
+    #card .w-quick { display: inline-block; border: 1px solid currentColor; border-radius: 4px; padding: 0 6px; color: var(--open); }
+    #card .w-low { color: var(--dim); font-style: italic; }
+    .lbl.wanted.hazard { color: var(--hz); }
+    #tiers .k.hazard { border: 1px dashed var(--hz); width: 6px; height: 6px; }
+    #tiers { font-size: 11px; color: var(--dim); margin-top: 8px; line-height: 1.6; }
+    #tiers .k { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+    #tiers .k.unlocked { background: var(--open); box-shadow: 0 0 6px var(--open); }
+    #tiers .k.forecast { background: var(--fc); }
+    #tiers .k.wanted { border: 1px dashed var(--fc); width: 6px; height: 6px; }
+    #tiers .ladder { margin-top: 2px; }
+    #labels { position: fixed; inset: 0; pointer-events: none; }
+    .lbl { position: absolute; left: 0; top: 0; font-size: 12px; white-space: nowrap; pointer-events: auto; cursor: pointer;
+      text-shadow: 0 0 4px #000, 0 0 8px #000; }
+    .lbl.unlocked { color: var(--open); } .lbl.forecast-only { color: var(--fc); font-size: 11px; } .lbl.locked { color: var(--lock); }
+    #zoom { position: fixed; right: 16px; top: 50%; transform: translateY(-50%); transition: opacity .25s; display: flex; flex-direction: column; align-items: center; gap: 6px;
+      background: color-mix(in srgb, var(--panel) 90%, transparent); border: 1px solid color-mix(in srgb, var(--open) 22%, transparent); border-radius: 10px; padding: 8px 6px; backdrop-filter: blur(8px); }
+    #zoom button { width: 26px; height: 26px; background: none; border: 1px solid color-mix(in srgb, var(--open) 20%, transparent); border-radius: 6px; color: var(--ink); font: 16px/1 system-ui, sans-serif; cursor: pointer; }
+    #zoom button:hover, #zoom button:focus-visible { border-color: var(--open); outline: none; }
+    #zoom-slider { writing-mode: vertical-lr; direction: rtl; height: 200px; width: 22px; margin: 0; cursor: pointer; }
+    #zoom-slider:focus-visible { outline: 1px solid var(--open); outline-offset: 2px; }
+    #tilt-slider { writing-mode: vertical-lr; direction: rtl; height: 70px; width: 18px; margin: 0; --acc: var(--fc); cursor: pointer; }
+    #tilt-slider:focus-visible { outline: 1px solid var(--fc); outline-offset: 2px; }
+    #zoom .sep { width: 18px; border-top: 1px solid color-mix(in srgb, var(--open) 15%, transparent); margin: 2px 0; }
+    #zoom .tl { font-size: 10px; color: var(--dim); letter-spacing: .04em; }
+    #tilt-auto { width: auto !important; height: auto !important; font-size: 10px !important; padding: 2px 5px; color: var(--dim) !important; }
+    #tilt-auto.on { color: var(--ink) !important; border-color: var(--fc) !important; }
+    .layer-extras { margin: 2px 0 6px 22px; font-size: 12px; }
+    .layer-extras label.layer.sub { color: var(--dim); }
+    .fly-storm { margin-top: 4px; background: none; border: 1px solid color-mix(in srgb, var(--fc) 35%, transparent); color: var(--fc); border-radius: 6px; padding: 3px 8px; font: inherit; cursor: pointer; text-align: left; }
+    .fly-storm:hover:not(:disabled), .fly-storm:focus-visible { border-color: var(--fc); outline: none; }
+    .fly-storm.on { background: color-mix(in srgb, var(--fc) 12%, transparent); }
+    .fly-storm:disabled { color: var(--lock); border-color: color-mix(in srgb, var(--lock) 45%, transparent); cursor: default; }
+    @media (max-height: 520px) { #zoom-slider { height: 120px; } #tilt-slider { height: 50px; } }
+    #zoom.faded { opacity: .3; }
+    #zoom #north { font-size: 11px; font-weight: 600; }
+    /* round 4: a small calm line under the bar (where the follow caption sits), not a box over the rail and the labels */
+    #zoom-note { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); max-width: min(520px, calc(100vw - 32px)); font-size: 11.5px; color: var(--dim);
+      text-align: center; padding: 3px 10px; background: color-mix(in srgb, var(--bg) 62%, transparent); border-radius: 6px; z-index: 4; transition: opacity .4s; }
+    #zoom-note[hidden] { display: none; }
+    .offline-cue { position: fixed; top: 62px; right: 16px; font-size: 11px; color: var(--dim); padding: 3px 10px; border-radius: 6px; z-index: 4; pointer-events: none;
+      background: color-mix(in srgb, var(--bg) 62%, transparent); } .offline-cue[hidden] { display: none; }
+    @media (max-width: 600px) { .offline-cue { top: 132px; left: 16px; right: auto; } }
+    #zoom-note button { all: unset; color: var(--open); cursor: pointer; border-bottom: 1px dotted currentColor; }
+    #zoom-note button[hidden] { display: none; }
+    #labels.following .lbl.show { opacity: .35; }
+    @keyframes live-pulse { 0%, 100% { text-shadow: 0 0 0 transparent; } 50% { text-shadow: 0 0 9px var(--open); } }
+    .layer.live, #bar button.live { animation: live-pulse 3.2s ease-in-out infinite; }
+    .live-note { font-size: 11px; color: var(--dim); margin: 2px 0 0 22px; }
+    .lbl { opacity: 0; transition: opacity .15s; } .lbl.show { opacity: 1; } .lbl:not(.show) { pointer-events: none; }
+    #notice-standing { position: fixed; right: 16px; bottom: 12px; max-width: 190px; text-align: right; line-height: 1.35; font-size: 11px; color: var(--dim); text-decoration: none; opacity: .9; z-index: 4;
+      background: color-mix(in srgb, var(--bg) 72%, transparent); padding: 3px 7px; border-radius: 6px; backdrop-filter: blur(4px); }   /* backing: legible over close terrain (round-1 item 14) */
+    @media (max-width: 1040px) { #notice-standing { bottom: 84px; } #card { bottom: 144px; max-height: calc(100vh - 216px); }   /* round 4: clear of a three-line standing line */ }
+    #notice-standing:hover, #notice-standing:focus-visible { color: var(--ink); opacity: 1; }
+    #notice-live { display: block; margin-top: 3px; padding-top: 3px; border-top: 1px solid color-mix(in srgb, var(--dim) 25%, transparent); color: var(--ink); opacity: .85; }
+    #notice-live[hidden] { display: none; }
+    #notice-about ul { margin: 4px 0 6px 16px; padding: 0; }
+    #notice-about a { color: var(--dim); }
+    #notice-about a:hover { color: var(--ink); }
+    #credits { font-size: 11px; color: var(--dim); line-height: 1.45; }
+    #credits h3 { font-size: 11px; font-weight: 600; color: var(--ink); margin: 8px 0 2px; }
+    #credits p { margin: 0 0 4px; }
+    #credits a { color: var(--dim); } #credits a:hover { color: var(--ink); }
+    .layer-notice { color: var(--ink); margin-bottom: 4px; }
+    /* round 3 (#12): the followed storm's name on the globe, so it shows with the Layers panel closed */
+    #follow-cap { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--ink); white-space: nowrap; max-width: calc(100vw - 32px);
+      overflow: hidden; text-overflow: ellipsis; background: color-mix(in srgb, var(--bg) 72%, transparent); padding: 3px 10px; border-radius: 6px; z-index: 4; pointer-events: none; }
+    #follow-cap[hidden] { display: none; }
+    @media (max-width: 600px) { #follow-cap { top: 104px; } }
+    #hint { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: var(--dim); font-size: 12px; text-align: center;
+      width: max-content; max-width: min(820px, calc(100vw - 150px));
+      background: color-mix(in srgb, var(--bg) 72%, transparent); padding: 3px 10px; border-radius: 6px; backdrop-filter: blur(4px); }   /* shrink-to-fit made it half the window: 4 lines on a tablet */
+    @media (max-width: 600px) { #panel { width: auto; right: 16px; padding: 10px 12px; } #hint { display: none; } #bar .name { font-size: 13px; margin-right: 2px; } #bar button { padding: 5px 6px; } }
+    #compass { all: unset; position: fixed; right: 16px; top: 16px; width: 34px; height: 34px; border-radius: 50%; cursor: pointer; z-index: 5;
+      background: color-mix(in srgb, var(--panel) 70%, transparent); border: 1px solid color-mix(in srgb, var(--open) 15%, transparent); }
+    #compass:hover, #compass:focus-visible { border-color: var(--open); }
+    #compass .rose { position: absolute; inset: 0; transition: transform .08s linear; }
+    #compass .rose i { position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; margin: -1.5px; border-radius: 50%; background: var(--dim); opacity: .7; }
+    #compass .rose i.n { width: 5px; height: 5px; margin: -2.5px; background: var(--open); opacity: 1; box-shadow: 0 0 6px var(--open); }
+    #compass .rose b { position: absolute; left: 50%; top: 50%; font-size: 9px; font-weight: 600; line-height: 1; color: var(--ink); transform: translate(-50%, -50%); }
+    .geo-name { position: absolute; left: 0; top: 0; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--dim); white-space: nowrap;
+      pointer-events: none; opacity: 0; transition: opacity .3s; }
+    .geo-name.sea { font-style: italic; letter-spacing: .12em; text-transform: none; }
+    /* phone: the bar wraps to two rows (sections + Home, then Spin and its speed), touch-sized; the compass stays top right;
+       the zoom bar shrinks to + and − at the bottom right (pinch zooms); the hint is one line; cards and panel fit and scroll */
+    @media (max-width: 600px) {
+      #bar { left: 8px; right: 54px; top: 8px; flex-wrap: wrap; padding: 2px 4px; row-gap: 0; }
+      #bar button { min-height: 40px; padding: 0 7px; box-sizing: border-box; }
+      #bar .gap { display: none; }
+      #spin-speed-box { flex: 1 1 auto; min-width: 0; }
+      #spin-speed-box .notched, #spin-speed-box input { flex: 1 1 auto; min-width: 60px; }
+      #compass { top: 12px; right: 10px; width: 38px; height: 38px; }
+      #panel { top: 104px; left: 8px; right: 8px; max-width: none; max-height: calc(100vh - 180px); }
+      #zoom { top: auto; bottom: 64px; right: 10px; transform: none; padding: 4px; gap: 6px; }
+      #zoom-slider, #tilt-slider, #zoom .tl, #zoom .sep, #tilt-auto, #zoom #north { display: none !important; }
+      #zoom button { width: 40px; height: 40px; }
+      #zoom.faded { opacity: .6; }
+      #zoom-note { top: 104px; }
+      #card { left: 8px; right: 70px; bottom: 40px; width: auto; max-width: none; max-height: calc(100vh - 150px); }   /* the zoom buttons stay free on the right; b38: was 50vh, which cut the longest cards (up to 510 px) and scrolled; now the top stays below the bar (94 px) */
+      #notice-standing { bottom: 8px !important; right: 8px; max-width: none; left: 8px; text-align: center; }
+    }
+    /* Home-screen app (viewport-fit=cover, translucent status bar): keep the controls clear of the notch and the home bar.
+       env() is 0 in a normal browser tab, so nothing moves on desktop. */
+    #bar, #panel { margin-top: env(safe-area-inset-top, 0px); margin-left: env(safe-area-inset-left, 0px); }
+    #compass { margin-top: env(safe-area-inset-top, 0px); margin-right: env(safe-area-inset-right, 0px); }
+    #notice-standing, #card { margin-bottom: env(safe-area-inset-bottom, 0px); }
+    @media (max-width: 600px) { #zoom { margin-bottom: env(safe-area-inset-bottom, 0px); } }
+  </style>
+</head>
+<body>
+  <canvas id="globe"></canvas>
+  <div id="geo-names" aria-hidden="true" style="position:fixed;inset:0;pointer-events:none"></div>
+  <div id="labels"></div>
+  <button id="compass" type="button" aria-label="Compass: turn north up" title="Compass: click for north up"><span class="rose"></span></button>
+  <nav id="bar" aria-label="Oceany">
+    <span class="name">Oceany</span>
+    <button type="button" data-sec="layers" aria-expanded="false" aria-controls="panel">Layers</button>
+    <button type="button" data-sec="spots" aria-expanded="false" aria-controls="panel">Spots</button>
+    <button type="button" data-sec="view" aria-expanded="false" aria-controls="panel">View</button>
+    <button type="button" data-sec="about" aria-expanded="false" aria-controls="panel">About</button>
+    <button type="button" id="home-btn" title="Back to the whole Earth, north up">Home</button>
+    <span class="gap" aria-hidden="true"></span>
+    <button type="button" id="spin-btn" aria-pressed="false" title="Turn the globe, west to east, as the Earth turns">Spin</button>
+    <span id="spin-speed-box" title="Speeds up the view only; data stays at the current time">
+      <button type="button" id="spin-real" aria-pressed="false" title="Real speed: Earth turns once per sidereal day, 23 h 56 min 4 s">Real speed</button>
+      <span class="notched"><input type="range" id="spin-speed" min="0" max="1000" step="1" value="783" aria-label="Spin speed"></span>
+      <span id="spin-speed-out" aria-live="polite"></span>
+    </span>
+  </nav>
+  <a id="notice-standing" href="#about"></a>
+  <div id="panel" hidden>
+    <section data-sec="layers" hidden>
+      <h2>Layers</h2>
+      <div id="layers"><span class="tag">none</span></div>
+    </section>
+    <section data-sec="spots" hidden>
+      <h2>Spots</h2>
+      <ul id="list"></ul>
+      <h2>Wanted spots</h2>
+      <div id="wanted-filter" role="group" aria-label="Show wanted spots by kind"></div>
+      <div id="wanted-count"></div>
+      <ul id="wanted-list"></ul>
+    </section>
+    <section data-sec="view" hidden>
+      <h2>View</h2>
+      <label class="layer"><input type="checkbox" id="spin-toggle"> Spin the globe (pauses while you look around)</label>
+      <label class="layer"><input type="checkbox" id="terrain-toggle"> Terrain detail (land and seabed relief)</label>
+      <div id="terrain-readout" style="display:none"></div>
+      <details id="terrain-credits" style="display:none"><summary>Terrain credits</summary>
+        <span id="tc-own">Terrain: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa);
+        produced using Copernicus WorldDEM-30 and WorldDEM-90 &copy; DLR e.V. 2010-2014 and &copy; Airbus Defence and Space GmbH
+        2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. Modified by Oceany
+        (resampled, merged, rounded to 1 m). Not for navigation. The organisations in charge of the Copernicus programme by law or by
+        delegation do not incur any liability for any use of the Copernicus WorldDEM-30 or WorldDEM-90. Not endorsed by GEBCO, the IHO or the IOC.</span>
+        <span id="tc-aws" hidden>Terrain Tiles on AWS Open Data (Mapzen / Tilezen). Global ETOPO1 terrain data U.S. National Oceanic and Atmospheric Administration;
+        United States 3DEP (formerly NED) and global GMTED2010 and SRTM terrain data courtesy of the U.S. Geological Survey;
+        Europe terrain data produced using Copernicus data and information funded by the European Union - EU-DEM layers;
+        ArcticDEM terrain data DEM(s) were created from DigitalGlobe, Inc., imagery and funded under National Science Foundation awards 1043681, 1559691, and 1542736;
+        Australia terrain data &copy; Commonwealth of Australia (Geoscience Australia) 2017;
+        Austria terrain data &copy; offene Daten &Ouml;sterreichs &ndash; Digitales Gel&auml;ndemodell (DGM) &Ouml;sterreich;
+        Canada terrain data contains information licensed under the Open Government Licence &ndash; Canada;
+        Mexico terrain data source: INEGI, Continental relief, 2016;
+        New Zealand terrain data Copyright 2011 Crown copyright (c) Land Information New Zealand and the New Zealand Government (All rights reserved);
+        Norway terrain data &copy; Kartverket;
+        United Kingdom terrain data &copy; Environment Agency copyright and/or database right 2015. All rights reserved.</span>
+      </details>
+      <h2>Palette</h2>
+      <div id="palettes"></div>
+      <div class="line" id="stars-line"></div>
+    </section>
+    <section data-sec="about" hidden>
+      <h2>About</h2>
+      <div class="sub">Reef-scale wave models, one spot at a time. Glowing spots are unlocked: click one to fly in.</div>
+      <div class="sub" id="notice-about"></div>
+      <div id="tiers">
+        <div><span class="k unlocked"></span>unlocked: reef seabed and wave model</div>
+        <div><span class="k forecast"></span>marked spot, no model yet</div>
+        <div><span class="k wanted"></span>wanted: needs seabed data to unlock</div>
+        <div><span class="k hazard"></span>data needed: coastal hazard and recovery science</div>
+        <div class="ladder">Unlock tiers: marked › seabed › swell model › breaking wave</div>
+      </div>
+      <div class="line">Each Earth dot is one point of ETOPO1 global relief (NOAA): ocean blue by depth; land coloured by height (olive low ground, brown uplands, grey-brown high plateaus, paler only on the highest peaks; the Antarctic and Greenland ice sheets blue-grey). Colour shows height, not vegetation or snow.</div>
+      <h2>Credits</h2>
+      <div id="credits">
+        <p>Oceany is for research and play only. It is not a forecast, a warning service or a navigation tool. Do not use it for safety decisions. Not affiliated with or endorsed by any provider below.</p>
+        <h3>Waves and wind</h3>
+        <p>Wind: NOAA NCEP GFS. Waves and swell: NOAA NCEP GFS-Wave (WAVEWATCH III). Public domain, redrawn by Oceany. Not an official NOAA product.</p>
+        <h3>Coasts (where shown)</h3>
+        <p>Generated using E.U. Copernicus Marine Service Information. <a href="https://doi.org/10.48670/moi-00025" target="_blank" rel="noopener noreferrer">doi.org/10.48670/moi-00025</a> (IBI), <a href="https://doi.org/10.48670/moi-00055" target="_blank" rel="noopener noreferrer">doi.org/10.48670/moi-00055</a> (NWS), <a href="https://doi.org/10.48670/mds-00373" target="_blank" rel="noopener noreferrer">doi.org/10.48670/mds-00373</a> (MED), <a href="https://doi.org/10.48670/moi-00036" target="_blank" rel="noopener noreferrer">doi.org/10.48670/moi-00036</a> (in-situ).</p>
+        <p>DMI open data, CC BY 4.0 (<a href="https://www.dmi.dk/friedata" target="_blank" rel="noopener noreferrer">dmi.dk/friedata</a>). Based on data from DMI, changed by Oceany. Not endorsed by DMI.</p>
+        <h3>Storms</h3>
+        <p>Tropical cyclone tracks: NOAA IBTrACS v04r01 (Gahtan et al., 2024, doi:10.25921/82ty-9e16; Knapp et al., 2010, doi:10.1175/2009BAMS2755.1). Thinned and re-classified by Oceany; not official.</p>
+        <p>Tornado data: NOAA/NWS Storm Prediction Center severe weather database. Reformatted and thinned by Oceany; not official and not endorsed by NOAA/NWS.</p>
+        <p>Live tornado warnings: NOAA/NWS api.weather.gov. Not an official product; see <a href="https://www.weather.gov/" target="_blank" rel="noopener noreferrer">weather.gov</a> for warnings.</p>
+        <h3>Sky</h3>
+        <p>Aurora: NOAA Space Weather Prediction Center, OVATION Prime model, and estimated Kp. Redrawn by Oceany; not an official NOAA product. For space weather see <a href="https://www.spaceweather.gov/" target="_blank" rel="noopener noreferrer">spaceweather.gov</a>.</p>
+        <p>Snow and sea ice: U.S. National Ice Center. IMS Daily Northern Hemisphere Snow and Ice Analysis, Version 1 (G02156). NSIDC. <a href="https://doi.org/10.7265/N52R3PMC" target="_blank" rel="noopener noreferrer">doi.org/10.7265/N52R3PMC</a></p>
+        <p>Stars: HYG v4.4 (Hipparcos-Yale-Gliese) by astronexus, <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>, <a href="https://codeberg.org/astronexus/hyg" target="_blank" rel="noopener noreferrer">codeberg.org/astronexus/hyg</a>. Filtered to magnitude 6.5; the filtered file is shared under CC BY-SA 4.0.</p>
+        <h3>Land and sea floor</h3>
+        <p>ETOPO1: NOAA NGDC. EMODnet Bathymetry (CC BY 4.0), DDM50, DGT/APA lidar, Litto3D.</p>
+        <p>Terrain detail: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa); produced using Copernicus WorldDEM-30 and WorldDEM-90 &copy; DLR e.V. 2010-2014 and &copy; Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. Modified by Oceany (resampled, merged, rounded to 1 m). Not for navigation. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30 or WorldDEM-90. Not endorsed by GEBCO, the IHO or the IOC.</p>
+        <p>Pipeline: Office for Coastal Management, 2026: 2013 USACE NCMP Topobathy Lidar DEM (LMSL): Oahu, HI, <a href="https://www.fisheries.noaa.gov/inport/item/65476" target="_blank" rel="noopener noreferrer">fisheries.noaa.gov/inport/item/65476</a>. Resampled.</p>
+        <h3>Software</h3>
+        <p>three.js, MIT, Copyright (c) 2010-2026 three.js authors.</p>
+      </div>
+    </section>
+  </div>
+  <div id="zoom" role="group" aria-label="Zoom">
+    <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+    <input id="zoom-slider" type="range" min="0" max="1000" step="25" value="0" aria-label="Zoom, from whole globe to closest">
+    <button id="zoom-out" type="button" aria-label="Zoom out">&minus;</button>
+    <div class="sep"></div>
+    <span class="tl" aria-hidden="true">tilt</span>
+    <input id="tilt-slider" type="range" min="0" max="92" step="1" value="0" aria-label="Camera tilt, from straight down to level">
+    <button id="tilt-auto" type="button" class="on" aria-pressed="true" title="Tilt follows the zoom">auto</button>
+    <div class="sep"></div>
+    <button id="north" type="button" aria-label="Turn north up" title="Turn north up">N</button>
+  </div>
+  <div id="zoom-note" role="status" hidden><span></span> <button type="button" id="zoom-note-terrain">Turn on terrain detail</button></div>
+  <div id="card"></div>
+  <div id="follow-cap" hidden></div>
+  <div id="hint">Drag to move; right-drag or shift-drag to tilt and turn; scroll, pinch or use the slider to zoom. Each dot is one point of ETOPO1 global relief (NOAA): ocean blue by depth; land coloured by height (olive low ground, brown uplands, grey-brown high plateaus, paler only on the highest peaks; the Antarctic and Greenland ice sheets blue-grey). Colour shows height, not vegetation or snow.</div>
+  <script type="module" src="./globe.js?v=b39"></script>
+</body>
+</html>

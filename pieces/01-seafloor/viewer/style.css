@@ -4,21 +4,23 @@ html, body { margin: 0; height: 100%; background: #04060a; color: #cfe8ee;
 #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 #panel { position: fixed; top: 12px; left: 12px; padding: 10px 14px; width: 250px;
   background: rgba(6, 12, 18, .72); border: 1px solid #16303a; border-radius: 8px;
-  max-height: calc(100vh - 12px - var(--cap-h, 130px) - 62px); overflow-y: auto; }   /* stays clear of the source caption (--cap-h is set from its real height in main.js) */
+  max-height: calc(100vh - 12px - var(--cap-h, 130px) - var(--cred-h, 16px) - var(--stand-off, 0px) - 46px); overflow-y: auto; }   /* stays clear of the source caption (--cap-h is set from its real height in main.js) */
 #panel h1 { font-size: 14px; margin: 0 0 8px; font-weight: 600; letter-spacing: .03em; }
 #panel input[type=range] { width: 100%; }
 #exag-text { color: #7fe3f0; margin-bottom: 8px; }
 .row { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
-button { background: #0b1a22; color: #cfe8ee; border: 1px solid #1d3b47; border-radius: 5px;
+button { background: none; color: #9fbccb; border: 1px solid rgba(95, 242, 255, .2); border-radius: 5px;   /* the globe panel's button style */
   padding: 3px 9px; cursor: pointer; font: inherit; }
-button.on { border-color: #7fe3f0; color: #fff; }
+button.on { border-color: #5ff2ff; color: #fff; }
+button:hover { color: #fff; }
 .tag { position: fixed; left: 0; top: 0; pointer-events: none; padding: 1px 6px;
   font-size: 12px; color: #fff; background: rgba(0, 0, 0, .45); border-radius: 4px;
   transform: translate(8px, -50%); white-space: nowrap; }
 .tag.dim { color: #aab; font-size: 11px; }
 #tip { position: fixed; display: none; pointer-events: none; padding: 3px 8px;
   background: rgba(0, 0, 0, .75); border: 1px solid #2a5260; border-radius: 4px; }
-#caption { position: fixed; left: 12px; bottom: 28px; max-width: min(520px, 80vw);
+#caption { position: fixed; left: 12px; bottom: calc(var(--cred-h, 16px) + 12px);   /* sits above the credits, whatever their height (--cred-h set in main.js) */
+  max-width: min(520px, 80vw);
   color: #7d97a0; font-size: 12px; }
 #status { position: fixed; right: 12px; bottom: 10px; color: #7d97a0; font-size: 12px; }
 #panel .row { flex-wrap: wrap; }
@@ -41,7 +43,7 @@ button.on { border-color: #7fe3f0; color: #fff; }
 #loading.err { color: #ff8a8a; border-color: #7a2f2f; }
 #panel h1 .sub { display: block; font-size: 12px; font-weight: 400; color: #9ab; letter-spacing: 0; }
 
-#credits { position: fixed; left: 12px; bottom: 6px; right: 120px; color: #5f7882; font-size: 10px; line-height: 1.3; pointer-events: none; }
+#credits { position: fixed; left: 12px; bottom: 6px; right: 300px; color: #5f7882; font-size: 10px; line-height: 1.3; pointer-events: none; }
 #key { margin-top: 8px; font-size: 12px; color: #9ab; }
 #key summary { cursor: pointer; color: #cfe8ee; }
 #key ul { margin: 4px 0 0; padding-left: 16px; }
@@ -56,4 +58,39 @@ button.on { border-color: #7fe3f0; color: #fff; }
 .intro-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; flex-wrap: wrap; }
 .intro-btns button { padding: 7px 14px; }
 @media (max-width: 600px), (pointer: coarse) { #intro .intro-desk { display: none; } #intro .intro-phone { display: inline; } }
-@media (max-width: 600px) { #credits { right: 12px; bottom: 4px; font-size: 9px; } #caption { bottom: 70px; } #status { bottom: 70px; } }
+@media (max-width: 600px) { #credits { right: 12px; bottom: 4px; font-size: 9px; } #caption { bottom: calc(var(--cred-h, 60px) + var(--stand-h, 16px) + 12px); } #status { display: none; } }
+#globe-fade { position: fixed; inset: 0; background: #04060a; opacity: 0; pointer-events: none; z-index: 30;
+  display: flex; align-items: center; justify-content: center; }
+#globe-fade-hint { color: #7fe3f0; font-size: 13px; letter-spacing: .03em; opacity: 0; }
+#surround-note { margin-top: 2px; }
+/* Zoom bar: the globe's control (pieces/07-globe), same place and look, so the two pages read as one tool. */
+#zoom { --open: #5ff2ff; --panel: #060e16; --ink: #cfe6f2; --dim: #6b8696;
+  position: fixed; right: 16px; top: 50%; transform: translateY(-50%); transition: opacity .25s; display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 12;
+  background: color-mix(in srgb, var(--panel) 78%, transparent); border: 1px solid color-mix(in srgb, var(--open) 15%, transparent); border-radius: 10px; padding: 8px 6px; backdrop-filter: blur(6px);
+  font: 14px/1.4 system-ui, -apple-system, sans-serif; }
+#zoom[hidden] { display: none; }
+#zoom.faded { opacity: .3; }
+#zoom button { width: 26px; height: 26px; background: none; border: 1px solid color-mix(in srgb, var(--open) 20%, transparent); border-radius: 6px; color: var(--ink); font: 16px/1 system-ui, sans-serif; cursor: pointer; padding: 0; }
+#zoom button:hover, #zoom button:focus-visible { border-color: var(--open); outline: none; }
+#zoom-slider { -webkit-appearance: none; appearance: none; background: none; --acc: var(--open); writing-mode: vertical-lr; direction: rtl; height: 200px; width: 22px; margin: 0; cursor: pointer; }
+#zoom-slider:focus-visible { outline: 1px solid var(--open); outline-offset: 2px; }
+#zoom-slider::-webkit-slider-runnable-track { width: 2px; height: 2px; background: color-mix(in srgb, var(--acc) 30%, transparent); border-radius: 1px; }
+#zoom-slider::-moz-range-track { width: 2px; height: 2px; background: color-mix(in srgb, var(--acc) 30%, transparent); border-radius: 1px; }
+#zoom-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 8px var(--acc); border: none; margin: 0 -4.5px; }
+#zoom-slider::-moz-range-thumb { width: 11px; height: 11px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 8px var(--acc); border: none; }
+#zoom .zb-end { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 10px; color: var(--dim); letter-spacing: .04em; }
+#zoom .zb-globe { width: 11px; height: 11px; border-radius: 50%; border: 1.5px dotted color-mix(in srgb, var(--open) 70%, transparent); box-shadow: 0 0 5px color-mix(in srgb, var(--open) 35%, transparent); }
+#zoom-note { --open: #5ff2ff; --panel: #060e16; --dim: #6b8696; position: fixed; right: 64px; top: 50%; transform: translateY(-50%); width: 210px; z-index: 12;
+  font: 12px/1.4 system-ui, -apple-system, sans-serif; color: var(--dim); padding: 8px 10px; pointer-events: none;
+  background: color-mix(in srgb, var(--panel) 82%, transparent); border: 1px solid color-mix(in srgb, var(--open) 15%, transparent); border-radius: 8px; }
+#zoom-note[hidden] { display: none; }
+@media (max-width: 600px) { #zoom { right: 8px; } #zoom-slider { height: 140px; } #zoom-note { right: 52px; width: 170px; } }
+
+/* Standing notice, same type style as the globe's #notice-standing (pieces/07-globe): small, dim, calm, on a faint backing. */
+#standing { position: fixed; right: 16px; bottom: 30px; max-width: 270px; text-align: right; line-height: 1.35; font-size: 11px; color: #6b8696; opacity: .9; z-index: 26; pointer-events: none;
+  background: color-mix(in srgb, #04060a 72%, transparent); padding: 3px 7px; border-radius: 6px; backdrop-filter: blur(4px); }
+@media (max-width: 600px) { #standing { left: 8px; right: 8px; bottom: calc(var(--cred-h, 60px) + 6px); max-width: none; text-align: center; } :root { --stand-off: var(--stand-h, 16px); } }
+
+/* Offline line (offline.js): small, calm, top centre; only while saved data is being served. */
+#offline-note { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 27; font-size: 11px; line-height: 1.35; color: #8fb0c0; background: rgba(4,8,14,.6); padding: 3px 10px; border-radius: 10px; pointer-events: none; white-space: nowrap; }
+@media (max-width: 600px) { #offline-note { white-space: normal; text-align: center; max-width: calc(100vw - 32px); } }

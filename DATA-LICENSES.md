@@ -52,10 +52,35 @@ is for navigation.
 - Observer marks (`pieces/02-reefs/data/surf_zones.json` and the pins in the viewer): observer
   marks (one surfer, 17 Sep 2026). The author's own marks, not survey data.
 
+- Surroundings of the reef maps (the dimmer dots around each lidar patch in the viewer,
+  `pieces/01-seafloor/viewer/surround.js`): Terrain Tiles on AWS Open Data (Mapzen/Tilezen
+  terrarium tiles, `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png`),
+  fetched live by the browser, nothing stored. Land: zoom 12, one dot per tile pixel (~30 m at
+  Peniche and the Basque coast, ~36 m at Oahu), from EU-DEM, SRTM, GMTED and USGS 3DEP (NED).
+  Sea: one dot per zoom-10 pixel (~120-140 m apart); the depths are ETOPO1 (a ~1.85 km grid) in
+  most places, oversampled by the tiles, so the offshore sea floor there is coarse and approximate.
+  Heights are shifted by +2.0 m (MSL above LAT at Peniche) to sit on the Portuguese lidar's LAT
+  datum. Attribution required: see the full Terrain Tiles credit in `pieces/07-globe/SOURCES.md`
+  (ETOPO1: NOAA; SRTM, GMTED2010, 3DEP: USGS; EU-DEM: produced using Copernicus data and
+  information funded by the European Union).
+
 ## Live forecast snapshots (`live/*.json`, refreshed by a scheduled job)
 
-- Open-Meteo Marine and Weather API: weather data by Open-Meteo.com, CC BY 4.0
-  (https://open-meteo.com/en/licence).
+- Open-Meteo is no longer a live source (removed 2026-11-23: its free tier is non-commercial). No
+  visitor's browser calls it or any other forecast host; the viewer reads only `live/<spot>.json`
+  from its own origin.
+- NOAA/NCEP GFS-Wave (WAVEWATCH III), global 0.25 deg, via NOMADS (waves and the GFS 10 m wind):
+  US Government work, public domain (https://www.weather.gov/disclaimer, "may be used without
+  charge for any lawful purpose"). Credit: "NOAA/NCEP GFS-Wave, processed by Oceany. Not an
+  official NOAA product." Do not present modified data as official.
+- NOAA NOS CO-OPS tide predictions (Honolulu 1612340, used for Pipeline): public domain
+  (https://tidesandcurrents.noaa.gov/disclaimers.html, "may be used freely by the public");
+  attribution requested. Not an official NOAA product.
+- E.U. Copernicus Marine Service, sea level (tide and surge, `zos`): IBI
+  https://doi.org/10.48670/moi-00027, NWS https://doi.org/10.48670/moi-00054, MED
+  https://doi.org/10.48670/mds-00359. Same Copernicus licence as the wave products below.
+- All of it: for research and play only. Not a forecast or warning service. Not an official
+  product. Do not use for safety decisions. Details: `live-data/SOURCES.md`.
 - E.U. Copernicus Marine Service: generated using E.U. Copernicus Marine Service Information;
   IBI https://doi.org/10.48670/moi-00025, NWS https://doi.org/10.48670/moi-00055,
   MED https://doi.org/10.48670/mds-00373, in-situ https://doi.org/10.48670/moi-00036 (data provider

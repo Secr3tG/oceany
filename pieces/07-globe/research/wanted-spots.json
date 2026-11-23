@@ -1,0 +1,636 @@
+{
+  "entries": [
+    {
+      "id": "nazare-praia-do-norte",
+      "name": "Nazaré (Praia do Norte)",
+      "country": "Portugal",
+      "lat": 39.612,
+      "lon": -9.086,
+      "kind": "wave",
+      "why": "Big waves break here where the head of the Nazaré Canyon, a deep submarine canyon, sits close to the shore.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "EMODnet 'LIDAR DSM Nazaré' (Instituto Hidrografico, CC-BY 4.0 in metadata): 25 m grid over the coastal area; no 10 m or finer seabed grid confirmed. IH multibeam of the canyon head is mentioned in a 2012 slide deck, with no resolution or download found.",
+      "data_url": "https://emodnet.ec.europa.eu/geonetwork/srv/api/records/219da730-8d84-4d60-9f2e-fd722b3158d7",
+      "sources": [
+        "https://en.wikipedia.org/wiki/Nazar%C3%A9_Canyon",
+        "https://emodnet.ec.europa.eu/geonetwork/srv/api/records/219da730-8d84-4d60-9f2e-fd722b3158d7"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "mavericks",
+      "name": "Mavericks",
+      "country": "USA (California)",
+      "lat": 37.496,
+      "lon": -122.497,
+      "kind": "wave",
+      "why": "A bedrock reef off Pillar Point makes big winter swells converge and rise before breaking; typical northwest swells pass over gentler seabed.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "USGS California State Waters Map Series, Offshore of Half Moon Bay: multibeam bathymetry merged to a 2 m grid, mapped 2006-2007, from about the 10 m isobath outward; public, no licence stated, not for navigation. Shallower than 10 m may be missing.",
+      "data_url": "https://catalog.data.gov/dataset/bathymetry-offshore-half-moon-bay-california",
+      "sources": [
+        "https://catalog.data.gov/dataset/bathymetry-offshore-half-moon-bay-california",
+        "https://sanctuarysimon.org/2007/05/high-resolution-mapping-of-mavericks/"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "teahupoo",
+      "name": "Teahupo'o",
+      "country": "French Polynesia (Tahiti)",
+      "lat": -17.856,
+      "lon": -149.25,
+      "kind": "wave",
+      "why": "A powerful reef-pass wave on the southeast coast of Tahiti; the reef shape defines where it breaks.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "Shom 'MNT topo-bathymetrique cotier de Tahiti': about 20 m (0.0002 deg), lagoons to the 100 m isobath, Licence Ouverte 2.0, updated Dec 2023; extent over Teahupo'o not confirmed. Shom Tahiti-Moorea facade DTM is about 100 m. No 10 m product found.",
+      "data_url": "https://www.data.gouv.fr/datasets/mnt-topo-bathymetrique-cotier-de-tahiti",
+      "sources": [
+        "https://www.data.gouv.fr/datasets/mnt-topo-bathymetrique-cotier-de-tahiti",
+        "https://en.wikipedia.org/wiki/Teahupo%CA%BBo"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "cloudbreak",
+      "name": "Cloudbreak",
+      "country": "Fiji",
+      "lat": -17.887,
+      "lon": 177.184,
+      "kind": "wave",
+      "why": "A left-hand wave breaking over coral reef about a mile or two off Tavarua island, in the Mamanuca group.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "Pacific Community (SPC) Digital Earth Pacific satellite-derived bathymetry, Sentinel-2, 10 m, CC BY 4.0, to about 30 m depth in clear water; coverage of Cloudbreak not confirmed. SOPAC Mamanuca chart (50 m) is restricted. Regional Fiji grid is about 300 m.",
+      "data_url": "https://registry.opendata.aws/dep-satellite-derived-bathymetry/",
+      "sources": [
+        "https://registry.opendata.aws/dep-satellite-derived-bathymetry/",
+        "https://en.wikipedia.org/wiki/Tavarua"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "jaws-peahi",
+      "name": "Jaws (Pe'ahi)",
+      "country": "USA (Hawaii)",
+      "lat": 20.943,
+      "lon": -156.298,
+      "kind": "wave",
+      "why": "A big-wave break off Pe'ahi on Maui's north shore, a few miles east of Paia, where reef and offshore seabed shape the swell.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "NOAA NCEI Hawaii CUDEM 1/9 arc-second (about 3 m) bathymetric-topographic tiles, published 2021, no licence named, not subject to US copyright, not for navigation; bathymetric accuracy variable. Extent covers the main islands; Jaws tile not individually checked.",
+      "data_url": "https://chs.coast.noaa.gov/htdata/raster2/elevation/NCEI_ninth_Topobathy_Hawaii_9428/cudem_HI_m9428_met_forHumans.html",
+      "sources": [
+        "https://chs.coast.noaa.gov/htdata/raster2/elevation/NCEI_ninth_Topobathy_Hawaii_9428/cudem_HI_m9428_met_forHumans.html",
+        "https://en.wikipedia.org/wiki/Pe%CA%BBahi,_Hawaii"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "skeleton-bay",
+      "name": "Skeleton Bay",
+      "country": "Namibia",
+      "lat": -22.932,
+      "lon": 14.426,
+      "kind": "wave",
+      "why": "A long left-hand wave over a sand bank at Donkey Bay on the Pelican Point spit, described as lasting up to about 2 km.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "none found. Coordinates are the OpenStreetMap node \"Donkey Bay\" (fishing spot), a point near the break, not the exact take-off; namibweb names Skeleton Bay as Donkey Bay. surf-forecast.com lists -25.92, 14.90, which looks wrong and was dropped.",
+      "data_url": null,
+      "sources": [
+        "https://nominatim.openstreetmap.org/search?q=Donkey+Bay+Namibia&format=json",
+        "https://namibweb.com/skeleton-bay-namibia.htm"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "supertubes-jeffreys-bay",
+      "name": "Supertubes (Jeffreys Bay)",
+      "country": "South Africa",
+      "lat": -34.033,
+      "lon": 24.935,
+      "kind": "wave",
+      "why": "A long right-hand point wave at Jeffreys Bay, mapped in OpenStreetMap as a surfing spot.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "none found",
+      "data_url": null,
+      "sources": [
+        "https://overpass-api.de/api/interpreter (OSM node 'Supertubes', sport=surfing)",
+        "https://en.wikipedia.org/wiki/Jeffreys_Bay"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "cortes-bank",
+      "name": "Cortes Bank (Bishop Rock)",
+      "country": "USA (offshore California)",
+      "lat": 32.478,
+      "lon": -119.215,
+      "kind": "wave",
+      "why": "A seamount about 100 miles offshore whose shallowest point, Bishop Rock, lies a few feet below the surface and focuses swell.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "NCEI Coastal Relief Model Southern California V2 (2013): 1 and 3 arc-second only (about 30 m or coarser); NOAA survey H04549 exists, resolution not stated. No 10 m grid confirmed. Coordinates are the bank, not Bishop Rock itself.",
+      "data_url": "https://www.ncei.noaa.gov/products/coastal-relief-model",
+      "sources": [
+        "https://www.ncei.noaa.gov/products/coastal-relief-model",
+        "https://en.wikipedia.org/wiki/Cortes_Bank"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "mundaka",
+      "name": "Mundaka",
+      "country": "Spain (Basque Country)",
+      "lat": 43.407,
+      "lon": -2.698,
+      "kind": "wave",
+      "why": "A left-hand wave at the mouth of the Urdaibai estuary, where sand movement at the estuary mouth shapes the break.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "none found",
+      "data_url": null,
+      "sources": [
+        "https://nominatim.openstreetmap.org/search?q=Mundaka",
+        "https://rsis.ramsar.org/es/ris/600"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "puerto-escondido-zicatela",
+      "name": "Puerto Escondido (Zicatela)",
+      "country": "Mexico",
+      "lat": 15.859,
+      "lon": -97.064,
+      "kind": "wave",
+      "why": "A heavy beach-break barrel on Oaxaca's coast; submarine canyons offshore and shifting sand shape it.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "none found",
+      "data_url": null,
+      "sources": [
+        "https://origin.worldsurfleague.com/posts/264128/3-reasons-why-puerto-escondido-pumps",
+        "https://stabmag.com/news/can-puerto-escondido-be-saved/"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "uluwatu",
+      "name": "Uluwatu",
+      "country": "Indonesia (Bali)",
+      "lat": -8.818,
+      "lon": 115.086,
+      "kind": "wave",
+      "why": "A set of reef breaks below a limestone cliff on Bali's Bukit Peninsula, where reef shape and tide control which section works.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "BIG national bathymetry BATNAS: 6 arc-second (about 180 m) and reported unreliable nearshore; no 10 m open data found. Digital Earth Pacific 10 m coverage of Bali not confirmed.",
+      "data_url": null,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Uluwatu,_Bali",
+        "https://indonesiansurfguide.com/surf-spot/uluwatu-temples/"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "bells-beach",
+      "name": "Bells Beach",
+      "country": "Australia (Victoria)",
+      "lat": -38.369,
+      "lon": 144.283,
+      "kind": "wave",
+      "why": "A right-hand reef point break near Torquay on Victoria's coast, with a long surfing history.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "Victoria DEECA Victorian Coastal Digital Elevation Model 2021 (VCDEM): 10 m, CC BY 4.0; high-resolution version may have gaps, offshore extent not confirmed. A 250 cm VCDEM version also exists (CC BY 4.0).",
+      "data_url": "https://discover.data.vic.gov.au/dataset/victorian-coastal-digital-elevation-model-2021-vcdem-10m",
+      "sources": [
+        "https://discover.data.vic.gov.au/dataset/victorian-coastal-digital-elevation-model-2021-vcdem-10m",
+        "https://en.wikipedia.org/wiki/Bells_Beach"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "duck-frf-nc",
+      "name": "Duck, USACE Field Research Facility",
+      "country": "USA",
+      "lat": 36.182,
+      "lon": -75.754,
+      "kind": "research",
+      "why": "Surveys of shore-perpendicular profile lines around the Duck research pier have been repeated since 1979, with a public archive.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "FRF profile surveys 1979-2018 (28 lines roughly 45 m apart, ~600 m either side of pier), CC-BY-4.0 on PANGAEA, but line data not a grid. NOAA/USACE NCMP 2015 topobathy lidar (LAS point cloud) listed on InPort; resolution not stated on the record. Official FRF site unreachable this session.",
+      "data_url": "https://www.fisheries.noaa.gov/inport/item/49839",
+      "sources": [
+        "https://doi.pangaea.de/10.1594/PANGAEA.894783",
+        "https://www.fisheries.noaa.gov/inport/item/49839",
+        "https://nominatim.openstreetmap.org/search?q=Field+Research+Facility+Duck+North+Carolina"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "scripps-canyon-la-jolla",
+      "name": "Scripps Canyon, La Jolla",
+      "country": "USA",
+      "lat": 32.867,
+      "lon": -117.267,
+      "kind": "research",
+      "why": "A narrow submarine canyon about 1.6 km long and 490 m deep off La Jolla, first sounded in 1937.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "USGS SIM 3324 (Scripps 2013 multibeam, Inner Continental Borderland) is public but down-sampled to 25 m, too coarse for the break. CSUMB mapped the canyon head by multibeam in October 2001 (resolution not stated); that survey is available on request from CSUMB, not as a download.",
+      "data_url": "https://csumb.edu/undersea/sfml-data-library/",
+      "sources": [
+        "https://en.wikipedia.org/wiki/Scripps_Canyon",
+        "https://csumb.edu/undersea/sfml-data-library/",
+        "https://pubs.usgs.gov/publication/sim3324"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "monterey-canyon-moss-landing",
+      "name": "Monterey Canyon (Moss Landing)",
+      "country": "USA",
+      "lat": 36.794,
+      "lon": -121.788,
+      "kind": "research",
+      "why": "Largest submarine canyon on the North American west coast, starting near Moss Landing, where Moss Landing Marine Laboratories sit.",
+      "needs": "seabed: bathymetry at about 10 m or finer, for the shallow canyon head",
+      "known_data": "MBARI AUV 1 m grids (MGDS, CC BY-NC-SA 3.0) exist but only for 200-500 m and 1350-1880 m depths, not the nearshore. Ship multibeam 1998 raw files at NOAA NGDC; Stanford compilation is affiliates-only. Coordinates are the marine lab, canyon head is just offshore.",
+      "data_url": "https://www.marine-geo.org/doi/10.1594/IEDA/324756",
+      "sources": [
+        "https://en.wikipedia.org/wiki/Monterey_Canyon",
+        "https://www.marine-geo.org/doi/10.1594/IEDA/324756",
+        "https://nominatim.openstreetmap.org/search?q=Moss+Landing+Marine+Laboratories"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "narrabeen-collaroy-sydney",
+      "name": "Narrabeen-Collaroy, Sydney",
+      "country": "Australia",
+      "lat": -33.718,
+      "lon": 151.3,
+      "kind": "research",
+      "why": "Monthly beach profile surveys at five sites along a 3.6 km beach have run since April 1976, with open access.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "Open profile data (CC-BY 4.0 paper, live repository at narrabeen.wrl.unsw.edu.au): five transects to 20 m depth, plus airborne lidar since 2011. A gridded open seabed product at 10 m or finer not confirmed. data.gov.au licence listings inconsistent.",
+      "data_url": "http://narrabeen.wrl.unsw.edu.au",
+      "sources": [
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC4828941/",
+        "https://nominatim.openstreetmap.org/search?q=Narrabeen+Beach"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "truc-vert-aquitaine",
+      "name": "Truc Vert, Aquitaine coast",
+      "country": "France",
+      "lat": 44.715,
+      "lon": -1.251,
+      "kind": "research",
+      "why": "A remote, never-nourished high-energy sandy beach with 16 years of topographic surveys published as open data.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "Shom/IGN Litto3D Nouvelle-Aquitaine 2020-2022: airborne lidar, 'metric resolution', to about 20 m depth, Etalab 2.0 open licence, not for navigation. Exact grid size not stated on the record. Beach survey DEMs on OSF under CC-BY 4.0.",
+      "data_url": "https://services.data.shom.fr/geonetwork/srv/api/records/BATHYMETRIE_LITTO3D_NAQ_2020_2022.xml",
+      "sources": [
+        "https://services.data.shom.fr/geonetwork/srv/api/records/BATHYMETRIE_LITTO3D_NAQ_2020_2022.xml",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC7679394/",
+        "https://nominatim.openstreetmap.org/search?q=Plage+du+Truc+Vert"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "egmond-aan-zee",
+      "name": "Egmond aan Zee",
+      "country": "Netherlands",
+      "lat": 52.618,
+      "lon": 4.622,
+      "kind": "research",
+      "why": "North Sea beach town on the Dutch coast covered by Rijkswaterstaat's national seabed grid.",
+      "needs": "seabed: bathymetry at about 10 m or finer (national grid is 20 m)",
+      "known_data": "Rijkswaterstaat Bathymetrie Nederland (coast and vaklodingen) covers it on a 20 m grid, CC0 1.0. No finer public grid for Egmond is confirmed.",
+      "data_url": "https://maps.rijkswaterstaat.nl/dataregister-publicatie/srv/api/records/97110bfd-a3e1-4e86-bc55-25ad7144dce2",
+      "sources": [
+        "https://maps.rijkswaterstaat.nl/dataregister-publicatie/srv/api/records/97110bfd-a3e1-4e86-bc55-25ad7144dce2",
+        "https://nominatim.openstreetmap.org/search?q=Egmond+aan+Zee+beach"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "perranporth-cornwall",
+      "name": "Perranporth, Cornwall",
+      "country": "United Kingdom",
+      "lat": 50.347,
+      "lon": -5.154,
+      "kind": "research",
+      "why": "A dissipative sandy macrotidal beach with surveys and wave forcing published for 2006 to 2021.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "A merged lidar and multibeam DEM on a 2 m grid is published with Scientific Data 2023 (McCarroll et al., CC-BY 4.0), hosted by the University of Plymouth. Environment Agency lidar is also distributed through the Plymouth Coastal Observatory. Exact coverage of the break is not yet confirmed.",
+      "data_url": "https://southwest.coastalmonitoring.org/",
+      "sources": [
+        "https://doi.org/10.1038/s41597-023-02131-0",
+        "https://nominatim.openstreetmap.org/search?q=Perranporth+beach"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "heron-island-gbr",
+      "name": "Heron Island, Great Barrier Reef",
+      "country": "Australia",
+      "lat": -23.442,
+      "lon": 151.915,
+      "kind": "research",
+      "why": "A coral cay in the southern Great Barrier Reef with a University of Queensland research station.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "Heron Reef 1 m bathymetry from airborne hyperspectral data (CASI, July 2002), CC BY 3.0, on PANGAEA; not tide-corrected, with gaps. Geoscience Australia 2 m to 64 m multibeam (CC-BY 4.0) bounding box includes the island but actual coverage unconfirmed.",
+      "data_url": "https://doi.pangaea.de/10.1594/PANGAEA.779522",
+      "sources": [
+        "https://en.wikipedia.org/wiki/Heron_Island_(Queensland)",
+        "https://doi.pangaea.de/10.1594/PANGAEA.779522",
+        "https://ecat.ga.gov.au/geonetwork/skr/api/records/f4f26ed2-6a92-4198-aed6-53c53f40185b"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "raglan-manu-bay",
+      "name": "Raglan (Manu Bay)",
+      "country": "New Zealand",
+      "lat": -37.821,
+      "lon": 174.817,
+      "kind": "wave",
+      "why": "Three left-hand point breaks, Manu Bay, Whale Bay and Indicators, about 8 km from Raglan township.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "LINZ national coastal DEM: 1 m tiles from lidar to about 25 m depth, CC-BY 4.0, on AWS Open Data. Coverage of the Raglan coast not confirmed. Waikato regional report has 50 m grids only.",
+      "data_url": "https://registry.opendata.aws/nz-coastal/",
+      "sources": [
+        "https://registry.opendata.aws/nz-coastal/",
+        "https://en.wikipedia.org/wiki/Raglan,_New_Zealand",
+        "https://nominatim.openstreetmap.org/search?q=Manu+Bay"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "kirra-superbank-gold-coast",
+      "name": "Kirra / Superbank, Gold Coast",
+      "country": "Australia",
+      "lat": -28.166,
+      "lon": 153.531,
+      "kind": "wave",
+      "why": "Pumping sand across the Tweed River mouth since 2001 has reshaped Kirra Point, where barrels once broke.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "none found. Tweed Sand Bypassing reports show 1997 and 2011 bathymetry only as report figures; no downloadable grid located.",
+      "data_url": null,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Kirra,_Queensland",
+        "https://www.tweedsandbypass.nsw.gov.au/__data/assets/pdf_file/july22/references/43802733_STIS002_DAT_V2.pdf",
+        "https://nominatim.openstreetmap.org/search?q=Kirra+Beach+Coolangatta"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "funafuti-tuvalu",
+      "name": "Funafuti Atoll",
+      "country": "Tuvalu",
+      "lat": -8.52,
+      "lon": 179.198,
+      "kind": "hazard",
+      "why": "Low-lying atoll (average elevation about two metres) whose 275 km2 lagoon and reef edge control wave exposure and flooding.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "Not confirmed. A 2004 SOPAC survey is listed with Funafuti lagoon bathymetry charts at 1:20,000 to 1:50,000 on the Pacific Data Hub, marked open, and a 2019 UNDP-supported national lidar and bathymetry survey exists but its public release is unconfirmed. A chart scale is not a grid resolution.",
+      "data_url": null,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Funafuti",
+        "https://nominatim.openstreetmap.org/search?format=json&q=Funafuti"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "hulhumale-maldives",
+      "name": "Hulhumale",
+      "country": "Maldives",
+      "lat": 4.214,
+      "lon": 73.539,
+      "kind": "hazard",
+      "why": "Artificial island of 65,714 people (2022 census) built by pumping sand from the sea floor beside Male, a case study in reclaimed-coast exposure.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "None confirmed. A 2021 Maldives-wide gridded bathymetry paper exists (doi 10.1029/2020EA001207); its resolution near Malé and its licence are unconfirmed.",
+      "data_url": null,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Hulhumal%C3%A9",
+        "https://nominatim.openstreetmap.org/search?format=json&q=Hulhum%C3%A9"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "happisburgh-norfolk-uk",
+      "name": "Happisburgh",
+      "country": "United Kingdom",
+      "lat": 52.823,
+      "lon": 1.53,
+      "kind": "hazard",
+      "why": "Soft glacial-till cliffs here retreated about 20 m in 2004-2007, so processes that take millennia elsewhere are observable within a human lifetime.",
+      "needs": "seabed: bathymetry at about 10 m or finer (check nearshore coverage off Norfolk)",
+      "known_data": "Environment Agency SurfZone DEM 2 m (LIDAR plus nearshore multibeam from the Regional Coastal Monitoring Programmes, Open Government Licence, covers lat 50-55.8N); whether it holds bathymetry off Happisburgh is unverified. EA LIDAR Composite DTM 1 m is land only.",
+      "data_url": "https://www.data.gov.uk/dataset/fe455db0-5ce5-4d63-8b38-d74612eb43d5/surfzone-digital-elevation-model-dem-2m",
+      "sources": [
+        "https://www.bgs.ac.uk/case-studies/coastal-erosion-at-happisburgh-norfolk-landslide-case-study/",
+        "https://www.data.gov.uk/dataset/fe455db0-5ce5-4d63-8b38-d74612eb43d5/surfzone-digital-elevation-model-dem-2m",
+        "https://ckan.publishing.service.gov.uk/dataset/01b3ee39-da3f-47b6-83da-dc98e73a461f"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "grand-isle-louisiana-usa",
+      "name": "Grand Isle",
+      "country": "United States",
+      "lat": 29.237,
+      "lon": -89.987,
+      "kind": "hazard",
+      "why": "Barrier island at the mouth of Barataria Bay whose shoreline and wetlands buffer inland parishes from hurricane surge and waves.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "NOAA NCEI Southern Louisiana 1/3 arc-second (about 10 m) NAVD88 Coastal DEM, bbox N29.7 S28.6 E-89.8 W-91.6, not subject to US copyright, not for navigation. NCEI CUDEM 1/9 arc-second (about 3 m) tiles also exist for the contiguous US bbox (Grand Isle coverage not confirmed per tile).",
+      "data_url": "https://www.ncei.noaa.gov/metadata/geoportal/rest/metadata/item/gov.noaa.ngdc.mgg.dem:1521/html",
+      "sources": [
+        "https://en.wikipedia.org/wiki/Grand_Isle,_Louisiana",
+        "https://www.ncei.noaa.gov/metadata/geoportal/rest/metadata/item/gov.noaa.ngdc.mgg.dem:1521/html",
+        "https://www.ncei.noaa.gov/metadata/geoportal/rest/metadata/item/gov.noaa.ngdc.mgg.dem:199919/html"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "sendai-bay-japan",
+      "name": "Sendai Bay",
+      "country": "Japan",
+      "lat": 38.05,
+      "lon": 141.05,
+      "kind": "hazard",
+      "why": "Bay on the Miyagi coast, within the Tohoku region covered by Japan's open tsunami terrain model used for inundation calculations.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "none found at 10 m or finer. NIED Global tsunami Terrain Model whole-Japan grid is two arc-second (about 50 m), CC BY 4.0, with 2016 Cabinet Office nesting data in the Japan Trench area; Sendai Bay coverage not explicitly stated. Japan Hydrographic Association fine grids appear sold, terms unconfirmed.",
+      "data_url": "https://kiyuu.bosai.go.jp/GtTM/",
+      "sources": [
+        "https://kiyuu.bosai.go.jp/GtTM/",
+        "https://en.wikipedia.org/wiki/Sendai_Bay"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "banda-aceh-indonesia",
+      "name": "Banda Aceh coast",
+      "country": "Indonesia",
+      "lat": 5.553,
+      "lon": 95.319,
+      "kind": "hazard",
+      "why": "Closest major city to the 2004 Indian Ocean earthquake, about 249 km away, and a subject of long-term tsunami and coastal-recovery science.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "None found at 10 m or finer. Indonesia's national bathymetry (BIG, BATNAS) is listed at 6 arc-seconds (about 180 m), and public download is not confirmed; the national bathymetry system is reported as restricted to government institutions.",
+      "data_url": null,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Banda_Aceh",
+        "https://nominatim.openstreetmap.org/search?format=json&q=Banda+Aceh"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "hilo-bay-hawaii-usa",
+      "name": "Hilo Bay",
+      "country": "United States",
+      "lat": 19.726,
+      "lon": -155.079,
+      "kind": "hazard",
+      "why": "Bay on the east coast of Hawaii island with a 1908-1929 breakwater and a documented history of tsunami inundation in 1946 and 1960.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "NOAA NCEI Hilo, Hawaii 1/3 arc-second (about 10 m) integrated bathymetric-topographic DEM, built for tsunami forecasting, CC0 1.0 per its catalogue record. The record's details are inconsistent (location box and access level), so access is not yet confirmed.",
+      "data_url": "https://catalog.data.gov/dataset/hilo-hawaii-1-3-arc-second-mhw-coastal-digital-elevation-model",
+      "sources": [
+        "https://en.wikipedia.org/wiki/Hilo_Bay",
+        "https://catalog.data.gov/dataset/hilo-hawaii-1-3-arc-second-mhw-coastal-digital-elevation-model"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "venice-lagoon-inlets-italy",
+      "name": "Venice Lagoon inlets (Lido)",
+      "country": "Italy",
+      "lat": 45.424,
+      "lon": 12.427,
+      "kind": "hazard",
+      "why": "Tidal inlets and channels of the lagoon were mapped in 2013 before the MOSE flood barriers became operational, giving a before-baseline.",
+      "needs": "seabed: already available; next tier is swell model",
+      "known_data": "EMODnet 'Venice Lagoon Channels DTM 5 m' (CNR-ISMAR, 2013 multibeam, CC BY 4.0, not for navigation). Source paper reports 0.5 m bathymetry on MGDS (dataset licence not stated in the text).",
+      "data_url": "https://emodnet.ec.europa.eu/geonetwork/srv/api/records/SDN_CPRD_145_DTM_CNR-ISMAR-124",
+      "sources": [
+        "https://emodnet.ec.europa.eu/geonetwork/srv/api/records/SDN_CPRD_145_DTM_CNR-ISMAR-124",
+        "https://pmc.ncbi.nlm.nih.gov/articles/PMC5584395"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "coxs-bazar-bangladesh",
+      "name": "Cox's Bazar beach",
+      "country": "Bangladesh",
+      "lat": 21.431,
+      "lon": 91.975,
+      "kind": "hazard",
+      "why": "Long natural sea beach on a floodplain lower than the dunes, so cyclone surge and waves drive flood risk for about 196,000 residents.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "None found. A Cox's Bazar storm-surge study used bathymetry from local agencies that is not public.",
+      "data_url": null,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Cox%27s_Bazar",
+        "https://nominatim.openstreetmap.org/search?format=json&q=Cox%27s+Bazar+Beach"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "drew-point-alaska-usa",
+      "name": "Drew Point",
+      "country": "United States",
+      "lat": 70.877,
+      "lon": -153.937,
+      "kind": "hazard",
+      "why": "Permafrost bluff coast where USGS cites erosion of up to 20 m per year, tied to storm-driven niche cutting.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "None found for Drew Point. USGS has flown airborne lidar of the north coast (topography; release not named). A 2022 USGS single-beam nearshore survey exists at Point Barrow, about 100 km west.",
+      "data_url": "https://www.usgs.gov/centers/pcmsc/science/climate-impacts-arctic-coasts",
+      "sources": [
+        "https://www.usgs.gov/centers/pcmsc/science/climate-impacts-arctic-coasts",
+        "https://nominatim.openstreetmap.org/search?format=json&q=Drew+Point+Alaska"
+      ],
+      "confidence": "medium"
+    },
+    {
+      "id": "galveston-island-texas-usa",
+      "name": "Galveston Island",
+      "country": "United States",
+      "lat": 29.222,
+      "lon": -94.909,
+      "kind": "hazard",
+      "why": "Gulf barrier island protected since 1900 by a seawall and raised grade after a hurricane surge flooded the island.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "NOAA NCEI Galveston, Texas Coastal DEM, grid 1/3 arc-second (about 10 m) to 3 arc-second, MHW, bbox W-95.25 E-94.3 S28.85 N29.8, CC0 1.0 per catalogue; published 2007, so may be dated. CUDEM 1/9 arc-second (about 3 m) tiles also cover the contiguous US bbox.",
+      "data_url": "https://catalog.data.gov/dataset/galveston-texas-coastal-digital-elevation-model",
+      "sources": [
+        "https://en.wikipedia.org/wiki/Galveston_Island",
+        "https://catalog.data.gov/dataset/galveston-texas-coastal-digital-elevation-model",
+        "https://www.ncei.noaa.gov/metadata/geoportal/rest/metadata/item/gov.noaa.ngdc.mgg.dem:199919/html"
+      ],
+      "confidence": "high"
+    },
+    {
+      "id": "lagos-victoria-island-nigeria",
+      "name": "Victoria Island, Lagos",
+      "country": "Nigeria",
+      "lat": 6.43,
+      "lon": 3.426,
+      "kind": "hazard",
+      "why": "The Eko Atlantic development next to it is built on reclaimed land lost to coastal erosion on a wave-dominated barrier coast.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "None found. A local 1 m topo-bathymetric survey at Maiyegun Estate is listed in a catalogue; its access terms are unknown. GEBCO (about 450 m) is too coarse.",
+      "data_url": null,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Victoria_Island,_Lagos",
+        "https://nominatim.openstreetmap.org/search?format=json&q=Victoria+Island+Lagos"
+      ],
+      "confidence": "low"
+    },
+    {
+      "id": "majuro-marshall-islands",
+      "name": "Majuro Atoll",
+      "country": "Marshall Islands",
+      "lat": 7.091,
+      "lon": 171.382,
+      "kind": "hazard",
+      "why": "Atoll of 23,156 people whose highest point is under 3 m, where reef, lagoon and wave exposure shape island flooding.",
+      "needs": "seabed: bathymetry at about 10 m or finer",
+      "known_data": "Listed but not yet confirmed: a USGS 1 m topobathymetric DEM of Majuro Atoll (DOI 10.5066/F7416VXX, 1944-2016 data, satellite-derived nearshore bathymetry, RMSE about 1.1 m) and an SPC/GEM 5 m Majuro lagoon bathymetry DEM. Licences not confirmed.",
+      "data_url": null,
+      "sources": [
+        "https://en.wikipedia.org/wiki/Majuro",
+        "https://nominatim.openstreetmap.org/search?format=json&q=Majuro"
+      ],
+      "confidence": "low"
+    }
+  ],
+  "notes": [
+    "Coordinates marked confidence low rest on a single mapping source (OSM node or surf-forecast.com) that can differ by km between sources; verify before display. Several 'sources' URLs are the nearest article, not a page on the break itself. Wikipedia and Nominatim were rate-limited during research.",
+    "Known_data resolutions are as stated by each source and several rest on search listings only; treat any 'about 10 m or finer' claim as a lead to confirm when a contributor submits the link, not as confirmed coverage of the exact break.",
+    "Mavericks lies in the Monterey Bay / Greater Farallones sanctuary region; the mapping was announced by California OPC and NOAA Sanctuary program (sanctuarysimon.org).",
+    "Uluwatu: the cliff-top temple Pura Luhur Uluwatu charges an entry fee (reported IDR 30,000) and surf access is via a cave stairway; treat as a religious site, not verified beyond listings.",
+    "Puerto Escondido: Stab Mag reports a local sand and jetty dispute and community fundraising (Save the Waves) for bathymetric studies of Zicatela; a local-led study may be the source of future data.",
+    "Skeleton Bay: search sources disagree on access (long drive, boat, a no-4x4 local policy); whether any restricted zone applies was not confirmed.",
+    "Teahupo'o and Pe'ahi: no access or cultural restrictions were verified; check with local communities before any published directions.",
+    "Coordinates for Cloudbreak, Skeleton Bay, Teahupo'o, Puerto Escondido, Uluwatu and Jaws partly rely on surf-forecast.com or Wikipedia values that differ by km between sources; verify before display. Mavericks and Supertubes come from OSM nodes; Nazare and Bells from Wikipedia/OSM.",
+    "Wikipedia and Nominatim were rate-limited during research; pages for Cloudbreak, Jaws and Skeleton Bay were not found as dedicated Wikipedia articles (404), so some cited URLs are the closest article (Tavarua, Pe'ahi) rather than the break.",
+    "Raglan: Manu Bay's traditional name is Waikeri and the town's Maori name Whaingaroa; ancestral land taken in 1941 for an airfield, council voted 2022 to begin returning it. Use Maori names with care.",
+    "Kirra: name believed Indigenous, language and meaning unknown (Wikipedia).",
+    "Monterey MBARI grids are CC BY-NC-SA, so non-commercial use only. Scripps/CSUMB data: for-profit use needs permission.",
+    "Heron Island: resort and research station are private/institutional; island is part national park, so access is controlled.",
+    "Truc Vert is remote, over 3 km from the first car park.",
+    "Raw sources not opened (blocked): official FRF site, USGS SIM3324 data page, LINZ access page, Plymouth PEARL, Nature/Springer pages (used PMC/doi mirrors).",
+    "Banda Aceh: 2004 tsunami site with mass graves at Ulee Lheue, the Aceh Tsunami Museum and PLTD Apung 1 memorial vessel; present as a science and recovery place, not a spectacle; casualty figures conflict across sources so give none.",
+    "Hilo Bay: 1946 and 1960 tsunami deaths (165-173 and 61); avoid the 'tsunami capital' tagline.",
+    "Sendai Bay / Tohoku: 2011 tsunami memorial coast; present respectfully and do not offer surf or wave-riding framing.",
+    "Galveston: 1900 hurricane killed at least 6,000 people; keep wording factual.",
+    "Grand Isle: Hurricane Ida 2021 damaged all structures; residents still rebuilding, avoid presenting as a target.",
+    "Funafuti, Majuro, Hulhumale: living communities on climate-exposed islands; Pacific and Maldivian data may carry local data-governance expectations (SPC, UNDP, Tuvalu Lands and Survey); do not frame as doomed.",
+    "Cox's Bazar: area hosts large Rohingya refugee camps nearby; avoid presenting camp locations.",
+    "Drew Point: Alaska North Slope Indigenous lands (Inupiat); erosion affects subsistence and communities.",
+    "Lagos / Eko Atlantic: private reclamation development; Nigerian survey data may have access restrictions.",
+    "Japan JHA and JAMSTEC bathymetry carry redistribution conditions under the hydrographic law; check terms before accepting submitted links."
+  ]
+}

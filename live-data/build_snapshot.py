@@ -2,7 +2,9 @@
 
 Run:  python build_snapshot.py [--spots porto_batel klitmoller ...]
       python build_snapshot.py --public [--spots ...]   slim live/<spot>.json for the static site, only the
-      feeds spots.py lists as `public` (porto_batel, klitmoller, hvide_sande, tel_aviv; the others have no public file)
+      feeds spots.py lists as `public` (every spot has one; the viewer reads nothing else)
+No Open-Meteo (2026-11-23, free tier non-commercial): waves and wind from NOAA GFS-Wave (public domain, NOMADS), plus
+Copernicus / DMI where they cover the spot; tide from Copernicus regional sea level or NOAA CO-OPS (feeds.py).
 Each snapshot holds: the forecast series from each model, the latest buoy observations, a model-vs-buoy comparison
 over the last 48 h (bias and RMSE of Hs, and of the period where both sides have the same kind), fetch time,
 attribution and licence per source. For spots with a Stage A lookup (Porto Batel) it adds, per model and forecast
@@ -27,8 +29,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "snapshots")
 MSL_MINUS_LAT, DATUM_UNC = 1.66, [0.1, 0.3]
 LOOKUP_RANGE = dict(hs=(0.5, 5.0), tp=(6, 20), dir=(250, 360), tide_lat=(0.0, 4.0))   # pieces/06-live-wave/lookup/
-# Per reef-model site (spots.py stage_a_site): offset from Open-Meteo MSL to the site's map datum, table range, wording.
-# Porto Batel keeps the original constants. Pipeline: the lidar is on LMSL and Open-Meteo MSL is taken as LMSL (offset 0, not checked).
+# Per reef-model site (spots.py stage_a_site): offset from the tide feed's MSL to the site's map datum, table range, wording.
+# Porto Batel keeps the original constants. Pipeline: the lidar is on LMSL and the CO-OPS station MSL is taken as LMSL (offset 0, not checked).
 STAGE_A_SITES = {
     "porto_batel": dict(site=None, msl_to_map=MSL_MINUS_LAT, range=LOOKUP_RANGE, lookup="pieces/06-live-wave/lookup/index.json",
                         datum=f"tide_lat = msl + {MSL_MINUS_LAT} m", unc=DATUM_UNC,
@@ -36,7 +38,7 @@ STAGE_A_SITES = {
                         geometry="offsets -600..600 m every 25 m, line 236 deg, along 326 deg from the house"),
     "pipeline": dict(site="pipeline", msl_to_map=0.0, range=dict(hs=(0.5, 8.0), tp=(8, 22), dir=(270, 390), tide_lat=(-0.3, 0.9)),
                      lookup="pieces/06-live-wave/lookup_pipeline/index.json",
-                     datum="tide_lat = Open-Meteo msl, taken as height above LMSL (the lidar datum; offset not checked)", unc=None,
+                     datum="tide_lat = CO-OPS Honolulu MSL prediction, taken as height above LMSL at Pipeline (the lidar datum; offset and timing not checked)", unc=None,
                      hs_note="forecast Hs is used as H0 at the seaward edge of the lidar (~1.2 km out, 14-35 m deep, ~17 m off Pipeline)",
                      geometry="offsets -600..600 m every 25 m, line 314 deg, along 44 deg from the line start 100 m landward of the take-off"),
 }
@@ -99,8 +101,8 @@ def tz_check(a, b):
 
 def stage_a_period(r):
     """The period fed to Stage A. The lookup is built for one regular wave of period Tp, and the period that sets its
-    wavelength over the reef is the spectral peak of the swell. Open-Meteo: swell_wave_peak_period where given (about the
-    first 3 days), else the swell mean period. Copernicus gives no swell-partition peak: when the primary swell carries more
+    wavelength over the reef is the spectral peak of the swell. NOAA GFS-Wave: the swell partition's peak period (SWPER 1)
+    for the whole run. Copernicus gives no swell-partition peak: when the primary swell carries more
     energy than the wind sea (VHM0_SW1 >= VHM0_WW) the whole-sea peak VTPK sits on the swell, so VTPK is the closest
     available value; otherwise VTPK would be the wind-sea peak, and the swell mean period VTM01_SW1 is used (shorter than a
     peak period, so the modelled waves feel the bottom later). Same rule in live.js."""
@@ -132,8 +134,11 @@ def run_exact(models, workers=None, site_key=None):
     from multiprocessing import Pool
     import stage_a as sa
     import sites
-    jobs = [(h["hs"], h["tp"], h["dir"], h["tide_lat"], site_key) for m in models for h in m["hours"]]
+    jobs = [(h["hs"], h["tp"], h["dir"], h["tide_lat"], site_key) for m in models for h in m["hours"] if h["tide_lat"] is not None]
     if not jobs:
+        for m in models:
+            for h in m["hours"]:
+                h["exact"] = dict(state=None)
         return 0.0
     t0 = time.time()
     with Pool(workers or max(1, (os.cpu_count() or 2) - 1), initializer=sa.bed_grid,
@@ -142,38 +147,51 @@ def run_exact(models, workers=None, site_key=None):
     k = 0
     for m in models:
         for h in m["hours"]:
+            if h["tide_lat"] is None:
+                h["exact"] = dict(state=None); continue
             h["exact"] = res[k]; k += 1
     return round(time.time() - t0, 1)
 
 
+def tide_feed(spot_feeds):
+    """The first tide feed (kind "tide") that came back ok, or None."""
+    return next((f for f in spot_feeds if f["kind"] == "tide" and f["status"] == "ok"), None)
+
+
 def stage_a_inputs(spot_feeds, site_key="porto_batel"):
-    """Per forecast model, per hour: primary swell Hs/Tp/dir + Open-Meteo sea level -> tide above the map datum
-    (Porto Batel: LAT; Pipeline: LMSL). The column keeps the name tide_lat for both (the viewer reads it as "tide on the map")."""
+    """Per forecast model, per hour: primary swell Hs/Tp/dir + the tide feed's sea level (MSL) -> tide above the map datum
+    (Porto Batel: LAT; Pipeline: LMSL). The column keeps the name tide_lat for both (the viewer reads it as "tide on the map").
+    Hours with no tide keep tide_lat None and get no Stage A run (the viewer says tide is not available; no value is made up)."""
     C = STAGE_A_SITES[site_key]
-    om = next((f for f in spot_feeds if f["source"].startswith("Open-Meteo") and f["status"] == "ok"), None)
-    tide = {r["time_utc"]: r["sea_level"] for r in om["records"] if "sea_level" in r} if om else {}
+    tf = tide_feed(spot_feeds)
+    tide = {r["time_utc"]: r["sea_level"] for r in tf["records"] if "sea_level" in r} if tf else {}
     out = []
     for f in spot_feeds:
         if f["kind"] != "forecast" or f["status"] != "ok":
             continue
         rows = []
         for r in f["records"]:
-            if not all(k in r for k in ("swell_hs", "swell_tp", "swell_dir")) or r["time_utc"] not in tide:
+            if not all(k in r for k in ("swell_hs", "swell_tp", "swell_dir")):
                 continue
             tp, kind = stage_a_period(r)
-            row = dict(t=r["time_utc"], hs=r["swell_hs"], tp=tp, tp_kind=kind,
-                       dir=r["swell_dir"], tide_lat=round(tide[r["time_utc"]] + C["msl_to_map"], 3))
+            sl = tide.get(r["time_utc"])
+            row = dict(t=r["time_utc"], hs=r["swell_hs"], tp=tp, tp_kind=kind, dir=r["swell_dir"],
+                       tide_lat=None if sl is None else round(sl + C["msl_to_map"], 3))
             d_ax = row["dir"] + 360 if (C["range"]["dir"][1] > 360 and row["dir"] < 180) else row["dir"]
             vals = dict(hs=row["hs"], tp=row["tp"], dir=d_ax, tide_lat=row["tide_lat"])
-            row["in_range"] = all(C["range"][k][0] <= v <= C["range"][k][1] for k, v in vals.items())
+            row["in_range"] = sl is not None and all(C["range"][k][0] <= v <= C["range"][k][1] for k, v in vals.items())
             rows.append(row)
         out.append(dict(model=f["source"], hours=rows,
-                        swell="primary swell partition (Open-Meteo swell_wave_*, Copernicus *_SW1); period rule in stage_a_period()"))
+                        swell="primary swell partition (GFS-Wave SWELL/SWPER/SWDIR 1, Copernicus *_SW1); period rule in stage_a_period()"))
     secs = run_exact(out, site_key=C["site"])
     return dict(exact=f"Stage A run for every hour ({sum(len(m['hours']) for m in out)} runs, {secs} s): pieces/06-live-wave/stage_a.py run_stage_a"
                       + (f" (site {C['site']})" if C["site"] else ""),
                 exact_seconds=secs,
-                tide_source="Open-Meteo sea_level_height_msl for every model (Copernicus wave products carry no sea level)",
+                tide_source=(f"{tf['source']} for every model ({tf.get('sea_level_datum')})" if tf else
+                             "none: no tide feed came back, so tide is not available and no Stage A run was made"),
+                tide_feed=None if not tf else dict(source=tf["source"], feed=tf["feed"], point=tf.get("point"), doi=tf.get("doi"),
+                                                   attribution=tf.get("attribution"), licence=tf.get("licence"),
+                                                   datum=tf.get("sea_level_datum")),
                 datum=C["datum"], datum_uncertainty_m=C["unc"],
                 lookup=C["lookup"], lookup_range=C["range"], hs_note=C["hs_note"], models=out)
 
@@ -186,7 +204,8 @@ def build(key, write=True):
         s = time.time()
         r = feeds.safe(feeds.FETCHERS[name], spot, **kw)
         if r["kind"] == "unknown":
-            r["kind"] = "forecast" if name in ("open_meteo", "cmems_wave", "dmi_wam") else "observation"
+            r["kind"] = ("forecast" if name in ("open_meteo", "cmems_wave", "dmi_wam", "gfs_wave")
+                         else "tide" if name in ("cmems_sea_level", "coops_tide") else "observation")
         r["feed"] = name; r["fetch_seconds"] = round(time.time() - s, 1)
         res.append(r)
         print(f"  {key:12s} {name:16s} {r['status']:11s} {len(r['records']):4d} rec  {r['fetch_seconds']:5.1f} s"
@@ -200,6 +219,7 @@ def build(key, write=True):
                 conventions="times UTC; directions coming FROM (deg); heights m; periods s; see feeds.py docstring",
                 forecasts=[f for f in res if f["kind"] == "forecast"],
                 observations=[f for f in res if f["kind"] == "observation"],
+                tides=[f for f in res if f["kind"] == "tide"],
                 model_vs_buoy=comps,
                 feed_status={f["feed"] + ":" + f["source"]: f["status"] + (" - " + f["reason"] if f.get("reason") else "") for f in res})
     kb = [f for f in ob if f["feed"] == "kyst_buoy"]; cb = [f for f in ob if f["feed"] == "cmems_insitu"]
@@ -245,8 +265,7 @@ def _public_spot_cfg(key, with_insitu=False):
 
 def public_porto_batel(no_insitu=True, hours_back=6, key="porto_batel"):
     """Slim snapshot for the static site (live/porto_batel.json, < ~100 KB): Stage A inputs per model as columns,
-    from 6 h ago to the end of the horizon, plus source status and attribution. The viewer fetches Open-Meteo itself;
-    this file is how Copernicus reaches the browser. no_insitu: skip the buoy (slow to list, and the IH 6200199 wave
+    from 6 h ago to the end of the horizon, plus source status and attribution. This file is all the viewer reads. no_insitu: skip the buoy (slow to list, and the IH 6200199 wave
     sensor has reported NaN since 14 Nov 2026)."""
     spot = _public_spot_cfg(key, with_insitu=not no_insitu and key == "porto_batel")
     SPOTS["_public"] = spot
@@ -254,12 +273,21 @@ def public_porto_batel(no_insitu=True, hours_back=6, key="porto_batel"):
     del SPOTS["_public"]
     cut = feeds.iso(feeds.now_utc() - dt.timedelta(hours=hours_back))
     srcs = {f["source"]: f for f in snap["forecasts"] + snap["observations"]}
+    idx = {f["source"]: {r["time_utc"]: r for r in f["records"]} for f in snap["forecasts"]}
+    rec_at = lambda f, t: idx[f["source"]].get(t)
     models = []
     for m in snap["stage_a_inputs"]["models"]:
         hrs = [h for h in m["hours"] if h["t"] >= cut]
         f = srcs[m["model"]]
         models.append(dict(model=m["model"], feed=f["feed"], point=f.get("point"), attribution=f.get("attribution"),
                            licence=f.get("licence"), doi=f.get("doi"), period_rule=m["swell"],
+                           model_name=f.get("model"), run_utc=f.get("run_utc"), run_label=f.get("run_label"),
+                           wind_speed=[(rec_at(f, h["t"]) or {}).get("wind_speed") for h in hrs],
+                           wind_dir=[(rec_at(f, h["t"]) or {}).get("wind_dir") for h in hrs],
+                           wind_sea_hs=[(rec_at(f, h["t"]) or {}).get("wind_sea_hs") for h in hrs],
+                           wind_sea_tp=[(rec_at(f, h["t"]) or {}).get("wind_sea_tp") for h in hrs],
+                           wind_sea_dir=[(rec_at(f, h["t"]) or {}).get("wind_sea_dir") for h in hrs],
+                           total_hs=[(rec_at(f, h["t"]) or {}).get("hs") for h in hrs],
                            t=[h["t"] for h in hrs], hs=[h["hs"] for h in hrs], tp=[h["tp"] for h in hrs],
                            tp_kind=[h["tp_kind"] for h in hrs], dir=[h["dir"] for h in hrs], tide_lat=[h["tide_lat"] for h in hrs],
                            exact=dict(state=[h["exact"]["state"] for h in hrs],
@@ -274,7 +302,7 @@ def public_porto_batel(no_insitu=True, hours_back=6, key="porto_batel"):
                                f"({C['geometry']}), packed as 98 characters: two base-36 digits of s/2 per profile, '--' = no break on that profile",
                           seconds=snap["stage_a_inputs"]["exact_seconds"]),
                tide=dict(source=snap["stage_a_inputs"]["tide_source"], datum=snap["stage_a_inputs"]["datum"],
-                         uncertainty_m=C["unc"]),
+                         uncertainty_m=C["unc"], feed=snap["stage_a_inputs"]["tide_feed"]),
                feed_status=snap["feed_status"], excluded=SPOTS[key].get("excluded_public", {}), models=models,
                comparison=snap["model_vs_buoy"])
     return _write_public(key, pub)
@@ -290,14 +318,15 @@ def _write_public(key, pub):
     return kb
 
 
-FC_COLS = ("hs", "swell_hs", "swell_tp", "swell_tp_kind", "swell_dir", "wind_sea_hs", "wind_sea_tp", "wind_sea_dir")
+FC_COLS = ("hs", "swell_hs", "swell_tp", "swell_tp_kind", "swell_dir", "wind_sea_hs", "wind_sea_tp", "wind_sea_dir",
+           "wind_speed", "wind_dir")
 OB_COLS = ("hs", "tp", "tm", "dir", "sea_level")
 
 
 def public_spot(key, hours_back=6, obs_hours=24):
     """Slim public snapshot for a spot without a reef model (Danish coast, Tel Aviv): live/<spot>.json, < ~100 KB.
     Per forecast model, hourly columns from 6 h ago to the end of its horizon: total Hs, primary swell (Hs, period with its
-    kind, direction), wind sea, and Open-Meteo's sea level (MSL, tide + surge) for the same hour. Per buoy or tide gauge,
+    kind, direction), wind sea, 10 m wind where the model has it, and the tide feed's sea level (MSL) for the same hour. Per buoy or tide gauge,
     the hourly values of the last 24 h. Model-vs-buoy bias/RMSE over 48 h, only between sources that are in this file.
     Only the feeds listed in spots.py `public` are fetched; `excluded_public` says why the others are left out."""
     SPOTS["_public"] = _public_spot_cfg(key)
@@ -307,10 +336,11 @@ def public_spot(key, hours_back=6, obs_hours=24):
         del SPOTS["_public"]
     cut = feeds.iso(feeds.now_utc() - dt.timedelta(hours=hours_back))
     ocut = feeds.iso(feeds.now_utc() - dt.timedelta(hours=obs_hours))
-    om = next((f for f in snap["forecasts"] if f["feed"] == "open_meteo" and f["status"] == "ok"), None)
-    msl = {r["time_utc"]: r.get("sea_level") for r in om["records"]} if om else {}
+    tf = tide_feed(snap["tides"])
+    msl = {r["time_utc"]: r.get("sea_level") for r in tf["records"]} if tf else {}
     meta = lambda f: dict(source=f["source"], feed=f["feed"], point=f.get("point"), attribution=f.get("attribution"),
-                          licence=f.get("licence"), doi=f.get("doi"), provider=f.get("provider"), status=f["status"])
+                          licence=f.get("licence"), doi=f.get("doi"), provider=f.get("provider"), status=f["status"],
+                          model_name=f.get("model"), run_utc=f.get("run_utc"), run_label=f.get("run_label"))
     models = []
     for f in snap["forecasts"]:
         if f["status"] != "ok":
@@ -339,8 +369,9 @@ def public_spot(key, hours_back=6, obs_hours=24):
         obs.append(o)
     pub = dict(spot=key, name=SPOTS[key]["name"], built_utc=snap["built_utc"], build_seconds=snap["build_seconds"],
                conventions=snap["conventions"],
-               tide=dict(source="Open-Meteo sea_level_height_msl (tide + surge) for every model; the wave models carry no sea level",
-                         datum="relative to mean sea level (MSL); no chart datum offset is known for this spot"),
+               tide=(dict(source=tf["source"], feed=tf["feed"], point=tf.get("point"), doi=tf.get("doi"),
+                          attribution=tf.get("attribution"), licence=tf.get("licence"), datum=tf.get("sea_level_datum"))
+                     if tf else dict(source=None, note="no tide feed came back: tide not available")),
                feed_status=snap["feed_status"], excluded=SPOTS[key].get("excluded_public", {}),
                models=models, observations=obs, comparison=snap["model_vs_buoy"])
     return _write_public(key, pub)
@@ -360,8 +391,7 @@ if __name__ == "__main__":
             s = time.time()
             kb = public_porto_batel(no_insitu=not a.with_insitu, key=k) if SPOTS[k].get("stage_a") else public_spot(k)
             print(f"  {k}: {kb:.0f} KB in {time.time() - s:.0f} s", flush=True)
-        print(f"public snapshots: {len(keys)} spots in {time.time() - t0:.0f} s "
-              f"(no public file: {', '.join(k for k in a.spots if not SPOTS[k].get('public'))})", flush=True)
+        print(f"public snapshots: {len(keys)} spots in {time.time() - t0:.0f} s", flush=True)
     else:
         for k in a.spots:
             build(k)

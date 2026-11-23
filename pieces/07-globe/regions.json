@@ -1,0 +1,353 @@
+{
+ "_about": "Region registry for the globe. Coordinates copied from pieces/01-seafloor/viewer/live_core.js LIVE_SPOTS. type: beach|hurricane|tornado|storm; status: unlocked|forecast-only|locked. link opens the seafloor viewer on the named LAYERS label (?layer=).",
+ "regions": [
+  {
+   "id": "porto_batel",
+   "name": "Porto Batel / Consolação",
+   "lat": 39.3195,
+   "lon": -9.3558,
+   "type": "beach",
+   "status": "unlocked",
+   "layer": "Reef maps: Consolação and Porto Batel",
+   "note": "Peniche, Portugal. 2011 lidar reef map; Consolação shares the map, 1 km away.",
+   "link": "../01-seafloor/viewer/index.html?layer=Reef%20maps%3A%20Consola%C3%A7%C3%A3o%20and%20Porto%20Batel"
+  },
+  {
+   "id": "supertubos",
+   "name": "Supertubos",
+   "lat": 39.3398,
+   "lon": -9.3619,
+   "type": "beach",
+   "status": "unlocked",
+   "layer": "Reef map: Supertubos, Peniche",
+   "note": "Peniche, Portugal. 2011 lidar seabed.",
+   "link": "../01-seafloor/viewer/index.html?layer=Reef%20map%3A%20Supertubos%2C%20Peniche"
+  },
+  {
+   "id": "pipeline",
+   "name": "Pipeline",
+   "lat": 21.665,
+   "lon": -158.053,
+   "type": "beach",
+   "status": "unlocked",
+   "layer": "Reef map: Pipeline, Oahu",
+   "note": "Oahu North Shore. 2013 USACE/NOAA lidar.",
+   "link": "../01-seafloor/viewer/index.html?layer=Reef%20map%3A%20Pipeline%2C%20Oahu"
+  },
+  {
+   "id": "guethary",
+   "name": "Guéthary / Parlementia",
+   "lat": 43.427718,
+   "lon": -1.611053,
+   "type": "beach",
+   "status": "unlocked",
+   "layer": "Reef map: Guéthary / Parlementia, France",
+   "note": "Basque coast, France. Litto3D 4 m.",
+   "link": "../01-seafloor/viewer/index.html?layer=Reef%20map%3A%20Gu%C3%A9thary%20/%20Parlementia%2C%20France"
+  },
+  {
+   "id": "hossegor",
+   "name": "Hossegor / La Gravière",
+   "lat": 43.67562,
+   "lon": -1.443375,
+   "type": "beach",
+   "status": "unlocked",
+   "layer": "Reef map: Hossegor / La Gravière, France",
+   "note": "Landes, France. Litto3D 4 m.",
+   "link": "../01-seafloor/viewer/index.html?layer=Reef%20map%3A%20Hossegor%20/%20La%20Gravi%C3%A8re%2C%20France"
+  },
+  {
+   "id": "klitmoller",
+   "country": "Denmark",
+   "name": "Klitmøller",
+   "lat": 57.04,
+   "lon": 8.49,
+   "type": "beach",
+   "status": "forecast-only",
+   "note": "Marked spot, no model yet: no reef-scale seabed yet.",
+   "wanted": {
+    "needs": "A seabed depth survey of the Klitmøller reef at 10 m resolution or finer.",
+    "tier": "seabed"
+   }
+  },
+  {
+   "id": "hvide_sande",
+   "country": "Denmark",
+   "name": "Hvide Sande",
+   "lat": 56.0,
+   "lon": 8.1,
+   "type": "beach",
+   "status": "forecast-only",
+   "note": "Marked spot, no model yet: moving sandbars, no reef-scale seabed.",
+   "wanted": {
+    "needs": "A recent seabed depth survey of the Hvide Sande sandbars at 10 m resolution or finer.",
+    "tier": "seabed"
+   }
+  },
+  {
+   "id": "tel_aviv",
+   "country": "Israel",
+   "name": "Tel Aviv",
+   "lat": 32.08,
+   "lon": 34.76,
+   "type": "beach",
+   "status": "forecast-only",
+   "note": "Marked spot, no model yet: no seabed map yet.",
+   "wanted": {
+    "needs": "A seabed depth survey of the Tel Aviv surf zone at 10 m resolution or finer.",
+    "tier": "seabed"
+   }
+  }
+ ],
+ "wantedSpots": {
+  "_about": "Extra wanted markers read by globe.js from the research file (not copied here, so the research stays the one source). kind wave/research: WANTED card; kind hazard: calm 'DATA NEEDED' card. quickUnlock: ids whose known_data names an open grid at about 10 m or finer that covers the spot (picked by hand 2026-11-22; coverage stated as unconfirmed, profile lines only or licence unknown were left out). skipIfLowConfidence: ids hidden while their confidence is low.",
+  "file": "research/wanted-spots.json",
+  "skip": [],
+  "skipIfLowConfidence": [
+   "skeleton-bay"
+  ],
+  "quickUnlock": [
+   "mavericks",
+   "jaws-peahi",
+   "bells-beach",
+   "truc-vert-aquitaine",
+   "perranporth-cornwall",
+   "heron-island-gbr",
+   "grand-isle-louisiana-usa",
+   "hilo-bay-hawaii-usa",
+   "galveston-island-texas-usa",
+   "venice-lagoon-inlets-italy"
+  ],
+  "cards": {
+   "_about": "Round 4: finished card text for research cards that read as working notes. Written only from the entry's own fields in research/wanted-spots.json (that file stays the source; its notes and links sit behind the card's Sources toggle). Round 5: every wanted card (35 research entries and the three forecast-only home spots) is in this format; any entry without one is built from its fields in the same four parts (globe.js showCard).",
+   "nazare-praia-do-norte": {
+    "question": "Why do the biggest waves break here? The head of the Nazaré Canyon, a deep submarine canyon, comes close to the shore.",
+    "data": "An open 25 m lidar grid of the coastal area (EMODnet, Instituto Hidrográfico, CC-BY 4.0).",
+    "shows": "The coast and nearshore ground at 25 m spacing.",
+    "cant": "Not fine enough for a reef-scale wave model, which needs seabed at about 10 m or finer. No such grid has been found yet."
+   },
+   "funafuti-tuvalu": {
+    "question": "How do the reef edge and the 275 km² lagoon set wave exposure and flooding on an atoll whose land averages about two metres above the sea?",
+    "data": "No open seabed grid confirmed. Lagoon charts from a 2004 survey (1:20,000 to 1:50,000) are listed as open; a 2019 national lidar and bathymetry survey exists, but its public release is not confirmed.",
+    "shows": "The charts give lagoon depths at chart scale.",
+    "cant": "A chart scale is not a grid. Without seabed at about 10 m or finer there is no wave model here yet."
+   },
+   "duck-frf-nc": {
+    "question": "How does a sandy beach change over decades? Profile lines round the Duck research pier have been surveyed since 1979.",
+    "data": "28 profile lines about 45 m apart, ~600 m either side of the pier, 1979 to 2018 (PANGAEA, CC-BY 4.0), and a 2015 topobathy lidar point cloud (NOAA/USACE).",
+    "shows": "How the seabed along each line moved over nearly 40 years.",
+    "cant": "Lines are not a grid, and the lidar's resolution is not stated, so a 10 m seabed grid is not yet confirmed."
+   },
+   "mavericks": {
+    "question": "Why do big winter swells rise so sharply here? A bedrock reef off Pillar Point makes them converge before they break, while typical northwest swells pass over gentler seabed.",
+    "data": "USGS California State Waters Map Series, Offshore of Half Moon Bay: multibeam bathymetry on a 2 m grid, mapped 2006-2007, from about the 10 m depth line outward. Public; no licence stated; not for navigation.",
+    "shows": "The reef and the seabed round it at 2 m, fine enough for a reef-scale wave model.",
+    "cant": "Water shallower than about 10 m may be missing, so the inner part of the break may not be in the grid."
+   },
+   "teahupoo": {
+    "question": "How does the reef pass on Tahiti's southeast coast set where this wave breaks?",
+    "data": "Shom's coastal topo-bathymetric model of Tahiti: about 20 m, lagoons to 100 m depth, Licence Ouverte 2.0, updated December 2023. Shom's Tahiti-Moorea model is about 100 m.",
+    "shows": "The lagoon and coast of Tahiti at about 20 m, if the model reaches Teahupo'o.",
+    "cant": "Its extent over Teahupo'o is not confirmed, and no 10 m product was found. The data status is not yet verified."
+   },
+   "cloudbreak": {
+    "question": "How does the coral reef off Tavarua shape this left-hand wave in the Mamanuca group?",
+    "data": "Pacific Community (SPC) Digital Earth Pacific satellite-derived bathymetry: Sentinel-2, 10 m, CC BY 4.0, to about 30 m depth in clear water. The SOPAC Mamanuca chart (50 m) is restricted; the regional Fiji grid is about 300 m.",
+    "shows": "Seabed depths at 10 m in clear shallow water, if it covers the reef.",
+    "cant": "Coverage of Cloudbreak is not confirmed. Satellite-derived depths stop at about 30 m. The data status is not yet verified."
+   },
+   "jaws-peahi": {
+    "question": "How do the reef and the offshore seabed off Pe'ahi, on Maui's north shore, shape this big-wave break?",
+    "data": "NOAA NCEI Hawaii CUDEM: bathymetric-topographic tiles at 1/9 arc-second (about 3 m), published 2021, not subject to US copyright, not for navigation.",
+    "shows": "Land and seabed round the main Hawaiian islands at about 3 m.",
+    "cant": "The tile over Jaws has not been checked one by one, and the bathymetric accuracy is stated as variable."
+   },
+   "skeleton-bay": {
+    "question": "How does a sand bank at Donkey Bay, on the Pelican Point spit, hold a left-hand wave said to run for up to about 2 km?",
+    "data": "None found.",
+    "shows": "Only where the spot is: the marker is the OpenStreetMap node \"Donkey Bay\", a point near the break, not the exact take-off.",
+    "cant": "Without any seabed grid, nothing about the sand bank can be shown yet."
+   },
+   "supertubes-jeffreys-bay": {
+    "question": "What shapes the long right-hand point wave at Jeffreys Bay?",
+    "data": "None found.",
+    "shows": "Only where the spot is (mapped in OpenStreetMap as a surfing spot).",
+    "cant": "Without any seabed grid, nothing about the point can be shown yet. The data status is not yet verified."
+   },
+   "cortes-bank": {
+    "question": "How does a seamount about 100 miles offshore, whose shallowest point (Bishop Rock) lies a few feet below the surface, focus swell?",
+    "data": "NCEI Coastal Relief Model, Southern California V2 (2013): 1 and 3 arc-second only (about 30 m or coarser). NOAA survey H04549 exists; its resolution is not stated.",
+    "shows": "The shape of the bank at about 30 m or coarser.",
+    "cant": "No 10 m grid is confirmed. The marker is the bank, not Bishop Rock itself. The data status is not yet verified."
+   },
+   "mundaka": {
+    "question": "How does sand moving at the mouth of the Urdaibai estuary shape this left-hand wave?",
+    "data": "None found.",
+    "shows": "Only where the spot is.",
+    "cant": "Without any seabed grid, and with the sand moving, nothing about the break can be shown yet. The data status is not yet verified."
+   },
+   "puerto-escondido-zicatela": {
+    "question": "How do offshore submarine canyons and shifting sand shape this heavy beach-break barrel on Oaxaca's coast?",
+    "data": "None found.",
+    "shows": "Only where the spot is.",
+    "cant": "Without any seabed grid, neither the canyons nor the sand can be shown yet. The data status is not yet verified."
+   },
+   "uluwatu": {
+    "question": "How do reef shape and tide decide which section works below the cliff on Bali's Bukit Peninsula?",
+    "data": "Indonesia's national bathymetry (BIG BATNAS): 6 arc-second (about 180 m), reported unreliable nearshore. No 10 m open data found.",
+    "shows": "The broad seabed off Bali at about 180 m.",
+    "cant": "Far too coarse for the reef. Digital Earth Pacific 10 m coverage of Bali is not confirmed. The data status is not yet verified."
+   },
+   "bells-beach": {
+    "question": "How does the reef at this right-hand point break near Torquay, Victoria, shape the wave?",
+    "data": "Victoria DEECA Victorian Coastal Digital Elevation Model 2021 (VCDEM): 10 m, CC BY 4.0. A 250 cm version also exists (CC BY 4.0).",
+    "shows": "Coast and nearshore seabed at 10 m (and finer in the 250 cm version).",
+    "cant": "The high-resolution version may have gaps, and how far offshore it reaches is not confirmed."
+   },
+   "scripps-canyon-la-jolla": {
+    "question": "What does a narrow submarine canyon, about 1.6 km long and 490 m deep off La Jolla, do to the waves above it?",
+    "data": "USGS SIM 3324 (Scripps 2013 multibeam): public, but down-sampled to 25 m. CSUMB mapped the canyon head by multibeam in October 2001, resolution not stated, available on request, not as a download.",
+    "shows": "The canyon's shape at 25 m.",
+    "cant": "25 m is too coarse for the break, and the finer canyon-head survey is not openly downloadable. The data status is not yet verified."
+   },
+   "monterey-canyon-moss-landing": {
+    "question": "How does the head of the largest submarine canyon on the North American west coast, starting near Moss Landing, meet the shore?",
+    "data": "MBARI AUV 1 m grids (MGDS, CC BY-NC-SA 3.0), only for 200-500 m and 1,350-1,880 m depths. Ship multibeam from 1998 as raw files at NOAA NGDC; a Stanford compilation is for affiliates only.",
+    "shows": "Parts of the deep canyon at 1 m.",
+    "cant": "Not the shallow canyon head near shore, which is what a wave model needs. The marker is the marine lab; the canyon head is just offshore."
+   },
+   "narrabeen-collaroy-sydney": {
+    "question": "How does a 3.6 km beach change month by month? Five sites have been surveyed every month since April 1976.",
+    "data": "Open profile data (CC-BY 4.0 paper, live repository at narrabeen.wrl.unsw.edu.au): five transects to 20 m depth, plus airborne lidar since 2011.",
+    "shows": "How the beach and nearshore along five lines changed over nearly 50 years.",
+    "cant": "Lines are not a grid: a gridded open seabed at 10 m or finer is not confirmed, and the licence listings on data.gov.au disagree."
+   },
+   "truc-vert-aquitaine": {
+    "question": "How does a remote, never-nourished, high-energy sandy beach change? Sixteen years of topographic surveys are open data.",
+    "data": "Shom/IGN Litto3D Nouvelle-Aquitaine 2020-2022: airborne lidar, \"metric resolution\", to about 20 m depth, Etalab 2.0 open licence, not for navigation. Beach survey DEMs on OSF, CC-BY 4.0.",
+    "shows": "Beach and nearshore seabed at about metre scale, to about 20 m depth.",
+    "cant": "The exact grid size is not stated on the record, and it is a single 2020-2022 survey."
+   },
+   "egmond-aan-zee": {
+    "question": "What can the Dutch national seabed grid show of the nearshore off a North Sea beach town?",
+    "data": "Rijkswaterstaat Bathymetrie Nederland (coast and vaklodingen): 20 m grid, CC0 1.0.",
+    "shows": "The nearshore seabed at 20 m.",
+    "cant": "20 m is coarser than the 10 m a wave model needs, and no finer public grid for Egmond is confirmed. The data status is not yet verified."
+   },
+   "perranporth-cornwall": {
+    "question": "How does a dissipative, macrotidal sandy beach respond to waves? Surveys and wave forcing are published for 2006 to 2021.",
+    "data": "A merged lidar and multibeam DEM on a 2 m grid (McCarroll et al., Scientific Data 2023, CC-BY 4.0, hosted by the University of Plymouth). Environment Agency lidar via the Plymouth Coastal Observatory.",
+    "shows": "Beach and nearshore seabed at 2 m.",
+    "cant": "Exact coverage of the break is not yet confirmed."
+   },
+   "heron-island-gbr": {
+    "question": "How do waves cross a coral reef flat to a cay in the southern Great Barrier Reef?",
+    "data": "Heron Reef 1 m bathymetry from airborne hyperspectral data (CASI, July 2002), CC BY 3.0, on PANGAEA. Geoscience Australia multibeam at 2 m to 64 m (CC-BY 4.0).",
+    "shows": "The reef flat at 1 m.",
+    "cant": "The 1 m depths are not tide-corrected and have gaps; whether the multibeam actually covers the island is unconfirmed."
+   },
+   "raglan-manu-bay": {
+    "question": "How do the three left-hand point breaks near Raglan (Manu Bay, Whale Bay, Indicators) wrap along the coast?",
+    "data": "LINZ national coastal DEM: 1 m tiles from lidar to about 25 m depth, CC-BY 4.0, on AWS Open Data. A Waikato regional report has 50 m grids only.",
+    "shows": "Coast and nearshore seabed at 1 m, where the lidar reaches.",
+    "cant": "Coverage of the Raglan coast is not confirmed."
+   },
+   "kirra-superbank-gold-coast": {
+    "question": "How has pumping sand across the Tweed River mouth since 2001 reshaped Kirra Point, where barrels once broke?",
+    "data": "None found as a grid. Tweed Sand Bypassing reports show 1997 and 2011 bathymetry only as figures.",
+    "shows": "Only where the spot is.",
+    "cant": "No downloadable grid was located, so the change cannot be shown. The data status is not yet verified."
+   },
+   "hulhumale-maldives": {
+    "question": "How exposed is a reclaimed island? Hulhumalé, home to 65,714 people (2022 census), was built by pumping sand from the sea floor beside Malé.",
+    "data": "None confirmed. A 2021 Maldives-wide gridded bathymetry paper exists (doi 10.1029/2020EA001207).",
+    "shows": "Only where the island is.",
+    "cant": "Its resolution near Malé and its licence are unconfirmed, so no wave exposure can be shown. The data status is not yet verified."
+   },
+   "happisburgh-norfolk-uk": {
+    "question": "Why do these soft glacial-till cliffs retreat so fast? About 20 m was lost in 2004-2007.",
+    "data": "Environment Agency SurfZone DEM, 2 m (lidar plus nearshore multibeam, Open Government Licence, covers 50-55.8° N). The EA lidar composite DTM at 1 m is land only.",
+    "shows": "Cliffs and beach at 1-2 m; nearshore seabed at 2 m where the SurfZone DEM has it.",
+    "cant": "Whether the SurfZone DEM holds seabed off Happisburgh is unverified."
+   },
+   "grand-isle-louisiana-usa": {
+    "question": "How does a barrier island at the mouth of Barataria Bay buffer inland parishes from hurricane surge and waves?",
+    "data": "NOAA NCEI Southern Louisiana Coastal DEM at 1/3 arc-second (about 10 m), not subject to US copyright, not for navigation. CUDEM 1/9 arc-second (about 3 m) tiles also exist.",
+    "shows": "Island, bay and nearshore seabed at about 10 m.",
+    "cant": "Whether a 3 m CUDEM tile covers Grand Isle is not confirmed tile by tile."
+   },
+   "sendai-bay-japan": {
+    "question": "How does the seabed of Sendai Bay, on the Miyagi coast, shape tsunami inundation?",
+    "data": "NIED Global tsunami Terrain Model: whole-Japan grid at two arc-seconds (about 50 m), CC BY 4.0, with 2016 Cabinet Office nesting data in the Japan Trench area. Finer Japan Hydrographic Association grids appear to be sold.",
+    "shows": "The bay's seabed at about 50 m.",
+    "cant": "No grid at 10 m or finer was found, and Sendai Bay coverage is not explicitly stated. The data status is not yet verified."
+   },
+   "banda-aceh-indonesia": {
+    "question": "How did the coast of the closest major city to the 2004 Indian Ocean earthquake (about 249 km away) take the tsunami, and how has it recovered?",
+    "data": "None found at 10 m or finer. Indonesia's national bathymetry (BIG BATNAS) is listed at 6 arc-seconds (about 180 m).",
+    "shows": "Nothing at reef or beach scale.",
+    "cant": "Public download of BATNAS is not confirmed, and the national bathymetry system is reported as restricted to government institutions. The data status is not yet verified."
+   },
+   "hilo-bay-hawaii-usa": {
+    "question": "How does Hilo Bay, behind its 1908-1929 breakwater, flood in a tsunami, as it did in 1946 and 1960?",
+    "data": "NOAA NCEI Hilo, Hawaii integrated bathymetric-topographic DEM at 1/3 arc-second (about 10 m), built for tsunami forecasting, CC0 1.0 per its catalogue record.",
+    "shows": "Bay, breakwater and town at about 10 m.",
+    "cant": "The record's details are inconsistent (location box and access level), so access is not yet confirmed."
+   },
+   "venice-lagoon-inlets-italy": {
+    "question": "What did the lagoon's inlets and channels look like before the MOSE flood barriers began to operate? They were mapped in 2013.",
+    "data": "EMODnet \"Venice Lagoon Channels DTM 5 m\" (CNR-ISMAR, 2013 multibeam, CC BY 4.0, not for navigation). The source paper reports 0.5 m bathymetry on MGDS.",
+    "shows": "Inlet and channel seabed at 5 m, a before-baseline.",
+    "cant": "One 2013 snapshot. The 0.5 m dataset's licence is not stated. The seabed is in hand; the swell model is the next step, not done yet."
+   },
+   "coxs-bazar-bangladesh": {
+    "question": "How do cyclone surge and waves drive flood risk for about 196,000 residents on a floodplain lower than the dunes?",
+    "data": "None found. A Cox's Bazar storm-surge study used bathymetry from local agencies that is not public.",
+    "shows": "Only where the beach is.",
+    "cant": "Without open seabed data, surge and waves cannot be shown. The data status is not yet verified."
+   },
+   "drew-point-alaska-usa": {
+    "question": "Why does this permafrost bluff coast erode by up to 20 m a year, as USGS cites? Storms cut niches into the bluffs.",
+    "data": "None found for Drew Point. USGS has flown airborne lidar of the north coast (topography; release not named). A 2022 USGS single-beam nearshore survey exists at Point Barrow, about 100 km west.",
+    "shows": "Nothing here yet; the nearest survey is 100 km away.",
+    "cant": "No nearshore seabed at Drew Point, so the storm waves at the bluff cannot be modelled."
+   },
+   "galveston-island-texas-usa": {
+    "question": "How does a Gulf barrier island behind a seawall and raised grade (built after the 1900 hurricane surge) meet surge and waves today?",
+    "data": "NOAA NCEI Galveston, Texas Coastal DEM: 1/3 arc-second (about 10 m) to 3 arc-second, CC0 1.0 per its catalogue, published 2007. CUDEM 1/9 arc-second (about 3 m) tiles also cover the contiguous US.",
+    "shows": "Island and nearshore seabed at about 10 m.",
+    "cant": "The 2007 DEM may be dated, and tile-by-tile CUDEM coverage is not checked."
+   },
+   "lagos-victoria-island-nigeria": {
+    "question": "How does erosion work on this wave-dominated barrier coast, where the Eko Atlantic development is built on reclaimed land next door?",
+    "data": "None found. A local 1 m topo-bathymetric survey at Maiyegun Estate is listed in a catalogue. GEBCO (about 450 m) is too coarse.",
+    "shows": "Only where the coast is.",
+    "cant": "The 1 m survey's access terms are unknown, so no seabed can be shown. The data status is not yet verified."
+   },
+   "majuro-marshall-islands": {
+    "question": "How do reef, lagoon and wave exposure shape flooding on an atoll of 23,156 people whose highest point is under 3 m?",
+    "data": "Listed but not yet confirmed: a USGS 1 m topobathymetric DEM of Majuro Atoll (DOI 10.5066/F7416VXX; 1944-2016 data; satellite-derived nearshore depths, RMSE about 1.1 m) and an SPC/GEM 5 m lagoon bathymetry DEM.",
+    "shows": "Atoll, reef and lagoon at 1-5 m, if confirmed.",
+    "cant": "Neither dataset nor its licence is confirmed yet. The data status is not yet verified."
+   },
+   "klitmoller": {
+    "question": "Klitmøller breaks over a reef: what does that reef do to the swell?",
+    "data": "None yet: no reef-scale seabed.",
+    "shows": "The spot is marked; there is no model yet.",
+    "cant": "Needed: a seabed depth survey of the Klitmøller reef at 10 m resolution or finer."
+   },
+   "hvide_sande": {
+    "question": "How do the moving sandbars at Hvide Sande shape the waves?",
+    "data": "None yet: no reef-scale seabed.",
+    "shows": "The spot is marked; there is no model yet.",
+    "cant": "Needed: a recent seabed depth survey of the sandbars at 10 m resolution or finer. Bars move, so any survey ages."
+   },
+   "tel_aviv": {
+    "question": "What does the seabed of the Tel Aviv surf zone do to the swell?",
+    "data": "None yet: no seabed map.",
+    "shows": "The spot is marked; there is no model yet.",
+    "cant": "Needed: a seabed depth survey of the Tel Aviv surf zone at 10 m resolution or finer."
+   }
+  }
+ }
+}

@@ -1,0 +1,58 @@
+[
+ {
+  "id": "hurricanes",
+  "module": "../08-storms/hurricanes.js",
+  "label": "Hurricanes (IBTrACS)",
+  "on": true,
+  "v": "o2"
+ },
+ {
+  "id": "tornadoes",
+  "module": "../08-storms/tornadoes.js",
+  "label": "Tornadoes (US, SPC)",
+  "on": false,
+  "v": "o2"
+ },
+ {
+  "id": "tornado-live",
+  "module": "../08-storms/tornado_live.js",
+  "label": "Tornadoes live / replay",
+  "on": false,
+  "v": "o2"
+ },
+ {
+  "id": "aurora",
+  "module": "../10-sky/aurora.js",
+  "label": "Aurora (NOAA forecast)",
+  "on": false,
+  "v": "g1"
+ },
+ {
+  "id": "snow",
+  "module": "../10-sky/snow.js",
+  "label": "Snow and sea ice (IMS)",
+  "on": false,
+  "v": "s4"
+ },
+ {
+  "id": "wind",
+  "module": "../11-ocean/wind.js",
+  "label": "Wind at 10 m (GFS model)",
+  "on": false,
+  "v": "g1"
+ },
+ {
+  "id": "waves",
+  "module": "../11-ocean/waves.js",
+  "label": "Wave height (WAVEWATCH III model)",
+  "on": false,
+  "v": "g1"
+ },
+ {
+  "id": "swell",
+  "module": "../11-ocean/swell.js",
+  "label": "Swell fronts (WAVEWATCH III, illustrative)",
+  "on": false,
+  "v": "g1"
+ }
+]

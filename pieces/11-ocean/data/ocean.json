@@ -1,0 +1,119 @@
+{
+ "valid": "2026-11-23T00:00:00Z",
+ "validWaves": "2026-11-23T00:00:00Z",
+ "built": "2026-11-23T02:07+00:00",
+ "wind": {
+  "model": "NOAA NCEP GFS (0.5 degree)",
+  "run": "2026-11-22 18 UTC",
+  "forecastHour": 6,
+  "source": "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/gfs.20261122/18/atmos/gfs.t18z.pgrb2.0p50.f006",
+  "grid": {
+   "lat0": -90,
+   "nLat": 361,
+   "lon0": 0,
+   "nLon": 720,
+   "step": 0.5
+  },
+  "layout": "int8 u[361][720] then v[361][720], m/s x 2 (u east, v north); rows from 90 S, columns from 0 E"
+ },
+ "waves": {
+  "model": "NOAA NCEP GFS-Wave (WAVEWATCH III), forced by the same GFS run's winds (0.25 degree, every 2nd point kept)",
+  "run": "2026-11-22 18 UTC",
+  "forecastHour": 6,
+  "source": "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/gfs.20261122/18/wave/gridded/gfswave.t18z.global.0p25.f006.grib2",
+  "grid": {
+   "lat0": -90,
+   "nLat": 361,
+   "lon0": 0,
+   "nLon": 720,
+   "step": 0.5
+  },
+  "fields": [
+   "Thgt",
+   "Tper",
+   "Tdir",
+   "shgt",
+   "sper",
+   "sdir",
+   "whgt",
+   "wper",
+   "wdir"
+  ],
+  "scale": {
+   "Thgt": 0.1,
+   "Tper": 0.1,
+   "Tdir": 2.0,
+   "shgt": 0.1,
+   "sper": 0.1,
+   "sdir": 2.0,
+   "whgt": 0.1,
+   "wper": 0.1,
+   "wdir": 2.0
+  },
+  "noData": 255,
+  "layout": "uint8 [9][361][720] in the order of fields; value x scale; directions are 'coming from', degrees clockwise from north"
+ },
+ "licence": "NOAA NCEP model output, US Government work, public domain. Not an official product here; not for safety decisions.",
+ "spots": [
+  {
+   "id": "porto_batel",
+   "name": "Porto Batel / Consola\u00e7\u00e3o",
+   "lat": 39.3195,
+   "lon": -9.3558,
+   "gridLat": 39.25,
+   "gridLon": 350.5,
+   "swellHeight": 2.13,
+   "swellPeriod": 10.2,
+   "swellFrom": 296,
+   "totalHeight": 2.13
+  },
+  {
+   "id": "supertubos",
+   "name": "Supertubos",
+   "lat": 39.3398,
+   "lon": -9.3619,
+   "gridLat": 39.25,
+   "gridLon": 350.5,
+   "swellHeight": 2.13,
+   "swellPeriod": 10.2,
+   "swellFrom": 296,
+   "totalHeight": 2.13
+  },
+  {
+   "id": "pipeline",
+   "name": "Pipeline",
+   "lat": 21.665,
+   "lon": -158.053,
+   "gridLat": 21.75,
+   "gridLon": 201.75,
+   "swellHeight": 1.16,
+   "swellPeriod": 12.3,
+   "swellFrom": 338,
+   "totalHeight": 2.02
+  },
+  {
+   "id": "guethary",
+   "name": "Gu\u00e9thary / Parlementia",
+   "lat": 43.427718,
+   "lon": -1.611053,
+   "gridLat": 43.5,
+   "gridLon": 357.0,
+   "swellHeight": 1.38,
+   "swellPeriod": 10.9,
+   "swellFrom": 317,
+   "totalHeight": 2.19
+  },
+  {
+   "id": "hossegor",
+   "name": "Hossegor / La Gravi\u00e8re",
+   "lat": 43.67562,
+   "lon": -1.443375,
+   "gridLat": 43.5,
+   "gridLon": 357.0,
+   "swellHeight": 1.38,
+   "swellPeriod": 10.9,
+   "swellFrom": 317,
+   "totalHeight": 2.19
+  }
+ ]
+}
