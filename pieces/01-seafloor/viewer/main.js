@@ -400,10 +400,13 @@ let camMode = 'orbit';
 // screen (no hover, coarse pointer) starts in orbit; elsewhere the first touch on the canvas switches fly to orbit before
 // any handler sees it (capture phase), unless the Orbit / Fly button was used. The button still picks fly on a phone.
 let camPicked = false, touchSeen = false;
-const touchFirst = () => touchSeen || matchMedia('(hover: none) and (pointer: coarse)').matches;
+// dad 2026-11-23 night (item 7): the globe passes its device profile (?profile=phone|desktop) so both pages agree
+const PROFILE_Q = new URLSearchParams(location.search).get('profile');
+const touchFirst = () => touchSeen || PROFILE_Q === 'phone' || (PROFILE_Q !== 'desktop' && matchMedia('(hover: none) and (pointer: coarse)').matches);
 const FLY = { yaw: 0, pitch: 0, vel: new THREE.Vector3(), wheel: new THREE.Vector3(), keys: new Set(), last: null, drag: null };
 const flyDir = new THREE.Vector3(), flyTmp = new THREE.Vector3(), flyRight = new THREE.Vector3();
 const FLY_UP = new THREE.Vector3(0, 1, 0);
+const FLY_PITCH_UP = 10 * Math.PI / 180;           // dad 2026-11-23 night
 function flySync() {                              // yaw/pitch from where the camera now looks (after a jump or a mode switch)
   camera.getWorldDirection(flyDir);
   FLY.pitch = Math.asin(Math.max(-1, Math.min(1, flyDir.y))); FLY.yaw = Math.atan2(flyDir.x, -flyDir.z);
@@ -453,7 +456,7 @@ const typing = e => { const t = e.target; return t && (t.isContentEditable || t.
   (t.tagName === 'INPUT' && !['range', 'checkbox', 'radio', 'button'].includes(t.type))); };
 const FLY_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'KeyC', 'Space'];
 window.addEventListener('keydown', e => {
-  if (camMode !== 'fly' || typing(e) || e.ctrlKey || e.metaKey) return;
+  if (camMode !== 'fly' || typing(e) || e.ctrlKey || e.metaKey || arriving()) return;   // round 4: keys wait for the arrival
   if (e.code === 'Space' && e.target && e.target.tagName !== 'BODY' && e.target.tagName !== 'CANVAS') return;   // Space belongs to a focused button/checkbox
   if (FLY_KEYS.includes(e.code)) { FLY.keys.add(e.code); fly = null; e.preventDefault(); }
   FLY.keys[e.shiftKey ? 'add' : 'delete']('shift'); FLY.keys[e.altKey ? 'add' : 'delete']('alt');
@@ -467,7 +470,7 @@ window.addEventListener('blur', () => FLY.keys.clear());
 const TOUCH = new Map();
 const touchRight = new THREE.Vector3(), touchUp = new THREE.Vector3();
 canvas.addEventListener('pointerdown', e => {
-  if (camMode !== 'fly' || e.shiftKey || (e.button !== 0 && e.button !== 2)) return;   // Shift+click is "mark a surf zone"
+  if (camMode !== 'fly' || e.shiftKey || (e.button !== 0 && e.button !== 2) || arriving()) return;   // Shift+click is "mark a surf zone"; round 4: not while arriving
   if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();   // so keys reach the camera
   if (e.pointerType === 'touch') {                  // touch: track fingers; a second finger turns the drag into pinch/pan
     TOUCH.set(e.pointerId, { x: e.clientX, y: e.clientY }); fly = null; try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
@@ -492,13 +495,14 @@ canvas.addEventListener('pointermove', e => {
   }
   if (!FLY.drag || FLY.drag.id !== e.pointerId) return;
   FLY.yaw -= (e.clientX - FLY.drag.x) * 0.0035;    // grab-the-world feel: drag right turns the view left
-  FLY.pitch = Math.max(-1.55, Math.min(1.55, FLY.pitch + (e.clientY - FLY.drag.y) * 0.0035));
+  FLY.pitch = Math.max(-1.55, Math.min(FLY_PITCH_UP, FLY.pitch + (e.clientY - FLY.drag.y) * 0.0035));   // dad 2026-11-23 night: up to 10° above the horizon (was 89°: a black sky)
   FLY.drag.x = e.clientX; FLY.drag.y = e.clientY;
 });
 const endDrag = e => { TOUCH.delete(e.pointerId); if (TOUCH.size < 2) FLY.pinch = null; if (FLY.drag && FLY.drag.id === e.pointerId) FLY.drag = null; };
 canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
 canvas.addEventListener('contextmenu', e => { if (camMode === 'fly') e.preventDefault(); });
 canvas.addEventListener('wheel', e => {
+  if (arriving()) { e.preventDefault(); return; }   // round 4: a trackpad's momentum from the globe must not stop the arrival
   if (camMode !== 'fly') return;
   e.preventDefault(); fly = null;
   if (cur && cur.cfg.reef) { zoomWheel(e); return; }   // reef layers: the zoom bar's eased log zoom toward the pointer (section 6e)
@@ -510,6 +514,7 @@ document.getElementById('cam-mode').addEventListener('click', () => { camPicked 
 addEventListener('pointerdown', e => {   // 6f: first touch on the reef in (unpicked) fly mode switches to orbit before the canvas sees it
   if (e.pointerType !== 'touch' || e.target !== canvas) return;
   touchSeen = true;
+  if (arriving()) return;                          // round 4: OrbitControls is off while arriving; switch after it
   if (camMode === 'fly' && !camPicked) setCamMode('orbit');
 }, true);
 
@@ -1435,7 +1440,7 @@ addEventListener('resize', setBoxVars); setBoxVars();   // also when the pane is
 // Controls / Sources toggles (2026-11-23 phone layout). Phone or touch screen: both start closed, and on a narrow screen
 // opening one closes the other (they share the space under the top bar). Desktop: both start open, as before, except
 // on arrival from the globe, where only the reef, Back to globe, the two toggles and the standing line show.
-const PHONE = matchMedia('(max-width: 600px), (pointer: coarse)'), NARROW = matchMedia('(max-width: 600px)');
+const PHONE_MQ = matchMedia('(max-width: 600px), (pointer: coarse)'), PHONE = { get matches() { return PROFILE_Q === 'phone' || (PROFILE_Q !== 'desktop' && PHONE_MQ.matches) || NARROW.matches; } }, NARROW = matchMedia('(max-width: 600px)');
 const fromGlobe = new URLSearchParams(location.search).get('from') === 'globe';
 const UIBOX = { panel: { el: 'panel', btn: 'panel-toggle', open: 'panel-open', shut: 'panel-shut' }, src: { el: 'src-box', btn: 'src-toggle', open: 'src-open', shut: 'src-shut' } };
 function setBox(k, on) {
@@ -1446,7 +1451,24 @@ function setBox(k, on) {
 }
 const boxOpen = k => document.body.classList.contains(UIBOX[k].open);
 setBox('panel', !PHONE.matches && !fromGlobe); setBox('src', !PHONE.matches && !fromGlobe);
-document.getElementById('panel-toggle').onclick = () => setBox('panel', !boxOpen('panel'));
+document.getElementById('panel-toggle').onclick = () => { setBox('panel', !boxOpen('panel')); ctlSeen(); };   // dad 2026-11-23 night: ctlSeen
+// dad 2026-11-23 night: Controls was hard to find ("he loved it once found"). The button is the accent pill, and on a
+// first visit it is shown once: on desktop the panel opens by itself when the arrival has settled; on a phone (where the
+// panel would cover the reef) the button glows until it is tapped. Remembered under CTL_KEY.
+const CTL_KEY = 'oceany-controls-seen-v1', ctlBtn = document.getElementById('panel-toggle');
+const ctlStore = { get() { try { return localStorage.getItem(CTL_KEY); } catch (e) { return '1'; } }, set() { try { localStorage.setItem(CTL_KEY, '1'); } catch (e) { /* private mode */ } } };
+function ctlSeen() { ctlBtn.classList.remove('ctl-new'); ctlStore.set(); }
+if (!ctlStore.get()) {
+  ctlBtn.classList.add('ctl-new');
+  if (!PHONE.matches) {
+    const t0 = performance.now(), wait = () => {
+      if (boxOpen('panel')) { ctlSeen(); return; }
+      if (!fly && !ARRIVE.pending && performance.now() - t0 > 1200) { setBox('panel', true); ctlSeen(); return; }
+      setTimeout(wait, 300);
+    };
+    setTimeout(wait, 600);
+  }
+}
 document.getElementById('src-toggle').onclick = () => setBox('src', !boxOpen('src'));
 
 // ---------- 6d. Back to the globe: zooming out past the reef patch continues onto the whole-Earth globe ----------
@@ -1476,6 +1498,67 @@ function globeHref() {                             // the globe, arriving over t
   return GLOBE_URL + '?' + q.toString();
 }
 function goToGlobe() { if (EXIT.gone) return; EXIT.gone = true; fadeEl.style.opacity = 1; location.href = globeHref(); }
+// Round 4 (Benn: zooming out of the reef should go back to the globe, the mirror of the way in). At the far end of the
+// zoom (fly: the bar's outer end; orbit: OrbitControls' maxDistance) every further zoom-out input fills a bar under
+// "Keep zooming out for the globe": a wheel notch ~25%, a trackpad scroll or ctrl-pinch event >=4%, a phone pinch
+// (fingers together) by the distance the fingers close, the - button 25%, the slider held at the bottom. When it is
+// full the view fades and goToGlobe() opens the same URL as the Back to globe button (globeHref). It drains after
+// ~1 s without input and empties when you zoom in. Fly and orbit alike; nothing fills while arriving.
+const OUT = { push: 0, t: 0, go: 0, el: null, bar: null, pinch: new Map(), spread: 0 };
+function outCue() {
+  if (OUT.el) return OUT.el;
+  const el = OUT.el = document.createElement('div'); el.id = 'out-cue'; el.setAttribute('role', 'status'); el.hidden = true;
+  el.style.cssText = 'position:fixed;left:50%;top:58%;transform:translateX(-50%);z-index:31;pointer-events:none;padding:10px 16px 12px;border-radius:14px;' +
+    'background:rgba(6,14,22,.86);border:1px solid rgba(95,242,255,.45);color:#cfeff5;font:600 13px/1.3 system-ui,sans-serif;text-align:center;min-width:220px';
+  el.innerHTML = '<div>Keep zooming out for the globe</div><div style="margin-top:8px;height:4px;border-radius:2px;background:rgba(95,242,255,.18);overflow:hidden"><i style="display:block;height:100%;width:0;background:#5ff2ff"></i></div>';
+  OUT.bar = el.querySelector('i'); document.body.appendChild(el); return el;
+}
+function atFar() {                                 // at the outer end of the zoom, on a reef, nothing else running
+  if (!cur || !cur.cfg.reef || EXIT.gone || OUT.go || arriving() || EXIT.button) return false;
+  // fly: the zoom target pinned at the far end is enough; keepNear's sideways limit (start x 0.9) can hold ZB.d at
+  // ~0.8 of it when zooming out about the pointer, and the bar then never filled (seen in the round-4 runs)
+  if (camMode === 'fly') return zbBase() >= zoomMax() * 0.98 && ZB.d >= zoomMax() * 0.6;
+  return Math.max(ZB.d, camera.position.distanceTo(controls.target) / 1.05) >= zoomMax() * 0.96;
+}
+function outPush(k) {
+  if (!(k > 0) || !atFar()) return false;
+  OUT.push = Math.min(1, OUT.push + k); OUT.t = performance.now();
+  const el = outCue(); el.hidden = false; OUT.bar.style.width = Math.round(OUT.push * 100) + '%';
+  if (OUT.push >= 1) { OUT.go = performance.now(); fly = null; }
+  return true;
+}
+function outFrame(dt) {                            // from zoomFrame: drain when idle, hide when empty
+  if (!OUT.push || OUT.go) return;
+  if (performance.now() - OUT.t > 900) OUT.push = Math.max(0, OUT.push - dt * 0.9);
+  if (OUT.el) { OUT.bar.style.width = Math.round(OUT.push * 100) + '%'; if (!OUT.push) OUT.el.hidden = true; }
+}
+function outWheel(e) {                             // every wheel kind: mouse notch, trackpad scroll, ctrl-pinch (fly and orbit)
+  if (e.deltaY < 0) { if (OUT.push && !OUT.go) { OUT.push = 0; if (OUT.el) OUT.el.hidden = true; } return; }
+  const px = Math.abs(e.deltaY) * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1) * (e.ctrlKey ? 4 : 1);
+  outPush(Math.min(0.26, Math.max(0.04, px / 400)));
+}
+canvas.addEventListener('wheel', outWheel, { passive: true });   // fly (orbit: the capture handler below calls it)
+// Round 4: orbit on a reef zooms with the zoom bar's own eased zoom, as fly does. OrbitControls' wheel dolly is ~0.3%
+// per small trackpad or ctrl-pinch event, so 900 trackpad events did not reach the far end (round-4 run); a mouse
+// needed ~65 notches. The wheel is taken before OrbitControls sees it (window capture; the tour's own listener on
+// window still counts it). Touch pinch stays with OrbitControls.
+addEventListener('wheel', e => {
+  if (e.target !== canvas || camMode === 'fly' || !cur || !cur.cfg.reef) return;
+  e.preventDefault(); e.stopPropagation();
+  if (arriving()) return;
+  outWheel(e); zoomWheel(e);
+}, { capture: true, passive: false });
+const outSpread = () => { const [a, b] = [...OUT.pinch.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+canvas.addEventListener('pointerdown', e => { if (e.pointerType !== 'touch') return; OUT.pinch.set(e.pointerId, { x: e.clientX, y: e.clientY }); if (OUT.pinch.size === 2) OUT.spread = outSpread(); }, true);
+canvas.addEventListener('pointermove', e => {      // phone: two fingers closing at the far end
+  if (e.pointerType !== 'touch' || !OUT.pinch.has(e.pointerId)) return;
+  OUT.pinch.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (OUT.pinch.size !== 2) return;
+  const sp = outSpread(), dd = OUT.spread - sp; OUT.spread = sp;
+  if (dd > 0) outPush(dd / 300); else if (dd < -8 && OUT.push && !OUT.go) { OUT.push = 0; if (OUT.el) OUT.el.hidden = true; }
+}, true);
+const outEnd = e => { OUT.pinch.delete(e.pointerId); if (OUT.pinch.size === 2) OUT.spread = outSpread(); };
+canvas.addEventListener('pointerup', outEnd, true); canvas.addEventListener('pointercancel', outEnd, true);
 document.getElementById('to-globe').addEventListener('click', () => {   // button: pull out to the exit distance, then go
   if (!cur || !cur.cfg.reef) { location.href = GLOBE_URL; return; }
   const r = exitRange(), dir = flyTmp.set(camera.position.x - r.cx, 0, camera.position.z - r.cz);
@@ -1490,18 +1573,21 @@ function stepExit(now) {                           // every frame, reef layers: 
   const r = exitRange(), d = Math.max(Math.hypot(camera.position.x - r.cx, camera.position.y, camera.position.z - r.cz), ZB.d || 0);   // ZB.d: zoom distance (to the point the view centre looks at)
   // UX 2026-11-23 (first-visitor feedback: "it jumped me to all kinds of screens"): zooming out no longer fades into the
   // globe by itself; the zoom stops at EXIT.start with a line pointing at the Back to globe button, which is the only way out.
-  void d; let f = 0;
+  void d; let f = OUT.push * 0.55;                 // round 4: zooming on out past the far end darkens towards the globe
+  if (OUT.go) { f = Math.min(1, 0.55 + (now - OUT.go) / 700); if (now - OUT.go > 380) { goToGlobe(); return; } }
   if (EXIT.button) { f = Math.max(f, smooth01(0, 1600, now - EXIT.button)); if (now - EXIT.button > 1600) { goToGlobe(); return; } }
   if (Math.abs(f - EXIT.fade) > 0.002) {
     EXIT.fade = f; fadeEl.style.opacity = f.toFixed(3);
-    fadeHint.style.opacity = EXIT.button ? 0 : Math.min(1, f * 3).toFixed(2);
+    fadeHint.style.opacity = 0;                    // round 4: the out cue (outCue) says it instead
   }
 }
 addEventListener('pageshow', e => {                // back from the globe (page restored from the cache): start over at the overview
   if (!e.persisted || !EXIT.gone) return;
   EXIT.gone = false; EXIT.button = 0; EXIT.fade = 0; fadeEl.style.opacity = 0; fadeHint.style.opacity = 0;
   fly = null;
-  if (cur) { camera.position.copy(cur.cfg.views.far.pos); controls.target.copy(cur.cfg.views.far.target); camera.lookAt(controls.target); FLY.jump = true; FLY.wheel.set(0, 0, 0); FLY.vel.set(0, 0, 0); }
+  OUT.push = 0; OUT.go = 0;
+  // round 4: back on a reef, the camera frames it as Reset view does (was the 6-7 km layer overview)
+  if (cur) { const v = cur.cfg.reef ? arrivalView() : cur.cfg.views.far; camera.position.copy(v.pos); controls.target.copy(v.target); camera.lookAt(controls.target); FLY.jump = true; FLY.wheel.set(0, 0, 0); FLY.vel.set(0, 0, 0); }
 });
 
 // ---------- 6e. Zoom bar: the globe's zoom control, and the arrival from the globe ----------
@@ -1535,11 +1621,11 @@ function showZoomNote() {
   ZB.noteUntil = performance.now() + 3500;
 }
 function showOutNote() {                           // UX 2026-11-23: the far end says how to leave instead of leaving
-  zbNote.textContent = 'As far out as this spot goes. Tap \u2190 Back to globe (top left) for the whole Earth.';
+  zbNote.textContent = 'As far out as this spot goes. Keep zooming out, or tap \u2190 Back to globe (top left), for the whole Earth.';
   ZB.noteUntil = performance.now() + 3500;
 }
 function zoomSet(t, cursor = null) {               // every zoom input ends here: new eased target distance
-  if (!cur || !cur.cfg.reef || EXIT.gone) return;
+  if (!cur || !cur.cfg.reef || EXIT.gone || arriving()) return;   // round 4: nothing stops the arrival half way
   const lo = Math.min(zoomMin(), ZB.d || Infinity), hi = Math.max(zoomMax(), ZB.d || 0);   // UX 2026-11-23: out to EXIT.start only
   if (t <= zoomMin() * 1.001) showZoomNote();
   else if (t >= zoomMax() * 0.999) showOutNote();
@@ -1550,7 +1636,7 @@ function zoomWheel(e) {                            // same feel as the globe: pi
   const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? innerHeight : 1), k = e.ctrlKey ? 0.01 : 0.002;
   zoomSet(zbBase() * Math.exp(Math.max(-1, Math.min(1, px * k))), [e.clientX / innerWidth * 2 - 1, 1 - e.clientY / innerHeight * 2]);
 }
-const zoomOutStep = () => { const b = zbBase(); zoomSet(b >= zoomMax() * 0.98 ? zoomMax() : dFromSlider(sliderFromD(b) - 80)); };
+const zoomOutStep = () => { if (outPush(0.25)) return; const b = zbBase(); zoomSet(b >= zoomMax() * 0.98 ? zoomMax() : dFromSlider(sliderFromD(b) - 80)); };   // round 4: at the far end it fills the out bar
 document.getElementById('zb-in').onclick = () => zoomSet(dFromSlider(sliderFromD(zbBase()) + 80));
 document.getElementById('zb-out').onclick = zoomOutStep;
 zbSlider.addEventListener('input', () => zoomSet(dFromSlider(+zbSlider.value)));
@@ -1571,12 +1657,20 @@ function zoomFrame(now) {
   const dt = ZB.last ? Math.min(0.1, (now - ZB.last) / 1000) : 0; ZB.last = now;
   const on = !!(cur && cur.cfg.reef) && !EXIT.gone;
   if (zbBar.hidden === on) zbBar.hidden = !on;
+  // 2026-11-23 r3 (Benn: "zoomed all the way in, but it didn't let me zoom out again"): orbit (phone, or Orbit / Fly)
+  // had no floor, so a pinch or wheel dollied the camera onto its target (distance ~0); OrbitControls zooms by a factor,
+  // so from ~0 m a pinch out barely moved. The orbit now stops near the zoom bar's inner end, as the bar and fly do.
+  // Its far end likewise stops at the bar's outer end (a pinch out ran on to 10^10 m).
+  const minD = on ? Math.round(zoomMin() * 0.6) : 0, maxD = on ? Math.round(zoomMax() * 1.05) : Infinity;
+  if (controls.minDistance !== minD) controls.minDistance = minD;
+  if (controls.maxDistance !== maxD) controls.maxDistance = maxD;
   if (!on) { ZB.d = 0; ZB.active = false; zbNote.hidden = true; return; }
+  outFrame(dt);
   if (ARRIVE.pending && cur.cfg === LAYERS[ARRIVE.pending.layer]) startArrival();
   ZB.d = camera.position.distanceTo(zoomFocus(zbF));
   if (fly) ZB.active = false;
   if (ZB.held && !fly) {
-    if (+zbSlider.value <= 0) zoomSet(Math.max(zbBase(), zoomMax()) * Math.exp(dt * 1.2));   // held at the Earth end: keep going out
+    if (+zbSlider.value <= 0) { if (!outPush(dt * 0.8)) zoomSet(Math.max(zbBase(), zoomMax()) * Math.exp(dt * 1.2)); }   // held at the Earth end: keep going out (round 4: fills the out bar)
     else if (+zbSlider.value >= ZB_MAX) showZoomNote();
   }
   if (ZB.active) {
@@ -1600,6 +1694,12 @@ function zoomFrame(now) {
 // middle of the lidar box, facing the same compass heading with the same tilt from straight down, and eases in to the
 // layer's overview while the black fades on time (the globe already faded out). The mirror of 6d.
 const ARRIVE = { pending: null, fly: null, t0: 0 };
+// Round 4 (Benn, trackpad: "entering the reef sometimes puts the camera outside the reef: black screen"). Cause: any
+// input during the 3 s arrival (the trackpad's momentum from the scroll that filled the globe's card bar, a click, a
+// key) set fly = null and left the camera where the approach was, up to ~14 km out at the globe's heading and tilt.
+// Now nothing stops the arrival: wheel, keys, fly drags and OrbitControls wait while arriving() (drawFrame, the input
+// handlers, zoomSet), so it always ends on arrivalView(), the same view as Reset view.
+const arriving = () => !!(ARRIVE.pending || (fly && fly === ARRIVE.fly));
 // Where the arrival ends (2026-11-23, Benn on his iPhone: "it opens flat or far out and only reads as 3D fully zoomed in").
 // Not the layer's 6-7 km overview but a close, tilted look at the layer's own reef: from the sea side, turned ARR.turn
 // degrees off the spot's sea bearing so the reef is seen at a slant, ARR.tilt degrees down, at a distance where about
@@ -1662,6 +1762,46 @@ function tagFree(el) {                             // also used by live.js for i
   }
 }
 
+// ---------- 6g. dad 2026-11-23 night: never lost in the dark ----------
+// Benn's dad: some tilts and zooms ended in a dark, empty view with no sense of where he was. Reproduced (Playwright,
+// review/ux/dad-2026-11-23): on desktop (fly) a long drag down tilted the view 89° up into the black sky (0 % of the screen
+// lit); on a phone (orbit) a long upward drag swung the camera round under the sea floor (1 km below sea level).
+// Now: fly looks at most 10° above the horizon and stays at least 1 m above the sea and inside the spot's range; orbit
+// stops 5° above the horizon and its pan stays near the spot. A "Reset view" button (zoom bar) flies back to the arrival
+// view, and if the reef stays out of the picture for 1.5 s a small "Lost the reef? Reset view" line offers the same.
+controls.maxPolarAngle = 85 * Math.PI / 180;
+function resetView() {
+  if (!cur) return;
+  if (BEACH.active) setBeachActive(false);
+  ARRIVE.fly = null; ARRIVE.t0 = 0;
+  flyTo(cur.cfg.reef ? arrivalView() : cur.cfg.views.far);
+  lostEl.hidden = true; LOST.since = 0;
+}
+const lostEl = document.getElementById('lost-cue'), LOST = { since: 0, t: 0 }, lostV = new THREE.Vector3();
+document.getElementById('zb-reset').onclick = resetView;
+document.getElementById('lost-reset').onclick = resetView;
+function keepNear(now) {                             // every frame, reef layers: the limits above, and the lost check
+  if (!cur || !cur.cfg.reef || EXIT.gone) { lostEl.hidden = true; return; }
+  const r = exitRange();
+  if (!fly) {
+    if (camMode === 'fly') {
+      const p = camera.position; if (p.y < 1) p.y = 1;
+      const dx = p.x - r.cx, dz = p.z - r.cz, d = Math.hypot(dx, dz), lim = r.start * 0.9;
+      if (d > lim) { p.x = r.cx + dx * lim / d; p.z = r.cz + dz * lim / d; }
+    } else {
+      const t = controls.target, dx = t.x - r.cx, dz = t.z - r.cz, d = Math.hypot(dx, dz), lim = r.start * 0.5;
+      if (d > lim) { const k = lim / d; camera.position.x -= dx * (1 - k); camera.position.z -= dz * (1 - k); t.x = r.cx + dx * k; t.z = r.cz + dz * k; }
+    }
+  }
+  if (now - LOST.t < 250) return; LOST.t = now;
+  if (!cur.lostAt) cur.lostAt = arrivalView().target.clone();
+  lostV.copy(cur.lostAt).project(camera);
+  const lost = !fly && !ARRIVE.pending && !BEACH.active && (lostV.z > 1 || Math.abs(lostV.x) > 1.1 || Math.abs(lostV.y) > 1.1);
+  if (!lost) { LOST.since = 0; if (!lostEl.hidden) lostEl.hidden = true; return; }
+  if (!LOST.since) LOST.since = now;
+  if (now - LOST.since > 1500 && lostEl.hidden) lostEl.hidden = false;
+}
+
 // ---------- 7. Loop ----------
 let frame = 0;
 function animate(now) {
@@ -1670,7 +1810,9 @@ function animate(now) {
 }
 function drawFrame(now) {                          // one frame (also the debug hook __viewer.tick, for stepping a hidden tab)
   stepFly(now);
-  if (camMode === 'fly') stepFree(now); else controls.update();
+  if (camMode === 'fly') stepFree(now);
+  else { const a = arriving(); if (controls.enabled === a) controls.enabled = !a; controls.update(); }   // round 4: orbit input waits for the arrival
+  keepNear(now);                                   // dad 2026-11-23 night (6g)
   zoomFrame(now);
   updateSwell(now);
   updateBW(now);
@@ -1700,7 +1842,7 @@ const wantLayer = new URLSearchParams(location.search).get('layer');
     ARRIVE.pending = { layer: wantLayer, h: num('h', 0), p: num('p', 45), d: num('d', 0) };
     fadeEl.style.opacity = 1;
   }
-  if (q.has('from')) { ['from', 'd', 'h', 'p'].forEach(k => q.delete(k)); history.replaceState(history.state, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); }
+  if (q.has('from')) { ['from', 'd', 'h', 'p', 'profile'].forEach(k => q.delete(k)); history.replaceState(history.state, '', location.pathname + (q.toString() ? '?' + q : '') + location.hash); }
 }
 ([...layerBox.children].find(b => b.textContent === wantLayer) || layerBox.firstChild).click();
 if (wantLayer && LAYERS[wantLayer] && LAYERS[wantLayer].reef) {   // came from the globe to a reef spot: the first-visit intro names that spot, not the North Sea
@@ -1711,4 +1853,5 @@ if (wantLayer && LAYERS[wantLayer] && LAYERS[wantLayer].reef) {   // came from t
 }
 requestAnimationFrame(animate);
 // Debug hook (lets the browser console inspect the scene and test hover; harmless to leave in).
-window.__viewer = { ZB, ARRIVE, ARR, arrivalView, zoomSet, zoomMin, zoomMax, exitRange, get fly() { return fly; }, DATA_VERSION, LAYERS, tagFree, tick: drawFrame, renderer, BEACH, beachView, flySpot, setViewMode, bedHeightAt, marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js
+// gesture tour 2026-11-23 (late night): FLY and camMode for the tour's demos (tutorial.js)
+window.__viewer = { FLY, get camMode() { return camMode; }, ZB, ARRIVE, ARR, arrivalView, zoomSet, zoomMin, zoomMax, exitRange, get fly() { return fly; }, DATA_VERSION, LAYERS, tagFree, tick: drawFrame, resetView, LOST, renderer, BEACH, beachView, flySpot, setViewMode, bedHeightAt, marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js

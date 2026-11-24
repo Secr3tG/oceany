@@ -1,6 +1,6 @@
 import re, sys
 from pathlib import Path
-D = Path(__file__).resolve().parent
+D = Path("/Users/bennhvid/Mothership/products/Oceany/pieces/03-breaking-wave")
 src = (D / "case_porto_batel.py").read_text()
 i0 = src.index("CFG = dict(")
 i1 = src.index("_prof = None")

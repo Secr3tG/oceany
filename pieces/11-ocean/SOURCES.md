@@ -55,3 +55,10 @@ For each unlocked spot in `07-globe/regions.json`, the nearest **0.25° grid poi
 ## Downloads (all under 1 GB)
 - 2026-11-23 ~02:00-02:10 UTC: NOMADS byte ranges for the checks and builds above, about 25 MB in total (GFS 0.5° 00z f018/f021/f024 and 18z f006 wind; GFS-Wave 18z f003 and f006 fields). Only the snapshot in `data/` is kept; test copies live in the session scratchpad.
 - NDBC realtime text files 62144, 62145, 62146, 62121 and the active-stations list (a few KB, check only, not shipped).
+
+## Typical swells and Peniche reference snapshots (2026-11-23)
+| Used for | Source | Licence | Where |
+|---|---|---|---|
+| Typical winter swell at Supertubos, Guéthary, Hossegor (and the Peniche reference snapshots in `pieces/02-reefs/data`) | NOAA NCEP GFS-Wave (WAVEWATCH III) 0.25°, from the NOAA archive on AWS: https://noaa-gfs-bdp-pds.s3.amazonaws.com/ (`gfs.YYYYMMDD/CC/wave/gridded/`) | US Government work, public domain | `build_typical_swell.py`, `data/typical_swell.json` |
+
+Replaces Open-Meteo (non-commercial free tier). Period labels: same open point as above (peak vs mean).

@@ -32,6 +32,10 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: false });   // MSA
 // terrain for fewer tiles in the cache (terrain.js lite). Dot sizes are set in css px, so the look stays the same, only cheaper.
 const LITE = (() => { const q = new URLSearchParams(location.search).get('lite'); if (q === '1' || q === '0') return q === '1';
   return matchMedia('(pointer: coarse)').matches || Math.min(screen.width, screen.height) < 500; })();
+// dad 2026-11-23 night (item 7, approved): one device switch for both pages. 'phone' = LITE: no layers on at first load
+// except hurricanes, half the star field (the brightest half), card-only way into 3D (a pinch never opens it), the lite
+// terrain budgets above; dots are never thinned. 'desktop' = everything. The viewer gets it as ?profile= (enterSpot).
+const PROFILE = LITE ? 'phone' : 'desktop';
 // phone 2026-11-23 late: the LITE cap 1.5 → 2 (same as desktop). At 1.5 a 3× iPhone stretched every frame 2×, which with
 // the later tile split below read as soft blobs at Peniche; 390×844 at 2× is still a quarter of a desktop's pixels.
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -413,6 +417,7 @@ function onWheel(e) {
   // at the zoom limit each wheel tick inward pushes at least like a + click (a mouse notch alone was ~0.1 of the 0.9
   // needed and drained between slow ticks, so the wheel never entered the spot viewer)
   if (px < 0 && zoom.target <= altMin() * 1.02) ask = Math.min(ask, altMin() * Math.exp(-0.32));
+  ENTER.wheelT = e.ctrlKey ? -1e9 : performance.now(); ENTER.wheelPx = px;   // dad 2026-11-23 night: a wheel fills the card's open bar (enterAsk); a trackpad pinch (ctrlKey) never does
   zoom.target = askAlt(ask);
   wheelAnchor(e);
 }
@@ -579,7 +584,12 @@ function skyFrame(now) {
   if (starsLine.textContent !== txt) starsLine.textContent = txt;
 }
 fetch('./assets/stars.bin').then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error('HTTP ' + r.status))).then(b => {
-  const f = new Float32Array(b), n = f.length / 4, pos = new Float32Array(3 * n), col = new Float32Array(3 * n), sz = new Float32Array(n);
+  let f = new Float32Array(b);
+  if (PROFILE === 'phone') {                         // dad 2026-11-23 night: phones draw the brightest half (lowest magnitude V)
+    const all = f, idx = Array.from({ length: all.length / 4 }, (_, i) => i).sort((p, q) => all[4 * p + 2] - all[4 * q + 2]).slice(0, Math.ceil(all.length / 8));
+    f = new Float32Array(4 * idx.length); idx.forEach((i, k) => f.set(all.subarray(4 * i, 4 * i + 4), 4 * k));
+  }
+  const n = f.length / 4, pos = new Float32Array(3 * n), col = new Float32Array(3 * n), sz = new Float32Array(n);
   const blue = [0.72, 0.82, 1.0], white = [1.0, 0.98, 0.94], red = [1.0, 0.78, 0.58];
   for (let i = 0; i < n; i++) {
     const ra = f[4 * i] * D2R, de = f[4 * i + 1] * D2R, v = f[4 * i + 2], bv = f[4 * i + 3];
@@ -691,7 +701,7 @@ for (const r of regions) {
   r.place = (r.note || '').split(/[,.]/)[0].trim();
   r.label = document.createElement('div');
   r.label.className = 'lbl ' + r.status; r.label.textContent = r.name;
-  r.label.onclick = () => r.cl ? zoomCluster(r.cl) : pickRegion(r);
+  r.label.onclick = () => tapSpot(r);   // dad 2026-11-23 night: a card at the name (was: fly down / zoom the cluster)
   labelBox.appendChild(r.label);
 }
 // every label: hover or keyboard focus names and highlights its marker; Enter picks it
@@ -699,7 +709,7 @@ for (const r of regions) {
   const L = r.label; L.tabIndex = 0; L.setAttribute('role', 'button');
   L.onmouseenter = L.onfocus = () => { r.hover = r.lblHover = true; };
   L.onmouseleave = L.onblur = () => { r.hover = r.lblHover = false; };
-  L.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickRegion(r); } };
+  L.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tapSpot(r); } };   // dad 2026-11-23 night
 }
 
 // ---------- side list: own spots, then the wanted spots with a filter by kind and a count ----------
@@ -837,15 +847,25 @@ addEventListener('pointerdown', e => { if (card.style.display === 'block' && !ca
 let flight = null, follow = null, picked = null;
 function pickRegion(r) {
   if (flight) return;
+  popClose();                                         // dad 2026-11-23 night
   picked = r;
   releaseFollow();
   if (r.status === 'unlocked' && r.link) {          // UX 2026-11-23: down through the terrain to ~15 km, then stop there; the
     // "Open <spot>" button (enterFrame) offers the viewer, nothing opens it by itself
     if (!terrain.enabled && !terrainOff) { terrainBox.checked = true; setTerrain(true); }
     if (spin.on) setSpin(false); spin.k = 0;         // a spinning globe (and its eased-out speed) carried the landing ~170 km past the spot
-    flyTo(r, null, RADIUS + (terrain.enabled ? 0.0024 : 0.18), { extra: terrain.enabled ? 1400 : 0 });
+    flyTo(r, () => popOpen(r), RADIUS + (terrain.enabled ? 0.0024 : 0.18), { extra: terrain.enabled ? 1400 : 0 });   // dad 2026-11-23 night: lands with its card open
   }
   else { showCard(r); flyTo(r, null, RADIUS + Math.min(1.2, view.alt)); }   // ease to it: 1.2 radii up from further out, else at your zoom
+}
+// dad 2026-11-23 night: a click or tap on a name or marker. An unlocked spot (or a cluster with one) opens its card right
+// there (POP below) and the globe stays still; anything else does what it did (wanted cards, flights).
+function tapSpot(r) {
+  if (flight) return;
+  const cl = r.cl && !r.clSplit ? r.cl : null;
+  if (cl) { if (cl.members.some(m => m.status === 'unlocked' && m.link)) popOpen(cl.lead, cl); else zoomCluster(cl); return; }
+  if (r.status === 'unlocked' && r.link) { picked = r; popOpen(r); return; }
+  popClose(); pickRegion(r);
 }
 // ---------- zoom-in hand-off to the seafloor viewer (the mirror of the viewer's zoom-out; see the arrival code below) ----------
 // UX 2026-11-23: the hand-off is offered, never automatic. Near an unlocked spot (within max(20 km, 8% of the camera
@@ -876,6 +896,7 @@ function enterAsk(a) {                                // from askAlt: an input a
   // UX 2026-11-23 (first-visitor feedback: "it jumped me to all kinds of screens"): zooming on past the limit never opens
   // the viewer by itself any more; it only nudges the "Open <spot>" button (enterFrame), which the visitor taps.
   ENTER.nudge = performance.now();
+  popPush(r);                                         // dad 2026-11-23 night: desktop wheel, with the card's bar as the cue
 }
 function enterCover() {
   if (!ENTER.cover) {
@@ -886,11 +907,19 @@ function enterCover() {
   return ENTER.cover;
 }
 function enterSpot(r) {
+  if (TOUR.on) {                                      // Benn 2026-11-23: a full bar or Open in 3D always acts; during the tour it ends the tour and goes
+    // r3 (Benn: the tour "didn't keep on when I left reef view"): the tour ends quietly here (layers put back) and leaves a
+    // marker: the viewer runs its own gesture tour at once, and back on the globe this one carries on at the next step
+    // round 4: one key { page, step, next } (tour.js tourKey): the reef tour starts at its step 0, the globe resumes at next
+    const nx = TOUR.g && TOUR.g.on ? TOUR.g.step + 1 : null;
+    tourEnd();
+    if (nx != null) try { sessionStorage.setItem('oceany-tour', JSON.stringify({ page: 'viewer', step: 0, next: nx, profile: PROFILE, t: Date.now() })); } catch (e) { /* storage blocked: no carrying on */ }
+  }
   if (ENTER.gone) return;
   ENTER.gone = true;
   saveState();
   const h = Math.round(((view.heading / D2R) % 360 + 360) % 360), p = Math.round(view.pitch / D2R);
-  const q = new URLSearchParams({ from: 'globe', d: Math.round(view.alt * 6371000), h, p });
+  const q = new URLSearchParams({ from: 'globe', d: Math.round(view.alt * 6371000), h, p, profile: PROFILE });   // dad 2026-11-23 night: profile
   // If Back reloads this page instead of restoring it, it arrives low over the spot and eases out (no bounce back in)
   const back = new URLSearchParams(location.search);
   Object.entries({ from: r.id, at: r.lat + ',' + r.lon, d: Math.round(Math.max(view.alt, altMin() * 3) * 6371000), h, p }).forEach(([k, v]) => back.set(k, v));
@@ -898,6 +927,103 @@ function enterSpot(r) {
   const c = enterCover(); c.style.transition = 'opacity .45s ease'; c.style.opacity = '1';
   setTimeout(() => { location.href = r.link + (r.link.includes('?') ? '&' : '?') + q; }, 470);
 }
+// ---------- dad 2026-11-23 night: the spot card at the name ----------
+// Benn's dad (desktop iMac): the bottom "Open <spot> in 3D" button was far from the spot and hid itself as the pointer
+// moved down to it (it followed whichever spot was within 90 px of the pointer), so it "ran away". Now a click or tap on
+// an unlocked spot's name (or marker) opens a small card AT the name: "Open in 3D", plus "Fly down to it" from far out;
+// a cluster's card lists each spot. The card follows its name and nothing turns the globe while it is open (spin waits).
+// On desktop, zooming close to a spot opens its card by itself (POP.auto), and that card stays on its spot until you zoom
+// back out, close it or click another. One rule for entering 3D: only from the card. Click "Open in 3D", or, on desktop,
+// keep scrolling in past the closest zoom: the card's bar fills (about four mouse notches) and opens when full. A pinch
+// never opens it; phones also keep the bottom button.
+const POP = { el: null, r: null, cl: null, auto: false, t0: 0, push: 0, pushT: 0, bar: null, dismissed: null };
+const TOUR = { on: false };                           // the start tour (end of file); declared here because spinFrame reads it
+const POP_NEAR = () => Math.max(altMin() * 2.5, 0.03);   // the "close to a spot" range (same as the bottom button's)
+function popEl() {
+  if (POP.el) return POP.el;
+  const el = POP.el = document.createElement('div'); el.id = 'spot-pop'; el.setAttribute('role', 'dialog'); el.hidden = true;
+  el.addEventListener('wheel', e => {                 // a wheel over the card zooms on toward its spot (and fills the bar)
+    if (POP.r) Object.assign(STICK, { r: POP.r, x: e.clientX, y: e.clientY, t: performance.now() });
+    onWheel(e); spinPause();
+  }, { passive: false });
+  document.body.appendChild(el);
+  return el;
+}
+function popOpen(r, cl = null, auto = false) {
+  if (!r || ENTER.gone) return;
+  const el = popEl();
+  Object.assign(POP, { r, cl, auto, t0: performance.now(), push: 0, pushT: 0, side: null });
+  el.textContent = '';
+  const add = (tag, cls, txt) => { const d = document.createElement(tag); if (cls) d.className = cls; if (txt) d.textContent = txt; el.appendChild(d); return d; };
+  const x = add('button', 'sp-x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.onclick = () => popClose(true);
+  const name = cl ? clusterName(cl) : r.name;
+  add('div', 'sp-name', name); el.setAttribute('aria-label', name);
+  const list = cl ? cl.members.filter(m => m.status === 'unlocked' && m.link) : [r];
+  for (const m of list) {
+    const b = add('button', 'sp-open', (cl ? 'Open ' + m.name + ' in 3D' : 'Open in 3D') + ' →'); b.type = 'button';
+    b.title = 'Open the 3D sea-floor viewer for ' + m.name; b.onclick = () => { popClose(); enterSpot(m); };
+  }
+  if (cl) { const z = add('button', 'sp-more', 'Zoom in closer'); z.type = 'button'; z.onclick = () => { popClose(); zoomCluster(cl); }; }
+  else if (!auto && view.alt > 0.02) { const f = add('button', 'sp-more', 'Fly down to it'); f.type = 'button'; f.onclick = () => { popClose(); pickRegion(r); }; }
+  POP.bar = null;
+  if (!LITE && !cl) {                                 // desktop: the wheel way in, said before it can happen
+    const c = add('div', 'sp-cue'); c.append('Or keep scrolling in to open it. ');
+    POP.bar = document.createElement('i'); c.appendChild(POP.bar);
+  }
+  el.hidden = false; spin.k = 0; spinPause();
+  const w = document.getElementById('welcome'); if (w && !w.hidden) { w.hidden = true; store.set('oceany-globe-welcome-v1', '1'); }   // started on their own
+  popPlace();
+}
+function popClose(byHand) {
+  if (!POP.r) return;
+  if (byHand && POP.auto) POP.dismissed = POP.r;      // closed by hand: the zoom-close card stays shut until you zoom out
+  POP.r = POP.cl = null; POP.auto = false; POP.push = 0;
+  if (POP.el) POP.el.hidden = true;
+  spinPause();
+}
+function popPlace() {                                 // under the spot's name (above it near the bottom), inside the screen
+  const el = POP.el, r = POP.cl ? POP.cl.lead : POP.r;
+  if (!el || !r) return;
+  if (!r.pos || !facing(r) || !inFront(r.pos)) { if (!flight) popClose(); return; }
+  { const [sx, sy] = screenOf(r.pos); if (sx < -40 || sy < -40 || sx > innerWidth + 40 || sy > innerHeight + 40) { if (!flight) popClose(); return; } }   // moved off screen
+  let x, y0, y1;
+  const L = r.label && r.label.classList.contains('show') ? r.label.getBoundingClientRect() : null;
+  // centred on the marker, not the name: a hovered name shifts sideways, and the card must not move while you aim at it
+  let my; [x, my] = screenOf(r.markAt || r.pos);
+  if (L && L.width) { y0 = Math.min(L.top, my - 6); y1 = Math.max(L.bottom, my + 6); } else { y0 = my - 8; y1 = my + 8; }
+  const w = el.offsetWidth, h = el.offsetHeight, m = 8;
+  // below the name, else above, right or left: the first place that covers no other spot's name (a neighbour stays clickable)
+  const others = [...labelBox.querySelectorAll('.lbl.show')].filter(e => e !== (r.label)).map(e => e.getBoundingClientRect());
+  const fit = (l, t) => [Math.max(m, Math.min(innerWidth - w - m, l)), Math.max(56, Math.min(innerHeight - h - m, t))];
+  const tries = [fit(x - w / 2, y1 + 8), fit(x - w / 2, y0 - 8 - h), fit(x + 24, (y0 + y1) / 2 - h / 2), fit(x - 24 - w, (y0 + y1) / 2 - h / 2)];
+  const hits = ([l, t]) => others.some(o => l < o.right && l + w > o.left && t < o.bottom && t + h > o.top) || (y1 > t && y0 < t + h && x > l && x < l + w);
+  const side = POP.atR === r && POP.side != null && !hits(tries[POP.side]) ? POP.side : Math.max(0, tries.findIndex(p => !hits(p)));
+  POP.side = side; POP.atR = r; POP.at = tries[side];
+  el.style.left = Math.round(POP.at[0]) + 'px'; el.style.top = Math.round(POP.at[1]) + 'px';
+}
+// every frame (from enterFrame): place the card; on desktop open or close the zoom-close card. near: the unlocked spot
+// the bottom button would offer (or null).
+function popNear(near, now) {
+  const lim = POP_NEAR();
+  if (POP.dismissed && view.alt > lim * 1.3) POP.dismissed = null;
+  if (!LITE && !flight && !follow && !arrival) {
+    if (POP.auto && view.alt > lim * 1.3) popClose();                       // zoomed back out: the zoom-close card goes
+    else if (!POP.r && near && near !== POP.dismissed && view.alt < lim) popOpen(near, null, true);
+  }
+  if (!POP.r) return;
+  if (POP.push > 0 && now - POP.pushT > 1200) POP.push = Math.max(0, POP.push - 0.03);   // stopped scrolling: the bar drains
+  if (POP.bar) POP.bar.style.width = Math.round(100 * Math.min(1, POP.push)) + '%';
+  popPlace();
+}
+function popPush(r) {                                 // from enterAsk: an input asked past the closest zoom near spot r
+  const now = performance.now();
+  if (LITE || now - (ENTER.wheelT || -1e9) > 60) return;   // the wheel only: a pinch, + or the slider never opens 3D
+  if (!POP.r || POP.cl) { if (r.status === 'unlocked' && r.link && r !== POP.dismissed) popOpen(r, null, true); return; }   // the cue shows first
+  if (now - POP.t0 < 500) return;                     // the card has to be on screen before the wheel counts
+  POP.push += Math.min(0.26, Math.max(0.04, Math.abs(ENTER.wheelPx || 100) / 400)); POP.pushT = now;
+  if (POP.push >= 1) { const t = POP.r; popClose(); enterSpot(t); }
+}
+addEventListener('keydown', e => { if (e.key === 'Escape') popClose(true); });
 slider.addEventListener('keydown', e => {             // at the top the slider cannot move: the arrow keys still push on
   if (['ArrowUp', 'ArrowRight', 'PageUp', 'End'].includes(e.key) && +slider.value >= S_MAX) askAlt(altMin() * Math.exp(-0.3));
 });
@@ -924,7 +1050,9 @@ function enterFrame(now, dt) {                        // every frame: the "Open 
     const t = 'Open ' + r.name + ' in 3D \u2192';
     if (ENTER.cue.textContent !== t) { ENTER.cue.textContent = t; ENTER.cue.title = 'Open the 3D sea-floor viewer for ' + r.name; }
   }
-  if (ENTER.cue.hidden === ok) ENTER.cue.hidden = !ok;
+  popNear(ok ? r : null, now);                        // dad 2026-11-23 night: on desktop the card at the name replaces the bottom button
+  const showCue = ok && LITE && POP.r !== r;         // phones keep the bottom button (thumb reach) unless its card is open; desktop uses the card
+  if (ENTER.cue.hidden === showCue) ENTER.cue.hidden = !showCue;
   const nudge = ok && now - (ENTER.nudge || -1e9) < 900;   // zooming on past the limit: the button glows, it does not open
   if (ENTER.cue.classList.contains('nudge') !== nudge) ENTER.cue.classList.toggle('nudge', nudge);
 }
@@ -972,7 +1100,7 @@ let drag = null;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 canvas.addEventListener('pointerdown', e => {
   if (flight) return;
-  drag = { x: e.clientX, y: e.clientY, id: e.pointerId, tilt: e.button === 2 || e.shiftKey || e.altKey, moved: false };
+  drag = { x: e.clientX, y: e.clientY, id: e.pointerId, tilt: e.button === 2 || e.shiftKey || e.altKey || (e.ctrlKey && e.pointerType === 'mouse'), moved: false };   // round 4: Mac Ctrl-click drag (trackpad) tilts too
   try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* synthetic or already-ended pointer */ }
 });
 canvas.addEventListener('pointermove', e => {
@@ -1305,7 +1433,7 @@ const tmp = new THREE.Vector3();
 function screenOf(v) { tmp.copy(v).project(camera); return [(tmp.x + 1) / 2 * innerWidth, (1 - tmp.y) / 2 * innerHeight]; }
 function facing(r) { return r.pos.dot(tmp.copy(camera.position).sub(r.pos)) > 0; }   // on the camera's side of the globe
 let down = null;
-canvas.addEventListener('pointerdown', e => { down = e.button === 0 && !e.shiftKey && !e.altKey ? [e.clientX, e.clientY] : null; });
+canvas.addEventListener('pointerdown', e => { down = e.button === 0 && !e.shiftKey && !e.altKey && !e.ctrlKey ? [e.clientX, e.clientY] : null; });
 canvas.addEventListener('pointerup', e => {
   if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;   // a drag, not a click
   if (e.pointerType === 'touch' && touchMulti) return;   // part of a two-finger gesture
@@ -1315,7 +1443,7 @@ canvas.addEventListener('pointerup', e => {
     for (const r of regions) {
       if (!r.label || !r.label.classList.contains('show')) continue;
       const b = r.label.getBoundingClientRect();
-      if (e.clientX > b.left - 8 && e.clientX < b.right + 8 && e.clientY > b.top - 8 && e.clientY < b.bottom + 8) { if (r.cl) zoomCluster(r.cl); else pickRegion(r); return; }
+      if (e.clientX > b.left - 8 && e.clientX < b.right + 8 && e.clientY > b.top - 8 && e.clientY < b.bottom + 8) { tapSpot(r); return; }   // dad 2026-11-23 night
     }
   }
   let best = null, bd = e.pointerType === 'touch' ? 28 : 18;
@@ -1324,7 +1452,7 @@ canvas.addEventListener('pointerup', e => {
     const [x, y] = screenOf(r.markAt), d = Math.hypot(x - e.clientX, y - e.clientY);
     if (d < bd) { bd = d; best = r; }
   }
-  if (best) { if (best.cl) zoomCluster(best.cl); else pickRegion(best); }
+  if (best) tapSpot(best); else popClose(true);   // dad 2026-11-23 night: a marker opens its card; a click on the globe closes it
 });
 canvas.addEventListener('pointermove', e => {
   let hit = null, bd = 22;
@@ -1353,7 +1481,7 @@ const NOTICE = {
   liveIds: new Set(['hurricanes', 'tornado-live', 'aurora', 'quakes-live', 'snow', 'wind', 'waves', 'swell']),  // live data and model layers (the SPC tornado archive is history)
   // the on-globe line under the standing line: live feeds and model output (hurricanes are an IBTrACS replay of past
   // tracks, so their line stays in the panel only)
-  globeIds: new Set(['tornado-live', 'aurora', 'quakes-live', 'snow', 'wind', 'waves', 'swell']),
+  globeIds: new Set(['hurricanes', 'tornadoes', 'tornado-live', 'aurora', 'quakes-live', 'snow', 'wind', 'waves', 'swell']),
 };
 {
   const a = document.getElementById('notice-standing');
@@ -1536,7 +1664,7 @@ async function loadOne(ent, item, row, box, txt) {
     if (!(obj instanceof THREE.Object3D)) throw new Error('createLayer did not return an Object3D');
     obj.userData.layerId = ent.id;
     scene.add(obj); layers.push(obj);
-    box.disabled = false; box.checked = restored && restored.layers && ent.id in restored.layers ? restored.layers[ent.id] : ent.on === true; obj.visible = box.checked; txt.textContent = ent.label;   // layers.json 'on': starts shown
+    box.disabled = false; box.checked = restored && restored.layers && ent.id in restored.layers ? restored.layers[ent.id] : ent.on === true && (PROFILE === 'desktop' || ent.id === 'hurricanes'); obj.visible = box.checked; txt.textContent = ent.label;   // layers.json 'on': starts shown (dad 2026-11-23 night: on phones only hurricanes starts on; the rest is one tap in Layers)
     const refresh = (typeof obj.label === 'string' || typeof obj.status === 'string' || typeof obj.setMode === 'function')
       ? layerInfo(obj, item, box) : () => {};
     const extras = layerExtras(obj, item, box);
@@ -1644,6 +1772,9 @@ const SPIN_OFF_ALT = 1.0;
 function spinFrame(now, dt) {
   if (spin.on && view.alt < SPIN_OFF_ALT && zoom.target < SPIN_OFF_ALT) { setSpin(false); spin.k = 0; }
   const busy = !!(drag || flight || follow || arrival) || card.style.display === 'block' || now < spin.quietUntil;
+  // dad 2026-11-23 night: a spot under the pointer, an open spot card or the tour stops the turn at once, so names don't
+  // drift away while you aim at them
+  if (POP.r || TOUR.on || regions.some(q => q.hover)) { spin.k = 0; return; }
   const zoomK = smooth((Math.log(view.alt) - Math.log(SPIN_NONE)) / (Math.log(SPIN_FULL) - Math.log(SPIN_NONE)));
   const want = spin.on && !busy ? zoomK : 0;
   spin.k += (want - spin.k) * Math.min(1, dt * 1.5);  // eases in and out over about a second
@@ -1773,6 +1904,7 @@ const UHOLO_NEAR = 0.12;        // radii: an unlocked spot's hologram shows clos
 // cluster splits as you zoom in. Where the zoom limit stops it splitting (plain globe, spots a few km apart), the
 // members keep one marker but each gets its own label (clSplit). Clicking a cluster flies in until it splits.
 const CL_PX = 16;
+let CL_ID = 0;                                        // dad 2026-11-23 night: cluster identity across frames
 function clusterName(cl) {
   const m = cl.members, places = new Set(m.map(b => b.place));
   const p = places.size === 1 ? [...places][0] : '';
@@ -1782,20 +1914,24 @@ function clusterName(cl) {
 function clusterFrame() {
   const vis = [], cx = innerWidth / 2, cy = innerHeight / 2;
   for (const r of regions) {
+    r.wasLead = r.clLead; r.wasCl = r.cl && !r.clSplit ? r.cl.id : (r.clSplit ? r.clSplitId : 0);   // dad 2026-11-23 night: last frame's cluster
     r.cl = null; r.clLead = false; r.clSplit = false; r.nearPx = 1e9;
     if (r.wanted || r.status !== 'unlocked') continue;
     if (!(r.pos.dot(camDir) > 0.18 && facing(r) && inFront(r.pos))) continue;
     [r.sx, r.sy] = screenOf(r.markAt); vis.push(r);
   }
   for (const a of vis) for (const b of vis) if (a !== b) a.nearPx = Math.min(a.nearPx, Math.hypot(a.sx - b.sx, a.sy - b.sy));
-  vis.sort((a, b) => (b === picked) - (a === picked) || Math.hypot(a.sx - cx, a.sy - cy) - Math.hypot(b.sx - cx, b.sy - cy));
+  // dad 2026-11-23 night: on a phone pinch the lead (the member nearest the centre) kept swapping, so the one label jumped
+  // ~80 px between Supertubos and Porto Batel, and the cluster split and re-formed at the CL_PX edge. Last frame's lead
+  // now keeps the lead, and spots that were together stay together until 1.5 × CL_PX apart.
+  vis.sort((a, b) => (b === picked) - (a === picked) || (b.wasLead ? 1 : 0) - (a.wasLead ? 1 : 0) || Math.hypot(a.sx - cx, a.sy - cy) - Math.hypot(b.sx - cx, b.sy - cy));
   const atLimit = view.alt < altMin() * 1.6;
   for (const a of vis) {
     if (a.cl) continue;
-    const m = vis.filter(b => !b.cl && Math.hypot(a.sx - b.sx, a.sy - b.sy) < CL_PX);
+    const m = vis.filter(b => !b.cl && Math.hypot(a.sx - b.sx, a.sy - b.sy) < (a.wasCl && b.wasCl === a.wasCl ? CL_PX * 1.5 : CL_PX));
     if (m.length < 2) continue;
-    const cl = { members: m, lead: a };
-    for (const b of m) { b.cl = cl; b.clSplit = atLimit; }
+    const cl = { members: m, lead: a, id: a.wasCl || ++CL_ID };
+    for (const b of m) { b.cl = cl; b.clSplit = atLimit; b.clSplitId = cl.id; }
     a.clLead = true;
   }
   for (const r of regions) {
@@ -1822,6 +1958,7 @@ function frame(now) {
   northFrame(dt);
   zoomFrame(dt);
   enterFrame(now, dt);
+  if (TOUR.tick) TOUR.tick(now);                     // gesture tour 2026-11-23: its demo moves the camera here, before it is placed
   applyView(dt);
   zoomHold();
   followAim();
@@ -1953,23 +2090,80 @@ if (restored && restored.palette && restored.palette !== 'Ocean') {   // back fr
 // One line on what this is and one suggested first action (fly down to Supertubos), shown once per browser; any drag,
 // pinch or wheel on the globe also puts it away (the visitor has started on their own). Never shown on a return from the
 // viewer or a deep link.
-{
+// dad 2026-11-23 night: a third button, "Show me around", starts a short tour of the controls round the screen (never
+// forced), and the bar's "?" brings the welcome (and so the tour) back at any time.
+const touchUI = matchMedia('(pointer: coarse)').matches;
+function showWelcome(first) {
   const W_KEY = 'oceany-globe-welcome-v1', w = document.getElementById('welcome');
-  const qs = new URLSearchParams(location.search);
-  if (w && !store.get(W_KEY) && !qs.has('from') && !qs.has('at')) {
-    if (matchMedia('(pointer: coarse)').matches) document.getElementById('welcome-how').textContent = 'Drag to move. Pinch to zoom.';
-    w.hidden = false;
-    const done = () => { if (w.hidden) return; w.hidden = true; store.set(W_KEY, '1'); };
-    document.getElementById('welcome-close').onclick = done;
-    document.getElementById('welcome-go').onclick = () => {
-      done(); const r = regions.find(q => q.id === 'supertubos' && q.pos);
-      if (r) pickRegion(r);
-    };
-    canvas.addEventListener('pointerdown', done, { once: true });
-    canvas.addEventListener('wheel', done, { once: true, passive: true });
-  }
+  if (!w) return;
+  if (touchUI) document.getElementById('welcome-how').textContent = 'Drag to move. Pinch to zoom.';
+  w.hidden = false; popClose();
+  const done = () => { if (w.hidden) return; w.hidden = true; store.set(W_KEY, '1'); canvas.removeEventListener('pointerdown', done); canvas.removeEventListener('wheel', done); };
+  document.getElementById('welcome-close').onclick = done;
+  document.getElementById('welcome-go').onclick = () => {
+    done(); const r = regions.find(q => q.id === 'supertubos' && q.pos);
+    if (r) pickRegion(r);
+  };
+  const t = document.getElementById('welcome-tour'); if (t) t.onclick = () => { done(); tourStart(); };
+  canvas.addEventListener('pointerdown', done, { once: true });
+  canvas.addEventListener('wheel', done, { once: true, passive: true });
+  if (!first) { const g = document.getElementById('welcome-tour') || document.getElementById('welcome-go'); g.focus({ preventScroll: true }); }
 }
-window.__globe = { LITE, sky, frame, spin, setSpeed, THREE, renderer, terrain, scene, camera, view, zoom, setTerrain, perf, flyToStorm, get follow() { return follow; }, get flight() { return flight; }, regions, layers, latLonToVector3, pickRegion, earth, dotCount: N };
+{
+  const qs = new URLSearchParams(location.search);
+  if (!store.get('oceany-globe-welcome-v1') && !qs.has('from') && !qs.has('at')) showWelcome(true);
+  const h = document.getElementById('help-btn');
+  // on a phone (≤600 px) the one-row bar has no room left (it ends at the compass): "?" sits at the foot of the zoom column
+  if (h) { const mq = matchMedia('(max-width: 600px)'), place = () => { if (mq.matches) document.getElementById('zoom').appendChild(h); else document.getElementById('home-btn').after(h); }; place(); mq.addEventListener('change', place); }
+  if (h) h.onclick = () => { const w = document.getElementById('welcome'); if (w && !w.hidden) { w.hidden = true; store.set('oceany-globe-welcome-v1', '1'); } tourStart(); };
+  setTimeout(() => tourResume(), 0);                  // r3: the tour carries on after a visit to the viewer (defined below)   // gesture tour 2026-11-23: "?" (re)starts the tour
+}
+// gesture tour 2026-11-23 late night: the tour teaches HOW to move (Benn: "swipe like this to zoom, move here to move
+// this"). It lives in tour.js (loaded on first use): an animated cue on the globe itself, the camera moving with it as a
+// demo, then the visitor's turn with a "Nice" tick, then rings round the real controls. Started only from the welcome's
+// "Show me around" or "?". While it runs: spin waits (spinFrame), nothing opens the viewer (enterSpot, popPush), and
+// when it ends nothing carries the camera on: any pending zoom, pan or demo stops where the view is.
+const tourApi = { TOUR, PROFILE, view, zoom, pan, regions, POP, popOpen, popClose, tapSpot, syncTilt, clampAlt, pitchLimit,
+  setNorthEase: v => { northEase = v; }, busy: () => !!(flight || arrival),
+  // layer steps (Benn 2026-11-23): the panel, the layers, the followed storm and where the nearest storm is on screen
+  layers, openSection, get section() { const b = barBtns.find(x => x.getAttribute('aria-expanded') === 'true'); return b ? b.dataset.sec : null; },
+  get follow() { return follow; }, releaseFollow,
+  stormAt: () => {
+    const h = layers.find(l => l.userData.layerId === 'hurricanes' && l.visible); if (!h) return null;
+    for (const t of targetsOf(h)) {
+      const pos = latLonToVector3(t.lat, t.lon, RADIUS); if (!facing({ pos }) || !inFront(pos)) continue;
+      const [x, y] = screenOf(pos); if (x > 30 && y > 70 && x < innerWidth - 30 && y < innerHeight - 70) return [x, y, t.name];
+    }
+    return null;
+  },
+  ended: () => { TOUR.on = false; TOUR.tick = null; TOUR.tried = null; zoom.target = view.alt; zoom.cursor = null; pan.x = pan.y = 0; spin.k = 0; spinPause(); store.set('oceany-globe-welcome-v1', '1'); } };
+function tourStart(at = 0) {
+  popClose(); spin.k = 0; TOUR.on = true; TOUR.tried = null;
+  const go = () => { TOUR.tick = TOUR.g.tick; TOUR.g.start(at); };
+  if (TOUR.g) { go(); return; }
+  import('./tour.js?v=b51').then(m => { TOUR.g = m.globeTour(tourApi); go(); }).catch(e => { TOUR.on = false; console.error('Oceany globe: tour not loaded', e); });
+}
+// r3/round 4: the tour's key (tour.js tourKey, sessionStorage 'oceany-tour'). On load and on a restored page:
+// page 'viewer' = back from the reef by any route (zoom-out, browser Back, Back to globe at any step): carry on at
+// `next`; page 'globe' = a reload mid-tour: the same step. Either once the arrival flight has settled. The tour
+// rewrites the key at every step (onStep); only Skip, Escape or Done remove it.
+function tourResume() {
+  let m = null; try { m = JSON.parse(sessionStorage.getItem('oceany-tour')); } catch (e) { /* none */ }
+  if (!m) return;
+  const at = m.page === 'viewer' ? m.next : m.page === 'globe' ? m.step : NaN;
+  if (!Number.isFinite(at)) { if (m.page === 'viewer') try { sessionStorage.removeItem('oceany-tour'); } catch (e) { /* ignore */ } return; }   // a reef-only tour: nothing to carry on here
+  if (TOUR.g && TOUR.g.on && TOUR.g.step === at) return;   // a restored page whose tour is already there
+  const t0 = performance.now();
+  const wait = () => {
+    if ((flight || arrival) && performance.now() - t0 < 20000) { setTimeout(wait, 300); return; }
+    const w = document.getElementById('welcome'); if (w && !w.hidden) { w.hidden = true; store.set('oceany-globe-welcome-v1', '1'); }
+    tourStart(at);
+  };
+  setTimeout(wait, 800);
+}
+addEventListener('pageshow', e => { if (e.persisted) tourResume(); });
+function tourEnd() { if (TOUR.g && TOUR.g.on) TOUR.g.end(); else TOUR.on = false; }
+window.__globe = { LITE, sky, frame, spin, setSpeed, THREE, renderer, terrain, scene, camera, view, zoom, setTerrain, perf, flyToStorm, get follow() { return follow; }, get flight() { return flight; }, regions, layers, latLonToVector3, pickRegion, earth, dotCount: N, POP, popOpen, popClose, tapSpot, TOUR, tourStart, PROFILE };
 // ---------- offline (opt-in): ?offline=1 registers sw.js (app shell and terrain tiles kept for offline use); ?offline=0
 // unregisters it and deletes its caches. Without the parameter nothing changes (an earlier opt-in stays until ?offline=0).
 {

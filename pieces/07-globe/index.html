@@ -197,6 +197,23 @@
     #welcome button:hover, #welcome button:focus-visible { border-color: var(--open); outline: none; }
     @media (max-width: 600px) { #welcome { bottom: calc(64px + env(safe-area-inset-bottom, 0px)); left: 8px; right: 62px; width: auto; transform: none; } }
     #labels.following .lbl.show { opacity: .35; }
+    /* dad 2026-11-23 night: the spot card at the name (globe.js POP), the start tour and the bar's "?" */
+    #spot-pop { position: fixed; z-index: 8; min-width: 190px; max-width: min(300px, calc(100vw - 16px)); box-sizing: border-box; padding: 10px 12px 10px; border-radius: 12px;
+      background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid color-mix(in srgb, var(--open) 45%, transparent); backdrop-filter: blur(8px);
+      color: var(--ink); font: 13px/1.4 system-ui, sans-serif; box-shadow: 0 0 18px color-mix(in srgb, var(--open) 12%, transparent); }
+    #spot-pop[hidden] { display: none; }
+    #spot-pop .sp-name { font-weight: 600; color: var(--open); padding-right: 30px; margin-bottom: 8px; }
+    #spot-pop button { display: block; width: 100%; min-height: 40px; margin-top: 6px; padding: 0 14px; border-radius: 20px; font: 600 14px/1 system-ui, sans-serif; cursor: pointer;
+      background: none; border: 1px solid color-mix(in srgb, var(--dim) 45%, transparent); color: var(--ink); text-align: center; }
+    #spot-pop .sp-open { border-color: var(--open); color: var(--open); }
+    #spot-pop button:hover, #spot-pop button:focus-visible { border-color: var(--open); outline: none; box-shadow: 0 0 10px color-mix(in srgb, var(--open) 40%, transparent); }
+    #spot-pop .sp-x { position: absolute; top: 4px; right: 4px; width: 36px; min-height: 36px; margin: 0; padding: 0; border: none; font-size: 20px; color: var(--dim); }
+    #spot-pop .sp-cue { margin-top: 8px; color: var(--dim); font-size: 12px; }
+    #spot-pop .sp-cue i { display: block; height: 3px; width: 0; margin-top: 5px; border-radius: 2px; background: var(--open); box-shadow: 0 0 8px var(--open); transition: width .12s linear; }
+    @media (pointer: coarse) { #spot-pop button { min-height: 44px; } #spot-pop .sp-x { width: 44px; min-height: 44px; top: 0; right: 0; } }
+    /* gesture tour 2026-11-23: the tour (tour.js) brings its own styles (#gtour, cue canvas, rings) */
+    #bar #help-btn::before { display: none; }
+    #bar #help-btn { min-width: 14px; justify-content: center; border: 1px solid color-mix(in srgb, var(--dim) 45%, transparent); border-radius: 50%; padding: 3px 7px; }
     @keyframes live-pulse { 0%, 100% { text-shadow: 0 0 0 transparent; } 50% { text-shadow: 0 0 9px var(--open); } }
     .layer.live, #bar button.live { animation: live-pulse 3.2s ease-in-out infinite; }
     .live-note { font-size: 11px; color: var(--dim); margin: 2px 0 0 22px; }
@@ -277,6 +294,7 @@
     <button type="button" data-sec="view" aria-expanded="false" aria-controls="panel">View</button>
     <button type="button" data-sec="about" aria-expanded="false" aria-controls="panel">About</button>
     <button type="button" id="home-btn" title="Back to the whole Earth, north up">Home</button>
+    <button type="button" id="help-btn" aria-label="Show me around: how to move" title="Show me around: how to move, and where the controls are">?</button>
     <span class="gap" aria-hidden="true"></span>
     <button type="button" id="spin-btn" aria-pressed="false" title="Turn the globe, west to east, as the Earth turns">Spin</button>
     <span id="spin-speed-box" title="Speeds up the view only; data stays at the current time">
@@ -382,10 +400,10 @@
   <div id="welcome" role="dialog" aria-labelledby="welcome-what" hidden>
     <p id="welcome-what"><b>Oceany</b> draws the whole Earth in dots, from real land and sea-floor heights. The glowing names are surf reefs you can open in 3D.</p>
     <p class="w-how" id="welcome-how">Drag to move. Scroll or pinch to zoom.</p>
-    <div class="w-btns"><button type="button" id="welcome-go" class="primary">Fly down to Supertubos</button><button type="button" id="welcome-close">Look around first</button></div>
+    <div class="w-btns"><button type="button" id="welcome-go" class="primary">Fly down to Supertubos</button><button type="button" id="welcome-tour">Show me around</button><button type="button" id="welcome-close">Look around first</button></div>
   </div>
   <div id="hint">Drag to move; right-drag or shift-drag to tilt and turn; scroll, pinch or use the slider to zoom. Each dot is one point of ETOPO1 global relief (NOAA): ocean blue by depth; land coloured by height (olive low ground, brown uplands, grey-brown high plateaus, paler only on the highest peaks; the Antarctic and Greenland ice sheets blue-grey). Colour shows height, not vegetation or snow.</div>
   <script type="module" src="./fullscreen.js?v=f1"></script>
-  <script type="module" src="./globe.js?v=b44"></script>
+  <script type="module" src="./globe.js?v=b51"></script>
 </body>
 </html>

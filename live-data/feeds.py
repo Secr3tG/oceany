@@ -426,7 +426,9 @@ def gfswave_latest_run():
 def gfswave_region(region):
     """All steps of the newest cycle for one region: (cycle, lats, lons, [(valid datetime, {key: 2-D array})]).
     Files are cached under cache/gfswave/<cycle>/; a rerun for the same cycle makes no NOMADS calls."""
-    import grib2_simple
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pieces", "11-ocean"))
+    import grib2                      # the project's one GRIB2 reader (pieces/11-ocean/grib2.py)
     if region in _gfsw_mem:
         return _gfsw_mem[region]
     cyc = _gfsw_mem.get("_cycle") or gfswave_latest_run()
@@ -447,7 +449,7 @@ def gfswave_region(region):
                 fh.write(r.content)
             os.replace(path + ".part", path)
         fields, valid = {}, None
-        for m in grib2_simple.messages(open(path, "rb").read()):
+        for m in grib2.messages(open(path, "rb").read()):
             k = _GFSW_KEY.get((m["discipline"], m["category"], m["number"]) + ((241, int(m["surface"][1])) if m["surface"][0] == 241 else (1,)))
             if k:
                 fields[k] = m["values"]; valid = m["valid"]; lats, lons = m["lats"], m["lons"]

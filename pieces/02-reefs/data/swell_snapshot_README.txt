@@ -1,3 +1,8 @@
+NOTE 2026-11-23: swell_snapshot_peniche_2026-09.json and _2026-11.json were REBUILT from NOAA NCEP GFS-Wave (WAVEWATCH III, public domain)
+by pieces/11-ocean/build_typical_swell.py: 3-hourly (forecast hours 0 and 3 of each 6-hourly run) at the nearest 0.25 degree sea point to 39.375 N 9.458 W,
+from the NOAA archive on AWS (noaa-gfs-bdp-pds). The Open-Meteo originals (non-commercial licence) are replaced; the text below describes those originals and is
+kept only as a record of the tide notes (the IH tide section is still valid). The NOAA files have no sea_level_height_msl field.
+
 Request URL: https://marine-api.open-meteo.com/v1/marine?latitude=39.33&longitude=-9.45&hourly=wave_height,wave_period,wave_direction,swell_wave_height,swell_wave_period,swell_wave_peak_period,swell_wave_direction,wind_wave_height,wind_wave_period,wind_wave_direction&timezone=GMT&start_date=2026-11-10&end_date=2026-11-13
 Retrieved (UTC): 2026-11-11T22:52:42Z (sandbox clock; the task date was 2026-11-12, so treat this as the local-clock time of the pull)
 Grid point returned: latitude 39.291664, longitude -9.458328 (requested 39.33, -9.45; about 4 km offset); elevation 0 m

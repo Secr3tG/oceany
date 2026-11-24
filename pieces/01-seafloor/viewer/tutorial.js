@@ -220,12 +220,110 @@ const CSS = `
   #tut-offer .to-text b { display: none; }
 }`;
 
+// ---------- gesture tour 2026-11-23 (late night) ----------
+// Benn: the tour "didn't show HOW to use the controls". The first-use tour is now a short gesture tour (shared engine,
+// pieces/07-globe/tour.js): a cue on the reef shows the move, the camera moves with it, then the visitor tries it and gets
+// a "Nice"; then rings on Controls, Reset view and Back to globe. The challenges stay under "Guided tour and challenges".
+// Steps follow the camera actually in use: fly (desktop default on reefs: drag looks, wheel zooms, W A S D move) or
+// orbit (phone, or after Orbit / Fly: one finger or left-drag turns round the reef, pinch or wheel zooms, two fingers or
+// right-drag slide the view). Nothing is left moving when it ends.
+let GT = null;
+let TK = null;                                     // round 4: tour.js tourKey (one sessionStorage key across both pages)
+async function gestureTour(at = 0) {
+  if (!(await ready())) return;
+  // round 4: wait for the arrival from the globe, so the steps match the camera it ends in (fly on desktop reefs)
+  for (let i = 0; i < 300 && viewer() && (viewer().fly || viewer().ARRIVE.pending); i++) await sleep(100);
+  if (S.open) close();
+  if (!GT) {
+    const { makeTour, tourKey } = await import('../../07-globe/tour.js?v=b51'); TK = tourKey;
+    const V = viewer(), C = V.camera, O = V.controls, B = {}, q = sel => document.querySelector(sel);
+    const touchy = () => new URLSearchParams(location.search).get('profile') === 'phone' || matchMedia('(hover: none) and (pointer: coarse)').matches;
+    const centre = () => [innerWidth / 2, innerHeight * 0.45];
+    const reef = () => !!(V.cur && V.cur.cfg && V.cur.cfg.reef);
+    const dist = () => reef() && V.ZB.d ? V.ZB.d : C.position.distanceTo(O.target);
+    const dir = () => { const d = C.position.clone().sub(O.target); return d.normalize(); };
+    const look = () => { const d = C.position.clone(); C.getWorldDirection(d); return d; };
+    const orbitBy = a => { const off = C.position.clone().sub(O.target), c = Math.cos(a), s = Math.sin(a); C.position.set(O.target.x + off.x * c + off.z * s, C.position.y, O.target.z - off.x * s + off.z * c); C.lookAt(O.target); };
+    const steps = () => {
+      const fly = V.camMode === 'fly', touch = touchy();
+      const turn = fly ? {
+        text: 'Drag to look around.', cue: 'drag', anchor: centre,
+        demoStart: () => { B.y0 = V.FLY.yaw; }, demo: p => { V.FLY.yaw = B.y0 - 0.35 * p; },
+        arm: () => { B.l0 = look(); }, check: I => I.drag1 && look().angleTo(B.l0) > 5 * Math.PI / 180, big: () => look().angleTo(B.l0) > 15 * Math.PI / 180, nice: 'The view turns; the camera stays put.',
+      } : {
+        text: touch ? 'Drag one finger to turn round the reef.' : 'Drag to turn round the reef.', cue: touch ? 'touch1' : 'drag', anchor: centre,
+        demo: (p, dp) => orbitBy(-2 * Math.PI * dp * 100 / innerHeight),
+        arm: () => { B.d0 = dir(); }, check: I => (I.drag1 || I.touch1) && dir().angleTo(B.d0) > 6 * Math.PI / 180, big: () => dir().angleTo(B.d0) > 20 * Math.PI / 180, nice: 'It turns round the point in the middle of the screen.',
+      };
+      const zoom = {
+        text: touch ? 'Pinch two fingers apart to zoom in, together to zoom out.' : 'Scroll to zoom in and out.', cue: touch ? 'pinch' : 'wheel', anchor: centre,
+        demoStart: () => { B.z0 = dist(); B.p0 = C.position.clone(); },
+        demo: p => { if (reef()) V.zoomSet(B.z0 * Math.exp(-0.4 * p)); else C.position.copy(O.target).addScaledVector(B.p0.clone().sub(O.target), Math.exp(-0.4 * p)); },
+        arm: () => { B.zd = dist(); }, check: I => (I.wheel || I.touch2) && Math.abs(Math.log(dist() / B.zd)) > 0.1, big: () => Math.abs(Math.log(dist() / B.zd)) > 0.35,
+        nice: 'Zooming out far enough leads back to the globe.',
+      };
+      const move = fly ? {
+        text: 'W A S D move you; E goes up, Q down.', cue: 'keys', anchor: centre,
+        demoStart: () => { B.m0 = C.position.clone(); B.f = look().setY(0).normalize(); B.k = Math.max(20, dist() * 0.15); },
+        demo: (p, dp) => { C.position.addScaledVector(B.f, B.k * dp); },
+        arm: () => { B.m1 = C.position.clone(); }, check: I => [...I.keys].some(k => /^Key[WASDQEC]$|^Space$/.test(k)) && C.position.distanceTo(B.m1) > 1, big: () => C.position.distanceTo(B.m1) > 8,
+        nice: 'Shift goes fast. Orbit / Fly in Controls switches to turning round the reef.',
+      } : {
+        text: touch ? 'Drag two fingers to slide the view.' : 'Right-drag or Shift-drag to slide the view.', cue: touch ? 'pan2' : 'rdragx', anchor: centre,   // round 4: trackpads
+        demoStart: () => { B.r = new C.position.constructor().setFromMatrixColumn(C.matrixWorld, 0); B.k = 2 * dist() * Math.tan(C.fov * Math.PI / 360) / innerHeight; },
+        demo: (p, dp) => { const v = B.r.clone().multiplyScalar(-100 * dp * B.k); C.position.add(v); O.target.add(v); },
+        arm: () => { B.t0 = O.target.clone(); B.td = dist(); }, check: I => (I.drag2 || I.touch2) && O.target.distanceTo(B.t0) > 0.03 * B.td, big: () => O.target.distanceTo(B.t0) > 0.1 * B.td,
+        nice: 'The reef stays near the middle: the view cannot slide far away.',
+      };
+      return [turn, zoom, move,
+        { text: 'Controls: layers, the swell, Orbit or Fly, and the guided tour with challenges.', rings: () => [[q('#panel-toggle')]] },
+        { text: 'Reset view brings the reef back if you get lost.', rings: () => [[q('#zb-reset')]], enter: () => q('#zoom') && q('#zoom').classList.remove('faded'), leave: () => q('#zoom') && q('#zoom').classList.add('faded') },
+        // round 4: handed over from the globe tour, the last button is "Back to globe" (it presses the real one and the
+        // globe carries on); leaving by any other route carries on there too. Only Skip or Escape end the whole tour.
+        fromGlobeTour() ? { text: '"Back to globe" carries on the tour on the globe.', rings: () => [[q('#to-globe')]], nextLabel: 'Back to globe', onNext: () => q('#to-globe').click() }
+          : { text: '"Back to globe" returns to the whole Earth.', rings: () => [[q('#to-globe')]] },
+      ];
+    };
+    let rot = false;
+    GT = makeTour({
+      steps, accent: '#5ff2ff',
+      avoid: ['#top-bar', '#zoom', '#standing', '#panel', '#src-box', '#tut-offer', '#lost-cue', '#zoom-note'],
+      busy: () => !!V.fly,
+      onStep: i => { const m = TK.get(); TK.set({ ...(m && m.page === 'viewer' ? m : {}), page: 'viewer', step: i }); },   // round 4: a reload carries on here
+      onEnd: () => { if (rot) { O.autoRotate = true; rot = false; } V.FLY.vel.set(0, 0, 0); if (V.ZB.active) V.ZB.target = V.ZB.d; },
+    });
+    const st = GT.start;
+    GT.start = i => { if (O.autoRotate) { O.autoRotate = false; rot = true; } st(i); };   // auto-rotate waits while the tour runs
+    const loop = now => { GT.tick(now); requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
+  }
+  GT.start(at);
+}
+
+// r3/round 4: the tour's key (sessionStorage 'oceany-tour', tour.js tourKey). page 'viewer': this tour, at its step (set by
+// globe.js enterSpot at step 0, or a reload here mid-tour); page 'globe': the globe tour was running and the visitor came
+// here by another route (browser Forward, a link): hand over, carry on at the globe's next step afterwards.
+const tourMark = () => { try { const m = JSON.parse(sessionStorage.getItem('oceany-tour')); return m && typeof m === 'object' ? m : null; } catch (e) { return null; } };
+const fromGlobeTour = () => { const m = tourMark(); return !!(m && (m.page === 'globe' || Number.isFinite(m.next))); };
+function tourHandOver() {                          // on load and on a restored page: run (or carry on) the tour the key names
+  const m = tourMark(); if (!m) return false;
+  let at = 0;
+  if (m.page === 'globe' && Number.isFinite(m.step)) { try { sessionStorage.setItem('oceany-tour', JSON.stringify({ page: 'viewer', step: 0, next: m.step + 1, profile: m.profile, t: Date.now() })); } catch (e) { /* storage blocked */ } }
+  else if (m.page === 'viewer') at = Number.isFinite(m.step) ? m.step : 0;
+  else return false;
+  if (GT && GT.on && GT.step === at) return true;
+  try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) { /* private mode */ }
+  gestureTour(at); return true;
+}
+addEventListener('pageshow', e => { if (e.persisted) tourHandOver(); });
 async function init() {
   const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
   const panel = document.getElementById('panel');
   const b = el('<button id="tut-open" title="A short guided tour with six challenges">Guided tour and challenges</button>');
   b.onclick = () => open(S.step >= STEPS.length - 1 ? 0 : S.step);
-  const row = el('<div class="row"></div>'); row.appendChild(b);
+  const g = el('<button id="gt-open" title="How to move around the reef, step by step">How to move</button>');   // gesture tour 2026-11-23
+  g.onclick = () => gestureTour();
+  const row = el('<div class="row"></div>'); row.appendChild(g); row.appendChild(b);
   const first = panel.querySelector('#layers'); panel.insertBefore(row, first);
   if (!(await ready())) return;
   // UX 2026-11-23 (first-visitor feedback on a phone: "it asked me to do all kinds of things, then jumped me to all kinds
@@ -234,18 +332,19 @@ async function init() {
   // The tour stays one tap away under "Guided tour and challenges" in the panel.
   const intro = document.getElementById('intro'), seenIntro = () => { try { return !!localStorage.getItem(INTRO_KEY); } catch (e) { return false; } };
   if (intro) intro.style.display = 'none';
+  if (tourHandOver()) return;
   if (seenIntro() && !S.open) return;
   const title = intro && intro.querySelector('h2') ? intro.querySelector('h2').textContent : 'Oceany viewer';
   const touch = matchMedia('(pointer: coarse)').matches;
   const offer = el(`<div id="tut-offer" role="region" aria-label="Getting started"><div class="to-text"><b></b><span></span></div>
     <div class="to-btns"><button type="button" class="to-go"></button><button type="button" class="to-x" aria-label="Close">&times;</button></div></div>`);
   offer.querySelector('b').textContent = title + '. ';
-  offer.querySelector('span').textContent = touch ? 'Drag to look around, pinch to zoom.' : 'Drag to look around, scroll to zoom.';
-  offer.querySelector('.to-go').textContent = S.open ? 'Carry on with the tour' : 'Take the short tour';
+  offer.querySelector('span').textContent = (touch ? 'Drag to look around, pinch to zoom.' : 'Drag to look around, scroll to zoom.') + ' More under Controls, top left.';   // dad 2026-11-23 night
+  offer.querySelector('.to-go').textContent = S.open ? 'Carry on with the tour' : 'Show me how';   // gesture tour 2026-11-23: the first-use tour is the gesture tour
   const doneIntro = () => { try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) { /* private mode: offered again next visit */ } offer.remove(); };
   offer.querySelector('.to-x').onclick = () => { S.open = false; save(); doneIntro(); };
-  offer.querySelector('.to-go').onclick = () => { const i = S.open ? S.step : 0; doneIntro(); open(i); };
+  offer.querySelector('.to-go').onclick = () => { const was = S.open; doneIntro(); if (was) open(S.step); else gestureTour(); };
   document.body.appendChild(offer);
 }
 init();
-window.__tutorial = { open, close, go, get state() { return JSON.parse(JSON.stringify(S)); }, STEPS };
+window.__tutorial = { open, close, go, gestureTour, get gesture() { return GT; }, get state() { return JSON.parse(JSON.stringify(S)); }, STEPS };

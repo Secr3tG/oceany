@@ -127,3 +127,17 @@ button:hover { color: #fff; }
   #standing { left: 8px; right: 8px; bottom: 8px; max-width: none; text-align: center; }
   #loading, #offline-note { top: calc(var(--bar-b, 60px) + 4px); }
 }
+
+/* dad 2026-11-23 night: Controls is the accent pill (it holds the layers, swell and games), glowing on a first visit until
+   used; the zoom bar's Reset view; the "Lost the reef?" line (main.js 6g) */
+#top-bar #panel-toggle { border-color: #5ff2ff; color: #5ff2ff; font-weight: 600; }
+#top-bar #panel-toggle[aria-expanded=true] { color: #fff; }
+#panel-toggle.ctl-new { animation: ctl-glow 1.6s ease-in-out 4; }
+@keyframes ctl-glow { 0%, 100% { box-shadow: 0 0 0 transparent; } 50% { box-shadow: 0 0 14px #5ff2ff; } }
+#zoom #zb-reset { font-size: 15px; }
+#lost-cue { position: fixed; left: 50%; top: calc(var(--bar-b, 46px) + 10px); transform: translateX(-50%); z-index: 16; display: flex; align-items: center; gap: 10px;
+  padding: 6px 6px 6px 14px; border-radius: 22px; background: color-mix(in srgb, #060e16 85%, transparent); border: 1px solid color-mix(in srgb, #5ff2ff 35%, transparent);
+  backdrop-filter: blur(6px); color: #cfe6f2; font: 13px/1.3 system-ui, -apple-system, sans-serif; white-space: nowrap; }
+#lost-cue[hidden] { display: none; }
+#lost-cue button { min-height: 36px; border-radius: 18px; padding: 0 14px; border: 1px solid #5ff2ff; color: #5ff2ff; background: none; font: 600 13px/1 system-ui, sans-serif; cursor: pointer; }
+@media (max-width: 600px), (pointer: coarse) { #lost-cue button { min-height: 44px; border-radius: 22px; } }

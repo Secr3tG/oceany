@@ -47,13 +47,14 @@ is for navigation.
 
 ## Other data
 
-- Open-Meteo Marine API snapshots in `pieces/02-reefs/data/swell_snapshot_*`: weather data by
-  Open-Meteo.com (https://open-meteo.com), CC BY 4.0, which in turn credits the underlying
-  wave models (for example Meteo-France MFWAM, DWD EWAM). Used only as reference values; the
-  swell inputs in `simulate_swell.py` are typed constants for one case.
+- Peniche reference snapshots in `pieces/02-reefs/data/swell_snapshot_*`: NOAA NCEP GFS-Wave
+  (WAVEWATCH III) analysis and forecast hours 0 and 3, 0.25 degree, from the NOAA archive on AWS
+  (US Government work, public domain). Reference values only; the swell inputs in `simulate_swell.py`
+  are typed constants for one case.
 - Typical swells for the spot layers: Pipeline uses the Nov-Mar 2024-25 median at NDBC buoy
   51201 (NOAA National Data Buoy Center, public data); Supertubos, Guéthary and Hossegor use the
-  Open-Meteo hindcast winter median (Open-Meteo.com, CC BY 4.0). Typical values, not forecasts.
+  Nov-Mar 2024-25 and 2025-26 median of NOAA NCEP GFS-Wave primary swell (public domain; method in
+  `pieces/11-ocean/build_typical_swell.py`). Typical values, not forecasts.
 - Observer marks (`pieces/02-reefs/data/surf_zones.json` and the pins in the viewer): observer
   marks (one surfer, 17 Sep 2026). The author's own marks, not survey data.
 

@@ -57,11 +57,8 @@ SPOTS = {
     "supertubos": dict(
         title="Supertubos, Peniche",
         points=VIEW / "reefs_wide.json",
-        H0=2.2, T=13.5, direction_from=304, tide=1.7, wrapped=False, edge_depth=None,
-        swell_source=("Open-Meteo Marine hindcast (model, not a buoy), point 39.375 N 9.458 W (requested 39.36, -9.45), "
-                      "hourly Nov 2024-Mar 2025 + Nov 2025-Mar 2026 (n = 7,248): median swell_wave_height 2.22 m, "
-                      "swell_wave_peak_period 13.5 s, swell_wave_direction 304 deg. No open Peniche buoy with direction "
-                      "was found. Files pieces/02-reefs/data/raw/openmeteo_hindcast/peniche_*.json"),
+        H0=1.82, T=12.2, direction_from=295, tide=1.7, wrapped=False, edge_depth=None,
+        swell_source=("NOAA NCEP GFS-Wave (WAVEWATCH III) analysis, 0.25 deg, public domain (model, not a buoy), nearest sea point to 39.375 N 9.458 W, 00 and 12 UTC on every 3rd day, Nov-Mar 2024-25 + 2025-26 (n = 193): median primary-swell height 1.82 m, period 12.2 s, direction 295 deg. No open buoy with direction was found. Built by pieces/11-ocean/build_typical_swell.py; numbers in pieces/11-ocean/data/typical_swell.json"),
         tide_note="1.7 m above LAT ~ Peniche mean level (IH: mean level 2.00 m above ZH, LAT 2026 ~ ZH + 0.34 m)",
         datum="LAT",
         # The cited Supertubos coordinate (39.34, -9.36) is on land. The take-off is picked from the model: the outermost
@@ -73,10 +70,8 @@ SPOTS = {
     "guethary": dict(
         title="Guethary / Parlementia, France",
         points=VIEW / "guethary.json",
-        H0=1.6, T=13.5, direction_from=305, tide=0.0, wrapped=False, edge_depth=None,
-        swell_source=("Open-Meteo Marine hindcast (model, not a buoy), point near 43.45 N 1.70 W, hourly Nov 2024-Mar 2025 "
-                      "+ Nov 2025-Mar 2026 (n = 7,248): median swell_wave_height 1.58 m, swell_wave_peak_period 13.5 s, "
-                      "swell_wave_direction 305 deg. Files pieces/02-reefs/data/raw/openmeteo_hindcast/basque_*.json"),
+        H0=1.31, T=12.4, direction_from=303, tide=0.0, wrapped=False, edge_depth=None,
+        swell_source=("NOAA NCEP GFS-Wave (WAVEWATCH III) analysis, 0.25 deg, public domain (model, not a buoy), nearest sea point to 43.45 N 1.70 W, 00 and 12 UTC on every 3rd day, Nov-Mar 2024-25 + 2025-26 (n = 189): median primary-swell height 1.31 m, period 12.4 s, direction 303 deg. No open buoy with direction was found. Built by pieces/11-ocean/build_typical_swell.py; numbers in pieces/11-ocean/data/typical_swell.json"),
         tide_note="0.0 m above IGN69 ~ mean sea level on this coast (IGN69 zero lies within ~0.2 m of mean level at Bayonne/Socoa); spring range ~4 m",
         datum="IGN69",
         takeoff=dict(lat=43.427718, lon=-1.611053, how="published Parlementia position (surf-guide source), approximate"),
@@ -85,10 +80,8 @@ SPOTS = {
     "hossegor": dict(
         title="Hossegor / La Graviere, France",
         points=VIEW / "hossegor.json",
-        H0=1.6, T=13.5, direction_from=305, tide=0.0, wrapped=False, edge_depth=None,
-        swell_source=("Open-Meteo Marine hindcast (model, not a buoy), point near 43.45 N 1.70 W, hourly Nov 2024-Mar 2025 "
-                      "+ Nov 2025-Mar 2026 (n = 7,248): median swell_wave_height 1.58 m, swell_wave_peak_period 13.5 s, "
-                      "swell_wave_direction 305 deg. Files pieces/02-reefs/data/raw/openmeteo_hindcast/basque_*.json"),
+        H0=1.31, T=12.4, direction_from=303, tide=0.0, wrapped=False, edge_depth=None,
+        swell_source=("NOAA NCEP GFS-Wave (WAVEWATCH III) analysis, 0.25 deg, public domain (model, not a buoy), nearest sea point to 43.45 N 1.70 W, 00 and 12 UTC on every 3rd day, Nov-Mar 2024-25 + 2025-26 (n = 189): median primary-swell height 1.31 m, period 12.4 s, direction 303 deg. No open buoy with direction was found. Built by pieces/11-ocean/build_typical_swell.py; numbers in pieces/11-ocean/data/typical_swell.json"),
         tide_note="0.0 m above IGN69 ~ mean sea level on this coast (IGN69 zero lies within ~0.2 m of mean level at Bayonne/Socoa); spring range ~4 m",
         datum="IGN69",
         takeoff=dict(lat=43.67562, lon=-1.443375, how="published La Graviere position (surf-guide source), approximate"),
