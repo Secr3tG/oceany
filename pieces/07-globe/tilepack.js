@@ -13,7 +13,16 @@
 //                                                null: tile absent (not covered, pack 404, empty entry).
 //                                                prio: lower is fetched sooner (e.g. screen distance); default 0.
 //                                                Rejects with an AbortError when its signal aborts, Error on network failure.
-//     .prefetch(z, x, y)                      low priority (after every getTile), into the persistent cache only
+//     .getTile(z, x, y, { raw: true, ... })   (b53) -> Promise<{ body: Uint8Array } | null>: the compressed body, not
+//                                                decoded (terrain.js decodes it in terrain-worker.js); dropTile() if it is bad
+//     .dropTile(z, x, y)                      (b53) forget a cached body that would not decode
+//     .prefetch(z, x, y, { signal, prio })    low priority (after every getTile), into the persistent cache only; the signal
+//                                                (b53) cancels it while it waits or, with its range, while in flight
+//     .warmBase(maxZ)                         (b53) the coarse world base: every tile z0..maxZ (<= 5) into the persistent
+//                                                cache, pinned (never trimmed), in a background lane that starts a range only
+//                                                while no other tile is waiting, at most BG_INFLIGHT at once.
+//                                                -> Promise<{ tiles, fetched, ms }>; progress in stats().base
+//     .inCache(z, x, y)                       (b53) true when the tile's body is in the persistent cache (sync)
 //     .stats()                                { requests, bytes, tiles, cacheHits, headerReads, ... }
 //   decodeTile(bytes)                         (addition) one compressed tile body -> same object as getTile
 
@@ -26,6 +35,10 @@ const MERGE_GAP = 8192;              // wanted tiles of one pack closer than thi
 // is split into ranges fetched in parallel (maxInflight), the one holding the most urgent tile (lowest prio) first.
 const MAX_RANGE = 192 << 10;
 const FULL_MAX = 16 << 20;           // a server that ignores Range sends the whole pack: keep it in memory if smaller
+// b53: priorities. getTile callers use screen distance (small numbers); prefetches come after every getTile (PF_PRIO + prio);
+// the world base after everything (BG_PRIO + order), and its ranges (BG_RANGE at most) start only when no other tile waits or
+// is in flight, BG_INFLIGHT at once, so on a slow line it holds at most ~2 x 128 KB of bandwidth from tiles the screen needs.
+const PF_PRIO = 1e9, BG_PRIO = 1e12, BG_INFLIGHT = 2, BG_RANGE = 128 << 10, BG_IDLE_MS = 500;
 
 export const supported = (() => {
   try { return typeof DecompressionStream === 'function' && !!new DecompressionStream('deflate-raw'); } catch (e) { return false; }
@@ -187,8 +200,10 @@ export function createPackSource(base, opts = {}) {
   function cacheDrop(key) {
     openCache().then((c) => { if (c) { c.delete(key).catch(() => {}); const e = index.get(key); if (e) { total -= e.s; index.delete(key); } } }).catch(() => {});
   }
+  let pinZ = -1;                             // warmBase: tiles at this level or coarser are never trimmed
+  const keyZ = (k) => { const m = /\/(\d+)\/\d+\/\d+\.t2\?v=/.exec(k); return m ? +m[1] : 99; };
   function trim(c) {
-    const all = [...index].sort((a, b) => a[1].t - b[1].t);   // least recently used first
+    const all = [...index].filter(([k]) => keyZ(k) > pinZ).sort((a, b) => a[1].t - b[1].t);   // least recently used first
     for (const [k, v] of all) {
       if (total <= 0.9 * cacheMax) break;
       index.delete(k); total -= v.s; c.delete(k).catch(() => {});
@@ -196,23 +211,31 @@ export function createPackSource(base, opts = {}) {
   }
 
   // ---- concurrency: header reads first, then tile ranges by priority
-  let inflight = 0, pumpTimer = 0;
+  let inflight = 0, pumpTimer = 0, bgInflight = 0, fgAt = 0, bgTimer = 0;
   const headerJobs = [];                       // thunks
   const pending = new Map();                   // pack header object -> { hdr, entries: Set }
   const flying = new Map();                    // tile key -> entry (queued or in flight)
   function schedule() { if (!pumpTimer) pumpTimer = setTimeout(() => { pumpTimer = 0; pump(); }, 0); }
   function pump() {
     while (inflight < maxInflight) {
-      if (headerJobs.length) { inflight++; headerJobs.shift()().finally(() => { inflight--; pump(); }); continue; }
+      if (headerJobs.length) { inflight++; fgAt = performance.now(); headerJobs.shift()().finally(() => { inflight--; fgAt = performance.now(); pump(); }); continue; }
       let best = null, bestPack = null;
       for (const [id, p] of pending) for (const e of p.entries) if (!best || e.prio < best.prio) { best = e; bestPack = id; }
       if (!best) return;
+      const bg = best.prio >= BG_PRIO;   // only background tiles wait (best is the lowest prio)
+      // and only while no other range is in flight and none has started or ended for BG_IDLE_MS (between two select passes
+      // of terrain.js the queue is empty for a moment while the view is still loading)
+      if (bg && (bgInflight >= BG_INFLIGHT || inflight > bgInflight)) return;
+      if (bg && performance.now() - fgAt < BG_IDLE_MS) { if (!bgTimer) bgTimer = setTimeout(() => { bgTimer = 0; pump(); }, BG_IDLE_MS + 20); return; }
+      const cap = bg ? BG_RANGE : MAX_RANGE;
       const p = pending.get(bestPack);
-      const list = [...p.entries].sort((a, b) => a.off - b.off);
+      // b53: a range for visible tiles never carries world-base tiles along (base.pack is contiguous: a z3 tile asked for
+      // by the view pulled ~190 KB of the background's neighbours with it, on Fast 4G +2 s for a cold Peniche)
+      const list = (bg ? [...p.entries] : [...p.entries].filter((e) => e.prio < BG_PRIO)).sort((a, b) => a.off - b.off);
       // gap-merge the pack's wanted tiles into ranges, take the range holding the most urgent tile
       let cur = null, pick = null;
       for (const e of list) {
-        if (!cur || e.off - cur.end >= MERGE_GAP || e.off + e.len - cur.start > MAX_RANGE) {
+        if (!cur || e.off - cur.end >= MERGE_GAP || e.off + e.len - cur.start > cap) {
           if (pick) break;
           cur = { start: e.off, end: e.off + e.len, entries: [] };
         }
@@ -222,8 +245,8 @@ export function createPackSource(base, opts = {}) {
       if (!pick) pick = cur;
       for (const e of pick.entries) p.entries.delete(e);
       if (!p.entries.size) pending.delete(bestPack);
-      inflight++;
-      runRange(p.hdr, pick).finally(() => { inflight--; pump(); });
+      inflight++; if (bg) bgInflight++; else fgAt = performance.now();
+      runRange(p.hdr, pick).finally(() => { inflight--; if (bg) bgInflight--; else fgAt = performance.now(); pump(); });
     }
   }
   const limited = (fn) => new Promise((res, rej) => { headerJobs.push(() => fn().then(res, rej)); schedule(); });
@@ -321,9 +344,10 @@ export function createPackSource(base, opts = {}) {
     });
   }
 
-  async function fetchBody(z, x, y, signal, prio) {
+  async function fetchBody(z, x, y, signal, prio, known = false) {
     const key = tileKey(z, x, y);
-    const cached = await cacheGet(key);
+    const cached = known ? null : await cacheGet(key);   // known: the caller checked the index (warmBase; keeps hundreds of
+                                                         // lookups out of the Cache API queue the visible tiles wait in)
     checkAbort(signal);
     if (cached) { st.cacheHits++; return { body: cached, cached: true }; }
     const id = packId(z, x, y), idx = entryIndex(z, x, y);
@@ -336,7 +360,7 @@ export function createPackSource(base, opts = {}) {
     }
   }
 
-  async function getTile(z, x, y, { signal, prio = 0 } = {}) {
+  async function getTile(z, x, y, { signal, prio = 0, raw = false } = {}) {
     checkAbort(signal);
     if (!cov) await ready;
     checkAbort(signal);
@@ -344,29 +368,63 @@ export function createPackSource(base, opts = {}) {
     const { body, cached } = await fetchBody(z, x, y, signal, prio);
     if (!body) { st.absent++; return null; }
     if (!cached) cachePut(tileKey(z, x, y), body);
+    if (raw) { st.tiles++; return { body, cached: !!cached }; }
     let t;
     try { t = await decodeTile(body); } catch (err) { if (cached) cacheDrop(tileKey(z, x, y)); throw err; }
     st.tiles++;
     return t;
   }
 
-  async function prefetch(z, x, y) {
+  async function prefetch(z, x, y, { signal = null, prio = 0 } = {}) {
     try {
       if (!cov) await ready;
       if (!covered(z, x, y) || !packListed(z, x >> 4, y >> 4)) return false;
       if (!(await openCache())) return false;                    // nowhere to keep it
       const key = tileKey(z, x, y);
       if (await cacheHas(key)) return true;
-      const { body, cached } = await fetchBody(z, x, y, null, Infinity);
+      const { body, cached } = await fetchBody(z, x, y, signal, PF_PRIO + Math.max(0, Math.min(PF_PRIO - 1, prio)));
       if (body && !cached) return cachePut(key, body);
       return !!body;
     } catch (e) { return false; }
   }
 
+  // b53: the coarse world base (see the API note). Coarse levels first (z0-z3 is ~1.8 MB, z4 ~4.9 MB more), Morton order
+  // inside a level, which is the order of base.pack, so neighbouring tiles share ranges. Tiles already in the persistent
+  // cache are skipped: after the first visit this costs no request at all.
+  const baseSt = { maxZ: -1, tiles: 0, have: 0, fetched: 0, done: false };
+  let baseP = null;
+  function warmBase(maxZ = 4) {
+    if (baseP) return baseP;
+    maxZ = Math.max(0, Math.min(BASE_Z, maxZ)); pinZ = maxZ; baseSt.maxZ = maxZ;
+    const t0 = performance.now();
+    return (baseP = (async () => {
+      if (!cov) await ready;
+      const c = await openCache(); if (!c) { baseSt.done = true; return { tiles: 0, fetched: 0, ms: 0 }; }   // nowhere to keep it
+      const list = [];
+      for (let z = 0; z <= maxZ; z++) { const n = 2 ** z, byM = new Array(n * n); for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) byM[morton(x, y)] = [z, x, y]; list.push(...byM); }
+      baseSt.tiles = list.length;
+      await Promise.all(list.map(async ([z, x, y], i) => {
+        const key = tileKey(z, x, y);
+        if (index.has(key)) { baseSt.have++; return; }
+        try {
+          const { body, cached } = await fetchBody(z, x, y, null, BG_PRIO + i, true);
+          if (body && !cached) { await cachePut(key, body); baseSt.fetched++; }
+          if (body) baseSt.have++;
+        } catch (e) { /* a failed range: the tile loads on demand later */ }
+      }));
+      baseSt.done = true; baseSt.ms = Math.round(performance.now() - t0);
+      return { tiles: baseSt.tiles, fetched: baseSt.fetched, ms: baseSt.ms };
+    })());
+  }
+  const baseHas = (z) => baseSt.done && z <= baseSt.maxZ;
+  // (b53) is this tile's body in the persistent cache already (no request needed)? Synchronous, from the cache index.
+  const inCache = (z, x, y) => !!(index && index.has(tileKey(z, x, y)));
+
   function stats() {
     let queued = 0; for (const p of pending.values()) queued += p.entries.size;
-    return Object.assign({}, st, { inflight, queued, headersInMemory: headers.size, cacheBytes: total, cacheEntries: index ? index.size : 0 });
+    return Object.assign({}, st, { base: Object.assign({}, baseSt), bgInflight, inflight, queued, headersInMemory: headers.size, cacheBytes: total, cacheEntries: index ? index.size : 0 });
   }
 
-  return { ready, covered, getTile, prefetch, stats, base: baseUrl, get coverage() { return cov; } };
+  const dropTile = (z, x, y) => cacheDrop(tileKey(z, x, y));
+  return { ready, covered, getTile, dropTile, prefetch, warmBase, baseHas, inCache, stats, base: baseUrl, get coverage() { return cov; } };
 }

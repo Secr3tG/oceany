@@ -15,8 +15,8 @@
 //     .setShowPaths(bool): adds a "show all paths" checkbox under the layer, default off.
 import * as THREE from 'three';
 import { makeDotMaterial, palette, setPalette, PALETTES, updateDotScale, dotScale, dotExag, seaExag, applyCssPalette, landTone, oceanTone, LAND_DOT_D, HUE_MAX, ICE_LAT } from './dots.js';
-import { createTerrain } from './terrain.js?v=b52';
-import { USE_AWS as TERRAIN_AWS } from './terrain-source.js?v=t4';
+import { createTerrain } from './terrain.js?v=b53';
+import { USE_AWS as TERRAIN_AWS } from './terrain-source.js?v=t5';
 
 const RADIUS = 1.0;
 const D2R = Math.PI / 180;
@@ -519,6 +519,12 @@ function terrainFrame(now) {
   seaExag.value = 1 + (dotExag.value - 1) * SEA_EXAG_F;
   occluder.scale.setScalar((1 - 8000 * dotExag.value / 6371000 - 0.002) / 0.995);   // keep it under the sunken sea floor
   updateDetailFloor(now);
+  // b53 zoom-ahead: while zooming in, the ground under the cursor / pinch (else the middle of the view) and the height the zoom
+  // is heading for: terrain.js prefetches the tiles the view will end on there, behind the visible ones
+  if (!terrainOff && terrain.zoomAhead && !flight && zoom.target < view.alt * 0.95) {
+    const g = zoom.cursor && zoom.anchor ? zoom.anchor : view.n;
+    terrain.zoomAhead(Math.asin(Math.max(-1, Math.min(1, g.y))) / D2R, Math.atan2(-g.z, g.x) / D2R, zoom.target, view.alt);
+  }
   terrain.update(now);
   // Base globe and tiles cross-fade by zoom: the base globe is the whole-globe look (with terrain on or off), the tiles take
   // over as its ~41 km dots spread apart on screen (TILE_IN css px apart: fully tiles by TILE_FULL). Both draw land the same

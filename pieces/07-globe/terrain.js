@@ -24,7 +24,7 @@
 //   they leave the view, and tiles ahead of a fly or zoom are prefetched (PF_LOOK, and prefetch() for globe.js flights).
 // - ?terrain=v2: tiles come from the terrain2 packs through tilepack.js (terrain-source.js); the PNG path is the default.
 import * as THREE from 'three';
-import { tileUrl, covered as srcHas, coverageKnown, tileSources, SEABED, seabedOf, USE_AWS, V2_ASKED, startPacks } from './terrain-source.js?v=t4';
+import { tileUrl, covered as srcHas, coverageKnown, tileSources, SEABED, seabedOf, USE_AWS, V2_ASKED, startPacks } from './terrain-source.js?v=t5';
 import { makeDotMaterial, palette, dotExag, morphT, landTone, oceanTone, SHALLOW_M, LAND_DOT_D, HUE_MAX } from './dots.js';
 
 const R_EARTH = 6371000;
@@ -90,6 +90,49 @@ const LVL_JUMP = 3, HOLD_MS = 1200;
 const PF_LOOK = 0.75, PF_SLOTS = 8, PF_MAX = 24;
 const BLOCK = [0, 4, 1024, 1028];   // byte offsets of a 2 × 2 pixel block in a 256-wide RGBA tile
 const D2R = Math.PI / 180;
+// b53 (terrain release 2, 2026-11-24):
+// - Off the main thread: a terrain2 tile's inflate + decode + clean-up (void rule, despike, largest |height|) and every
+//   mercator tile's dot geometry (positions, parent offsets, row scale: half of build()) run in terrain-worker.js. A stand-in
+//   asks for its geometry when it is queued and is built once it is back (or after GEO_WAIT_MS, inline). Without workers
+//   (or if one fails) everything runs here as before.
+// - World base: z0-z(BASE_MAX_Z) of base.pack go into tilepack.js's persistent cache in the background (pinned; ~6.7 MB once
+//   per browser, z0-z3 first), so after a jump anywhere the coarse levels under the view come from the cache in a few ms
+//   and the stand-ins stretch them over the screen at once (blurry land, never bare dots) while the finer tiles arrive.
+//   z5 would be another 17.9 MB: not worth it on a phone line. select() asks for those cached coarse tiles first.
+// - Zoom-ahead: while the camera is zooming in (globe.js zoomAhead: zoom.target below the height, the point under the cursor or
+//   pinch), the tiles the zoom will end on there are prefetched at the lowest priority; prefetches whose tiles left the screen
+//   are cancelled before they arrive (flight prefetches are kept: their target is not on screen yet).
+// - Phone detail cap (lite): no level is fetched whose dots would be closer than MIN_RPX rendered pixels (the canvas is drawn at
+//   devicePixelRatio <= 2): the split spacing never goes below 2 × MIN_RPX / pixelRatio css px.
+const GEO_WAIT_MS = 60, GEO_MAX = 64, MIN_RPX = 1.5;
+// test switches (review/terrain2/ship-b53): ?tworker=0 no workers, ?tbase=<z> world base to that level (-1: none), ?tza=0 no
+// zoom-ahead, ?tcap=0 no phone detail cap
+const TQ = new URLSearchParams(location.search);
+const BASE_MAX_Z = TQ.has('tbase') ? +TQ.get('tbase') : 4, ZOOM_AHEAD = TQ.get('tza') !== '0', CAP_ON = TQ.get('tcap') !== '0';
+// a small pool of classic workers (terrain-worker.js); null where Workers or DecompressionStream are missing, or a worker
+// failed to start (then the main thread does the work)
+function makeWorkers() {
+  try {
+    if (typeof Worker !== 'function' || new URLSearchParams(location.search).get('tworker') === '0') return null;
+    const n = (navigator.hardwareConcurrency || 2) >= 4 ? 2 : 1, ws = [], wait = new Map(); let id = 0, broken = false;
+    const failAll = (msg) => { broken = true; for (const [, w] of wait) w.reject(new Error(msg)); wait.clear(); };
+    for (let i = 0; i < n; i++) {
+      const w = new Worker(new URL('./terrain-worker.js?v=w1', import.meta.url));
+      w.busy = 0;
+      w.onmessage = (ev) => { const m = ev.data, p = wait.get(m.id); if (!p) return; wait.delete(m.id); p.w.busy--; m.ok ? p.resolve(m.res) : p.reject(new Error(m.error)); };
+      w.onerror = (ev) => { ev.preventDefault && ev.preventDefault(); console.warn('terrain worker failed, decoding on the main thread'); failAll('terrain worker failed'); };
+      ws.push(w);
+    }
+    return {
+      get ok() { return !broken; },
+      run(msg, transfer) {
+        if (broken) return Promise.reject(new Error('terrain worker failed'));
+        const w = ws.reduce((a, b) => (b.busy < a.busy ? b : a)); w.busy++;
+        return new Promise((resolve, reject) => { const k = ++id; wait.set(k, { resolve, reject, w }); w.postMessage(Object.assign({ id: k }, msg), transfer || []); });
+      },
+    };
+  } catch (e) { return null; }
+}
 const lonOf = (px, n) => px / n * 360 - 180;                                         // px in tile units (x + frac)
 const latOf = (py, n) => Math.atan(Math.sinh(Math.PI * (1 - 2 * py / n))) / D2R;
 // unit() of a web-mercator point (row py of n, longitude in degrees) without the latitude: with m = π(1 − 2py/n), the
@@ -152,10 +195,22 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   const queue = [];                       // decoded tiles waiting to be built (a few per frame)
   const sic = new Map();                  // stand-ins: key -> tile (si: true, srcZ: level of the tile it was resampled from)
   const siQueue = new Map();              // stand-ins asked for by the last select passes: key -> { d, src, prio, id }
-  const SI_PER_FRAME = lite ? 1 : 3, SI_MAX = Math.floor(CACHE * 0.4);
+  const SI_PER_FRAME = lite ? 2 : 3, SI_MAX = Math.floor(CACHE * 0.4);
   const morphing = new Set();             // tiles whose drawn heights are easing from a stand-in's to their own
   const pf = new Map();                   // prefetch: key -> { z, x, y, until, prio }
-  let pack = null; startPacks().then(p => { pack = p; });   // terrain v2 (default; ?terrain=v1 = PNGs): the pack source once it is up (null: PNG tiles)
+  let pack = null; startPacks().then(p => { pack = p; if (p && p.warmBase && BASE_MAX_Z >= 0) p.warmBase(BASE_MAX_Z); });   // terrain v2 (default; ?terrain=v1 = PNGs): the pack source once it is up (null: PNG tiles); b53: then the world base in the background
+  const wk = makeWorkers();
+  const workOk = () => !!(wk && wk.ok);
+  const geoCache = new Map(), geoPend = new Map();   // stand-in geometry from the worker: key -> { pos, sz, rs, par } / asked-at ms
+  function geoWant(d) {
+    if (!workOk() || d.polar || geoCache.has(d.key) || geoPend.has(d.key)) return;
+    geoPend.set(d.key, performance.now());
+    wk.run({ op: 'geom', geom: true, z: d.z, x: d.x, y: d.y }).then(g => {
+      geoPend.delete(d.key); geoCache.set(d.key, g);
+      while (geoCache.size > GEO_MAX) geoCache.delete(geoCache.keys().next().value);
+    }, () => geoPend.delete(d.key));
+  }
+  const geoReady = key => geoCache.has(key) || !geoPend.has(key) || performance.now() - geoPend.get(key) > GEO_WAIT_MS;
   let pending = -1;                       // tiles wanted or loading at the last select (-1: not run yet)
   let enabled = false, loadedOk = 0, loadFails = 0, lastErr = '', inflight = 0, lastSelect = 0, shown = [], frameNo = 0, selectId = 0;
   let shownSI = [], measured = [], siKick = false;   // stand-ins drawn; real tiles the readout counts (drawn ones and the sources of drawn stand-ins)
@@ -272,7 +327,10 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
         const src = !slow && !last && !k.polar && sk > TPX * refine * 4 && sk <= TPX * refine * 8;
         // round 2: source tiles ahead of the rest (as if 4 levels coarser): a few of them give the whole view stand-ins from
         // one data level, instead of a sharp centre among stand-ins from level 3 (the seam)
-        if (!ready(k) && (last || src || k.z >= SKIP_TO_Z)) { want.push([prio(k) - (src ? 3 : 0), k, src && !last && k.z < SKIP_TO_Z]); extra++; }
+        // b53: a world-base level already in the persistent cache (BASE_MAX_Z and coarser): first, it costs no request and
+        // the stand-ins below it come from it at once
+        const local = !last && !src && !k.polar && k.z <= BASE_MAX_Z && pack && pack.inCache && pack.inCache(k.z, k.x, k.y);
+        if (!ready(k) && (last || src || local || k.z >= SKIP_TO_Z)) { want.push([prio(k) - (src ? 3 : local ? 6 : 0), k, (src || local) && !last && k.z < SKIP_TO_Z]); extra++; }
         ahead(k, depth + 1);
       }
     }
@@ -314,12 +372,26 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
         // Upgrades only for 2+ levels (or the parent itself), and behind new stand-ins in the queue: rebuilding every
         // stand-in for each level that landed (3, 4, 5…) starved the builds that fill the view.
         if (!s) siAsk(c, cs, prio(c));
+        if (!s || s.state !== 'ready') siAhead(c, src, 0);
+        if (!s) { /* asked above */ }
         else if (cs.z >= s.srcZ + 2 || (cs.z > s.srcZ && cs.z === c.z - 1)) siAsk(c, cs, prio(c) + 4);
         if (s && s.state === 'ready') { items.push(s); const st = cache.get(s.srcKey); if (st) { st.keep = selectId; used.push(st); } }
         else ok = false;
       }
       if (!ok || !items.length) return null;
       srcShown.push(...used); return items;
+    }
+    // b53: while a stand-in chain is still being built, its finer levels down to the one that fills the screen (dots SI_PX
+    // apart) are queued at once, behind it, instead of one level per select pass: after a jump the screen used to show the
+    // sparse capped dots of the first levels for ~1 s (6-7 passes) before the stand-ins dense enough to fill it were asked for.
+    function siAhead(c, src, depth) {
+      if (depth > 6 || c.z >= MAX_Z || !(spacingPx(c) > Math.max(SI_PX, TPX * refine)) || !kidsBuilt(c) || nearCap(c)) return;
+      for (const g of kids(c)) {
+        if (!visible(g) || ready(g)) continue;
+        const s = sic.get(g.key);
+        if (s) s.keep = selectId; else siAsk(g, bestSrc(g, src), prio(g) + 1 + depth);
+        siAhead(g, src, depth + 1);
+      }
     }
     // a drawn stand-in splits on down to the level whose dots are SI_PX apart (or the level the view ends on)
     function siVisit(s, src, depth) {
@@ -405,29 +477,44 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       // ?terrain=v2: the pack source (tilepack.js) once it is up; PNG tiles when it is not asked for, not supported or failed
       const ps = V2_ASKED ? await startPacks() : null;
       let got;
+      const useW = workOk();
       if (ps) {
         if (t.ctrl.signal.aborted) throw new Error('aborted');
-        const tile = await ps.getTile(d.z, d.x, d.y, { signal: t.ctrl.signal, prio });
+        const tile = await ps.getTile(d.z, d.x, d.y, { signal: t.ctrl.signal, prio, raw: useW });
         tlog(t, 'resp');
         if (t.ctrl.signal.aborted) throw new Error('aborted');
         if (!tile) throw new Error('HTTP 404');      // absent from its pack: like a missing PNG (failed, not asked for again)
         t.sources = tileSources(d.z, NO_HEADERS);
-        const elev = new Float32Array(tile.elev);     // own copy: despike / fillOceanVoid write into it
-        let zeros = 0; for (let q = 0; q < elev.length; q++) if (elev[q] === 0) zeros++;
-        got = { elev, voidTile: zeros > 0.5 * N * N };
+        if (tile.body) {                              // b53: decoded, cleaned and its geometry built in terrain-worker.js
+          let r;
+          try { const b = tile.body.slice(); r = await wk.run({ op: 'tile', body: b.buffer, geom: true, z: d.z, x: d.x, y: d.y }, [b.buffer]); }
+          catch (err) { if (tile.cached && ps.dropTile) ps.dropTile(d.z, d.x, d.y); throw err; }
+          if (t.ctrl.signal.aborted) throw new Error('aborted');
+          t.pre = { pos: r.pos, sz: r.sz, rs: r.rs, par: r.par };
+          got = { elev: r.elev, clean: true, maxAbs: r.maxAbs };
+        } else {
+          const elev = new Float32Array(tile.elev);     // own copy: despike / fillOceanVoid write into it
+          let zeros = 0; for (let q = 0; q < elev.length; q++) if (elev[q] === 0) zeros++;
+          got = { elev, voidTile: zeros > 0.5 * N * N };
+        }
       } else {
+        const gp = useW ? wk.run({ op: 'geom', geom: true, z: d.z, x: d.x, y: d.y }).catch(() => null) : null;   // b53: geometry in the worker meanwhile
         const r = await fetch(tileUrl(d.z, d.x, d.y), { signal: t.ctrl.signal, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
         tlog(t, 'resp');
         if (!r.ok) throw new Error('HTTP ' + r.status);
         t.sources = tileSources(d.z, r.headers);
         got = await decodePng(r);
+        const g = gp && await gp; if (g) t.pre = g;
       }
       const elev = got.elev;
-      // A tile that is mostly exactly 0 m is an ocean void with at most a few stray rows of junk (seen: -5,725 and
-      // -10,681 m rows in an all-zero tile): drop its sea values, so fillOceanVoid rebuilds them from the parent (land kept).
-      if (got.voidTile) for (let q = 0; q < elev.length; q++) if (elev[q] < 0) elev[q] = 0;
-      despike(elev);
-      let maxAbs = 0; for (let q = 0; q < elev.length; q++) maxAbs = Math.max(maxAbs, Math.abs(elev[q]));
+      let maxAbs = got.maxAbs || 0;
+      if (!got.clean) {
+        // A tile that is mostly exactly 0 m is an ocean void with at most a few stray rows of junk (seen: -5,725 and
+        // -10,681 m rows in an all-zero tile): drop its sea values, so fillOceanVoid rebuilds them from the parent (land kept).
+        if (got.voidTile) for (let q = 0; q < elev.length; q++) if (elev[q] < 0) elev[q] = 0;
+        despike(elev);
+        for (let q = 0; q < elev.length; q++) maxAbs = Math.max(maxAbs, Math.abs(elev[q]));
+      }
       t.elev = elev; t.maxAbs = maxAbs; t.state = 'decoded'; tlog(t, 'dec'); queue.push(t); loadedOk++; loadFails = 0;
     } catch (e) {
       if (t.ctrl.signal.aborted) cache.delete(d.key);     // dropped: may be asked for again later
@@ -478,7 +565,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   function siAsk(d, src, prio) {
     const e = siQueue.get(d.key);
     if (e) { e.src = src; e.d = d; e.prio = prio; e.id = selectId; return; }
-    if (sic.size + siQueue.size < SI_MAX) siQueue.set(d.key, { d, src, prio, id: selectId });
+    if (sic.size + siQueue.size < SI_MAX) { siQueue.set(d.key, { d, src, prio, id: selectId }); if (!sic.has(d.key)) geoWant(d); }
   }
   // Build (or, from a finer source, rebuild in place with a geomorph) one stand-in. false when it is no longer needed.
   function siBuild({ d, src }) {
@@ -664,11 +751,18 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       despike(t.elev); let m = 0; for (const v of t.elev) m = Math.max(m, Math.abs(v)); t.maxAbs = m;
     }
     pt = prof(P, 'fill', pt);
-    const n = 2 ** t.z, NN = N * N, pos = new Float32Array(NN * 3), sz = new Float32Array(NN), dk = new Float32Array(NN), v = new THREE.Vector3();
-    const par = new Float32Array(NN * 4), pel = new Float32Array(NN), rs = new Float32Array(N), e = t.elev;
+    const n = 2 ** t.z, NN = N * N, dk = new Float32Array(NN), v = new THREE.Vector3();
+    const pel = new Float32Array(NN), e = t.elev;
+    // b53: positions, parent offsets and row scale from terrain-worker.js when it made them (real tiles: with the decode;
+    // stand-ins: asked for when queued), else computed here as before
+    let pre = t.polar ? null : t.pre || (t.si ? geoCache.get(t.key) : null) || null;
+    if (t.si && pre) geoCache.delete(t.key);
+    t.pre = null;
+    const pos = pre ? pre.pos : new Float32Array(NN * 3), sz = pre ? pre.sz : new Float32Array(NN), par = pre ? pre.par : new Float32Array(NN * 4), rs = pre ? pre.rs : new Float32Array(N);
     const cosC = Math.cos(t.latC * D2R);
     const pw = 2 * POLE_S / n;
-    for (let j = 0; j < N; j++) {
+    if (pre) for (let k = 0; k < NN; k++) dk[k] = dotK(e[k]);
+    else for (let j = 0; j < N; j++) {
       const lat = t.polar ? 0 : latOf(t.y + (j + 0.5) / N, n), s = t.polar ? 1 : Math.cos(lat * D2R) / cosC;   // mercator rows: spacing ∝ cos(lat)
       rs[j] = s;
       for (let i = 0; i < N; i++) {
@@ -688,8 +782,9 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     }
     pt = prof(P, 'pos', pt);
     const n2 = n / 2, pw2 = 2 * pw;
-    for (let j = 0; j < N; j += 2) for (let i = 0; i < N; i += 2) {
-      const k = j * N + i, ks = [k, k + 1, k + N, k + N + 1];
+    for (let j = 0; j < N; j += 2) for (let i = 0; i < N; i += 2) { const k = j * N + i; pel[k] = (e[k] + e[k + 1] + e[k + N] + e[k + N + 1]) / 4; }
+    if (!pre) for (let j = 0; j < N; j += 2) for (let i = 0; i < N; i += 2) {
+      const k = j * N + i;
       // the keeper's target: the parent level's own dot for this block (its global index, its jitter)
       const GI = (t.x * N + i) >> 1, GJ = (t.y * N + j) >> 1, pz = t.z - 1;
       const pjx = jit(GI, GJ, pz), pjy = jit(GJ + 7919, GI, pz);
@@ -697,7 +792,6 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       else unitM((GJ + 0.5 + pjy) / N, n2, lonOf((GI + 0.5 + pjx) / N, n2), v).sub(t.center);
       par[4 * k] = v.x - pos[3 * k]; par[4 * k + 1] = v.y - pos[3 * k + 1]; par[4 * k + 2] = v.z - pos[3 * k + 2];
       par[4 * k + 3] = 1;
-      pel[k] = (e[ks[0]] + e[ks[1]] + e[ks[2]] + e[ks[3]]) / 4;
     }
     t.rowScale = rs;
     pt = prof(P, 'par', pt);
@@ -770,7 +864,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     morphFrame(now);
   }
   function update(now) {
-    if (lite) TPX = liteTpx();   // phone 2026-11-23 late (rotation and resizes change the short side)
+    if (lite) TPX = CAP_ON ? Math.max(liteTpx(), 2 * MIN_RPX / renderer.getPixelRatio()) : liteTpx();   // phone 2026-11-23 late (rotation and resizes change the short side); b53: the detail cap
     if (!enabled) return;
     frameNo++;
     morphT.value = TPX * refine * renderer.getPixelRatio();
@@ -788,6 +882,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       const par = cache.get(parKey(t));
       if (par && par.state === 'loading' && t.z > SKIP_TO_Z) { queue.push(t); continue; }   // only fillOceanVoid (z > 10) needs the parent
       build(t); b++; built++;
+      if (t.z <= BASE_MAX_Z + 1) siKick = true;   // b53: a coarse (world base) level is in: refine on it next frame, not in 120 ms
     }
     ut = prof(UP, 'u.build', ut);
     // stand-ins: nearest the middle of the screen first; one a frame even when real builds used the budget (they would
@@ -799,6 +894,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       for (const e of list) {
         if (e.id < selectId - 1) { siQueue.delete(e.d.key); continue; }   // not asked for by the last two passes
         if (n >= SI_PER_FRAME || (n && performance.now() - tb0 >= budget) || (!n && built && lite && frameNo & 1)) break;
+        if (!sic.has(e.d.key) && !geoReady(e.d.key)) continue;   // b53: its geometry is on its way from the worker
         siQueue.delete(e.d.key);
         const t0 = performance.now();
         if (siBuild(e)) { n++; siMs += performance.now() - t0; siCount++; }
@@ -840,7 +936,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     // round 3: a fetch still on the path of this view (keep) runs on even if a finer level is now wanted (in a wheel zoom it
     // becomes the stand-in); tiles that left the view or dropped out of the wanted list are cancelled, unless prefetched
     // ahead of the camera (pfUntil) and not yet expired
-    for (const t of cache.values()) if (t.state === 'loading' && !wantKeys.has(t.key) && t.keep !== selectId && !(t.pfUntil > now) && t.ctrl) t.ctrl.abort();
+    for (const t of cache.values()) if (t.state === 'loading' && !wantKeys.has(t.key) && t.keep !== selectId && !(t.pfUntil > now && !(t.pfSeen && !visible(t))) && t.ctrl) t.ctrl.abort();
     if (globalThis.__terrainLog) { const W = globalThis.__terrainWant ??= {}; for (const [d] of want) W[d.key] ??= performance.now(); }
     const maxIn = pack ? MAX_INFLIGHT_V2 : MAX_INFLIGHT;
     for (const [d, p, helper] of want) {
@@ -937,8 +1033,18 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       if (!srcHas(tz, tx, ty)) return;
       const key = `${tz}/${tx}/${ty}`, o = pf.get(key), p = tier * 100 + i;
       if (o) { o.until = Math.max(o.until, until); o.prio = Math.min(o.prio, p); return; }
-      if (pf.size < PF_MAX) pf.set(key, { z: tz, x: tx, y: ty, until, prio: p, sent: false });
+      if (pf.size < PF_MAX) pf.set(key, { z: tz, x: tx, y: ty, until, prio: p, sent: false, tier });
     });
+  }
+  // b53, zoom-ahead (globe.js calls it every frame while zooming in): the ground point under the cursor / pinch (or the
+  // middle of the view) and the height the zoom is heading for. The tiles the view will end on there, plus those of a
+  // halfway height when the zoom is still far from its target, at the lowest priority (behind every visible tile).
+  let zaLast = 0;
+  function zoomAhead(lat, lon, targetAlt, alt) {
+    const now = performance.now(); if (!ZOOM_AHEAD || now - zaLast < 150 || !enabled) return; zaLast = now;
+    if (!(targetAlt > 0) || !(alt > targetAlt * 1.05)) return;
+    prefetchAt(lat, lon, targetAlt, now + 1500, 1);
+    if (alt > targetAlt * 4) prefetchAt(lat, lon, Math.sqrt(alt * targetAlt), now + 1500, 2);
   }
   // camera motion: the ground point in the middle of the view and the distance to it, over the last ~0.6 s
   const pfHist = [], pfG = new THREE.Vector3(), pfFwd = new THREE.Vector3();
@@ -963,16 +1069,29 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   // pack source's own prefetch (into its persistent cache, no decode).
   function runPrefetch(now, maxIn) {
     if (!pf.size) return;
-    for (const [key, p] of pf) if (p.until < now) pf.delete(key);
+    // b53: a prefetch whose tile was on screen when it was asked for and has left it since is cancelled (zoom and motion
+    // prefetches; a flight's landing tiles, tier 0, are not on screen until it lands and run until they expire)
+    for (const [key, p] of pf) {
+      const gone = p.tier > 0 && p.seen && !visible(p.d || (p.d = desc(p.z, p.x, p.y)));
+      if (p.until < now || gone) { if (p.ctrl) p.ctrl.abort(); pf.delete(key); if (gone) pfCancelled++; }
+    }
     const list = [...pf.values()].sort((a, b) => a.prio - b.prio);
     for (const p of list) {
       const key = `${p.z}/${p.x}/${p.y}`, c = cache.get(key);
-      if (c) { if (c.state === 'loading' || c.state === 'ready') { c.pfUntil = p.until; c.used = frameNo; } continue; }
-      if (pack) { if (!p.sent) { p.sent = true; try { pack.prefetch(p.z, p.x, p.y); } catch (e) { /* best effort */ } } continue; }
+      if (c) { if (c.state === 'loading' || c.state === 'ready') { c.pfUntil = p.until; c.pfTier = p.tier; c.used = frameNo; } continue; }
+      if (pack) {
+        if (!p.sent) {
+          p.sent = true; p.seen = p.tier > 0 && visible(p.d || (p.d = desc(p.z, p.x, p.y)));
+          p.ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+          try { pack.prefetch(p.z, p.x, p.y, { signal: p.ctrl && p.ctrl.signal, prio: p.prio }).then(() => { p.ctrl = null; }, () => {}); } catch (e) { /* best effort */ }
+        }
+        continue;
+      }
       if (inflight >= Math.min(maxIn, PF_SLOTS)) break;
-      const d = desc(p.z, p.x, p.y); load(d, 1000 + p.prio); d.pfUntil = p.until;
+      const d = desc(p.z, p.x, p.y); load(d, 1000 + p.prio); d.pfUntil = p.until; d.pfTier = p.tier; d.pfSeen = p.tier > 0 && visible(d);
     }
   }
+  let pfCancelled = 0;
   // globe.js, at the start of a flight: the tiles where it will land (altRadii: the camera's height there, in radii)
   function prefetch(lat, lon, altRadii) { prefetchAt(lat, lon, altRadii, performance.now() + 6000, 0); }
 
@@ -1049,5 +1168,5 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   function recolour() { for (const t of cache.values()) if (t.state === 'ready') colourTile(t); for (const t of sic.values()) if (t.state === 'ready') { t.cFrom = t.cTo = t.pFrom = t.pTo = null; colourTile(t); } }
 
   return { group, update, setEnabled, setAlpha, status, finestM, recolour, elevationAt, get refine() { return refine; }, get enabled() { return enabled; }, get pending() { return pending; }, get holes() { return lastHoles; }, coverTex, get coverFull() { return covFull; }, get health() { return { ok: loadedOk, fails: loadFails, lastErr, inflight }; }, cache,
-    prefetch, get standIns() { return shownSI.length; }, get fading() { let n = 0; for (const t of live) if (t.fade > 0 && t.fade < 1) n++; return n; }, get heldN() { return heldKeys.size; }, get frameEma() { return frameEma; }, get siDebug() { return { msPerBuild: +(siMs / Math.max(1, siCount)).toFixed(2), builds: siCount, built: sic.size, queued: siQueue.size, shown: shownSI.length, morphing: morphing.size, colourMorphs: [...morphing].filter(t => t.cFrom).length, pf: pf.size }; }, get format() { return pack ? 'v2' : 'png'; } };
+    prefetch, zoomAhead, get pfCancelled() { return pfCancelled; }, get packStats() { return pack && pack.stats ? pack.stats() : null; }, get workers() { return workOk(); }, get standIns() { return shownSI.length; }, get fading() { let n = 0; for (const t of live) if (t.fade > 0 && t.fade < 1) n++; return n; }, get heldN() { return heldKeys.size; }, get frameEma() { return frameEma; }, get siDebug() { return { msPerBuild: +(siMs / Math.max(1, siCount)).toFixed(2), builds: siCount, built: sic.size, queued: siQueue.size, shown: shownSI.length, morphing: morphing.size, colourMorphs: [...morphing].filter(t => t.cFrom).length, pf: pf.size }; }, get format() { return pack ? 'v2' : 'png'; } };
 }

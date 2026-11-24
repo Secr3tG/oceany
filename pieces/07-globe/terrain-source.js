@@ -35,7 +35,7 @@ let pack = null, packP = null;
 export function startPacks() {
   if (packP) return packP;
   if (!V2_ASKED) return (packP = (USE_AWS ? Promise.resolve() : pngCoverage()).then(() => null));
-  return (packP = import('./tilepack.js?v=p1')
+  return (packP = import('./tilepack.js?v=p2')
     .then(async m => {
       if (!m.supported) { console.warn('terrain v2: no DecompressionStream deflate-raw here, using the PNG tiles'); return null; }
       const ps = m.createPackSource(V2_BASE, { cacheName: 'oceany-terrain2-v1', maxInflight: 8 });   // 8: ranges are capped at 192 KB now, so more of them run side by side
