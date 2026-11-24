@@ -19,6 +19,14 @@ is for navigation.
   (DTM 2024). https://doi.org/10.12770/cf51df64-56f9-4a99-b1aa-36b8d7b743a1. CC BY 4.0.
   Resampled and merged with GEBCO_2026 and Copernicus DEM. Not for navigation.
   Details: `pieces/07-globe/tiles-build/SOURCES.md` section 3.
+- Globe terrain tiles, finer seabed overlay (bathy2, z9-z11): the same EMODnet DTM 2024 (CC BY 4.0)
+  for Ireland, the Mediterranean, the Levant, Morocco, the Canaries, Madeira and the Azores, and up to
+  z11 in the boxes above. Resampled; depths relative to LAT. Not for navigation.
+  Details: `pieces/07-globe/tiles-build/SOURCES.md` section 6.
+- Globe terrain tiles, Hawaii and central California seabed (bathy2, z9-z13): NOAA National Centers for
+  Environmental Information, Continuously Updated Digital Elevation Model (CUDEM), doi:10.25921/ds9v-ky35.
+  US Government work, public domain; not endorsed by NOAA. Averaged to ~10 m and resampled.
+  Not for navigation.
 - Danish waters (50 m): Contains data from the Danish Geodata Agency, Denmark's
   Depth Model, 50 m resolution. Obtained 2026-11-11. Terms:
   https://eng.gst.dk/danish-hydrographic-office/denmark-depth-model

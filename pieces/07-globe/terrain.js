@@ -24,7 +24,7 @@
 //   they leave the view, and tiles ahead of a fly or zoom are prefetched (PF_LOOK, and prefetch() for globe.js flights).
 // - ?terrain=v2: tiles come from the terrain2 packs through tilepack.js (terrain-source.js); the PNG path is the default.
 import * as THREE from 'three';
-import { tileUrl, covered as srcHas, coverageKnown, tileSources, SEABED, seabedOf, USE_AWS, V2_ASKED, startPacks } from './terrain-source.js?v=t5';
+import { tileUrl, covered as srcHas, coverageKnown, tileSources, SEABED, seabedOf, USE_AWS, V2_ASKED, startPacks } from './terrain-source.js?v=t6';
 import { makeDotMaterial, palette, dotExag, morphT, landTone, oceanTone, SHALLOW_M, LAND_DOT_D, HUE_MAX } from './dots.js';
 
 const R_EARTH = 6371000;

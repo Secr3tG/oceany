@@ -30,7 +30,36 @@ const pngCoverage = () => pngP || (pngP = fetch(OWN_BASE + 'coverage.json').then
 // the PNG tiles and their coverage, unchanged.
 export const V2_ASKED = !USE_AWS && new URLSearchParams(location.search).get('terrain') !== 'v1';
 const V2_BASE = (IS_LOCAL && SRC_Q === 'local') ? new URL('./tiles-build/v2/out/', import.meta.url).href : 'https://tiles.hvid.studio/terrain2/';
-let pack = null, packP = null;
+let pack = null, packP = null, b2 = null, b2Wait = null;
+// bathy2 (b55, 2026-11-24): a sparse overlay of survey sea floor in the same pack format, https://tiles.hvid.studio/bathy2/
+// (built by tiles-build/bathy2/build_bathy.py; rules in tiles-build/bathy2/PLAN.md). A tile its coverage.json lists replaces
+// terrain2's tile at the same z/x/y: same land, survey sea floor (EMODnet DTM 2024 ~115 m to z11 in European seas, NOAA CUDEM
+// ~10 m to z13 for Hawaii and Sonoma-Big Sur). No tile is built finer than its survey cell, so nothing here draws more detail
+// than was measured. Its coverage.json (~10 KB gzipped) is the index: no bathy2 pack is asked for outside its rects, and a
+// tile it lists but cannot deliver falls back to terrain2. ?bathy=0 turns it off (test switch).
+const B2_ASKED = new URLSearchParams(location.search).get('bathy') !== '0';
+const B2_BASE = 'https://tiles.hvid.studio/bathy2/';
+const B2_WAIT_MS = 2500;          // first visit: how long a z9+ tile waits for bathy2's index before going to terrain2 (base levels never wait)
+const b2Has = (z, x, y) => !!(b2 && b2.coverage && z >= 9 && b2.covered(z, x, y));
+function overlay(t2, ov) {
+  const pick = (z, x, y) => (b2Has(z, x, y) ? ov : t2);
+  const settle = (z) => (z >= 9 && b2Wait ? b2Wait : null);   // until bathy2's index is in (or its wait ran out)
+  return Object.assign({}, t2, {
+    covered: (z, x, y) => t2.covered(z, x, y) || b2Has(z, x, y),
+    async getTile(z, x, y, o) {
+      const w = settle(z); if (w) await w;
+      if (!b2Has(z, x, y)) return t2.getTile(z, x, y, o);
+      let t = null;
+      try { t = await ov.getTile(z, x, y, o); } catch (e) { if (e && e.name === 'AbortError') throw e; }
+      return t || t2.getTile(z, x, y, o);       // listed but absent or failed: terrain2's tile (no hole)
+    },
+    async prefetch(z, x, y, o) { const w = settle(z); if (w) await w; return pick(z, x, y).prefetch(z, x, y, o); },
+    dropTile: (z, x, y) => pick(z, x, y).dropTile(z, x, y),
+    inCache: (z, x, y) => pick(z, x, y).inCache(z, x, y),
+    stats() { const a = t2.stats(), b = ov.stats(); return Object.assign({}, a, { requests: a.requests + b.requests, bytes: a.bytes + b.bytes, bathy2: b }); },
+    get coverage() { return t2.coverage; },
+  });
+}
 // resolves to the pack source once its coverage is in, or null (v1 asked, unsupported, failed): then PNG tiles and their coverage
 export function startPacks() {
   if (packP) return packP;
@@ -39,9 +68,19 @@ export function startPacks() {
     .then(async m => {
       if (!m.supported) { console.warn('terrain v2: no DecompressionStream deflate-raw here, using the PNG tiles'); return null; }
       const ps = m.createPackSource(V2_BASE, { cacheName: 'oceany-terrain2-v1', maxInflight: 8 });   // 8: ranges are capped at 192 KB now, so more of them run side by side
+      // bathy2 starts at the same time (its index comes from the Cache API on a repeat visit); its own cache, smaller cap
+      const ob = (B2_ASKED && !(IS_LOCAL && SRC_Q === 'local')) ? m.createPackSource(B2_BASE, { cacheName: 'oceany-bathy2-v1', maxInflight: 6, cacheMaxBytes: 60e6 }) : null;
+      const bReady = ob ? ob.ready.then(j => (j && j.overlay ? j : null)).catch(() => null) : Promise.resolve(null);
       const j = await ps.ready;
       if (!j) { console.warn('terrain v2: no coverage.json at ' + V2_BASE + ', using the PNG tiles'); return null; }
-      cov = j; pack = ps; return ps;
+      cov = j; pack = ps;
+      if (!ob) return ps;
+      // The overlay starts at once; only z9+ tiles (where bathy2 can have data) wait for its index, at most B2_WAIT_MS, so
+      // the base levels never queue behind a slow coverage.json. After the wait the index joins whenever it arrives.
+      b2 = ob;
+      b2Wait = Promise.race([bReady, new Promise(r => setTimeout(r, B2_WAIT_MS))]).then(() => { b2Wait = null; });
+      bReady.then(v => { if (!v) b2 = null; });                          // no bathy2 (failed, not an overlay): terrain2 alone
+      return (pack = overlay(ps, ob));
     })
     .catch(e => { console.warn('terrain v2 unavailable, using the PNG tiles:', e && e.message || e); return null; })
     .then(ps => (ps || pngCoverage().then(() => null))));
@@ -69,6 +108,9 @@ export function tileSources(z, headers) {
 // Seabed source of one tile: GEBCO_2026 everywhere, EMODnet DTM 2024 (~115 m) where coverage.json's `seabed` rects list
 // the tile (European seas at z9-z10, added 2026-11-23). Used by the readout's seabed line.
 export function seabedOf(z, x, y) {
+  if (b2Has(z, x, y) && b2.coverage.seabed) for (const sb of b2.coverage.seabed) {   // bathy2's surveys first (b55)
+    const rs = sb.rects[z]; if (rs) for (const r of rs) if (x >= r[0] && x <= r[1] && y >= r[2] && y <= r[3]) return sb;
+  }
   if (!USE_AWS && cov && cov.seabed) for (const sb of cov.seabed) {
     const rs = sb.rects[z]; if (rs) for (const r of rs) if (x >= r[0] && x <= r[1] && y >= r[2] && y <= r[3]) return sb;
   }

@@ -10,8 +10,8 @@
 const R2_HOST = 'pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev';
 const IS_LOCAL = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
 const TILE_BASE = IS_LOCAL ? './tiles-build/tiles/' : `https://${R2_HOST}/terrain/`;
-const SHELL = 'oceany-shell-b54', TILES = 'oceany-tiles-1', TILE_MAX = 600;
-const PRECACHE = ['./', './index.html', './globe.js?v=b54', './tour.js?v=b51', './dots.js?v=b43', './terrain.js?v=b54', './terrarium.js', './terrain-source.js?v=t5', './tilepack.js?v=p2', './terrain-worker.js?v=w1', TILE_BASE + 'coverage.json',
+const SHELL = 'oceany-shell-b55', TILES = 'oceany-tiles-1', TILE_MAX = 600;
+const PRECACHE = ['./', './index.html', './globe.js?v=b55', './tour.js?v=b51', './dots.js?v=b43', './terrain.js?v=b55', './terrarium.js', './terrain-source.js?v=t6', './tilepack.js?v=p2', './terrain-worker.js?v=w1', TILE_BASE + 'coverage.json',
   './layers.json', './regions.json', './manifest.webmanifest', './assets/earth_dots.json', './assets/earth_dots.bin',
   './assets/stars.bin', './assets/icons/icon-192.png', './assets/icons/icon-512.png',
   '../01-seafloor/viewer/vendor/three.module.js', '../01-seafloor/viewer/vendor/three.core.js'];
@@ -46,7 +46,10 @@ self.addEventListener('install', e => {
   }).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('oceany-') && k !== SHELL && k !== TILES).map(k => caches.delete(k))))
+  // b55: tilepack.js's own caches (oceany-terrain2-*, oceany-bathy2-*: pack tiles keyed by their coverage.json version, trimmed by
+  // tilepack) outlive a release; until b54 every new shell wiped them, so each release re-downloaded the 6.7 MB world base.
+  const KEEP = k => k === SHELL || k === TILES || /^oceany-(terrain2|bathy2)-/.test(k);
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('oceany-') && !KEEP(k)).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 // b38: network state. A failed network fetch marks the network down for NET_HOLD ms; meanwhile same-origin GETs are served

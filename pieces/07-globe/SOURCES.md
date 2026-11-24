@@ -29,6 +29,13 @@ rounded to 1 m. Every download, licence quote and date is in `tiles-build/SOURCE
   terrain is built only around the spots."
 - **Seabed honesty:** at sea the dots are interpolated from the 463 m GEBCO grid; the readout says "Seabed from GEBCO_2026,
   measured about every 460 m" and warns when dots are closer than that.
+- **Survey sea floor (b55, 2026-11-24), `bathy2/` overlay** (`terrain-source.js`; build and rules in
+  `tiles-build/bathy2/PLAN.md` and `tiles-build/SOURCES.md` section 6): where its coverage index lists a tile, its sea dots
+  come from a survey instead of GEBCO; land is unchanged. **EMODnet DTM 2024** (~115 m, CC BY 4.0) at z9-z11 (z10 above
+  ~60 N) for Ireland, Cornwall, the North Sea, the Baltic to 61.8 N, Biscay, Iberia, the Mediterranean, the Levant,
+  Morocco, the Canaries, Madeira and the Azores. **NOAA NCEI CUDEM** (~10 m, US Government work, public domain,
+  doi:10.25921/ds9v-ky35) at z9-z13 for the main Hawaiian Islands and Sonoma to Big Sur. No tile is built finer than its
+  survey's cell (zoom rule in PLAN.md); the readout names the survey and its cell. Credited in both credit blocks below.
 
 **Credit shown** under View › Terrain credits whenever terrain is on, and in About › Credits (from `tiles-build/SOURCES.md`):
 

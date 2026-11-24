@@ -15,8 +15,8 @@
 //     .setShowPaths(bool): adds a "show all paths" checkbox under the layer, default off.
 import * as THREE from 'three';
 import { makeDotMaterial, palette, setPalette, PALETTES, updateDotScale, dotScale, dotExag, seaExag, applyCssPalette, landTone, oceanTone, LAND_DOT_D, HUE_MAX, ICE_LAT } from './dots.js';
-import { createTerrain } from './terrain.js?v=b54';
-import { USE_AWS as TERRAIN_AWS } from './terrain-source.js?v=t5';
+import { createTerrain } from './terrain.js?v=b55';
+import { USE_AWS as TERRAIN_AWS } from './terrain-source.js?v=t6';
 
 const RADIUS = 1.0;
 const D2R = Math.PI / 180;
