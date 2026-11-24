@@ -1,4 +1,4 @@
-// Shared loader for the three ocean layers (wind.js, waves.js, swell.js): reads what build_ocean.py writes into data/
+// Shared loader for the three ocean layers (wind.js, waves.js, swell.js): reads what build_ocean.py and build_ecmwf.py write into data/
 // and gives each layer the grids plus the shared wording (model, run, valid time, staleness).
 // Plumbing: the layers call loadWind()/loadWaves() the first time they are shown; nothing is fetched before that.
 // Hosted pages read the newest build from Cloudflare R2 (../07-globe/data-source.js, layer 'ocean', refreshed after each
@@ -6,80 +6,112 @@
 // One build holds one run's forecast hours (+3 h to +13 h, ocean.json `steps`). The layers show the hour nearest the
 // viewer's clock and move to the next hour by themselves (STEP_CHECK_MS): a small file from R2, nothing asked of NOAA.
 // An ocean.json without steps (older builds) is the single snapshot in wind_gfs.bin / waves_ww3.bin, as before.
+// Two models (ocean_model.js switches between them; GFS at load):
+//   gfs    NOAA GFS wind + GFS-Wave (WAVEWATCH III), build_ocean.py, hourly steps; published as R2 layer 'ocean'
+//   ecmwf  ECMWF IFS wind + ecWAM waves, build_ecmwf.py, 3-hourly steps; published as R2 layer 'ecmwf' (CC BY 4.0)
+// Each has its own cache, so switching back is instant. The swell fronts always ask for 'gfs' (ECMWF's open data has no
+// swell partitions).
 import { layerFile, onLayerUpdate, ageNote } from '../07-globe/data-source.js';
 
-const META_URL = new URL('./data/ocean.json', import.meta.url);
-const WIND_URL = new URL('./data/wind_gfs.bin', import.meta.url);
-const WAVE_URL = new URL('./data/waves_ww3.bin', import.meta.url);
+export const MODELS = {
+  gfs: { layer: 'ocean', meta: 'ocean.json', wind: 'wind_gfs.bin', waves: 'waves_ww3.bin', label: 'GFS' },
+  ecmwf: { layer: 'ecmwf', meta: 'ocean_ecmwf.json', wind: 'wind_ifs.bin', waves: 'waves_ifs.bin', label: 'ECMWF' },
+};
+const local = (file) => new URL('./data/' + file, import.meta.url);
 export const STALE_HOURS = 6;     // the shown hour is further than this from now: say how old it is
 const STEP_CHECK_MS = 5 * 60 * 1000;
 
-let rawP = null, windP = null, waveP = null, stepKey = null, stepTimer = null;
+// ?ocean_model=ecmwf picks ECMWF at load (for testing and links); otherwise GFS.
+const asked = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('ocean_model') : null;
+let model = MODELS[asked] ? asked : 'gfs';
+export const getModel = () => model;
+const cache = {};                 // model -> { rawP, windP, waveP, stepKey }
+const C = (m) => (cache[m] ||= { rawP: null, windP: null, waveP: null, stepKey: null });
+let stepTimer = null;
 const ok = (r, what) => { if (!r.ok) throw new Error(what + ' HTTP ' + r.status); return r; };
-const get = async (file, local) => fetch(await layerFile('ocean', file, local), { cache: 'no-cache' });
-// Something new while the page is open (a newer build, or the clock reached the next hour): tell each ocean layer.
+const get = async (m, file, localUrl) => fetch(await layerFile(MODELS[m].layer, file, localUrl), { cache: 'no-cache' });
+// Something new while the page is open (a newer build, the clock reached the next step, or the model was switched):
+// tell each ocean layer, which reloads through loadWind()/loadWaves().
 const updateSubs = new Set();
 let subscribed = false;
+const notify = () => updateSubs.forEach((f) => { try { f(); } catch (e) { /* a layer's own problem */ } });
 export function onOceanUpdate(cb) {
   updateSubs.add(cb);
   if (!subscribed) {
     subscribed = true;
-    onLayerUpdate('ocean', () => { rawP = windP = waveP = null; updateSubs.forEach((f) => f()); });
+    for (const m of Object.keys(MODELS)) onLayerUpdate(MODELS[m].layer, () => { cache[m] = null; notify(); });
   }
 }
-const loadRaw = () => rawP ||= get('ocean.json', META_URL).then((r) => ok(r, 'ocean.json').json()).catch((e) => { rawP = null; throw e; });
+// Switch model for the wind and wave-height layers. Returns true when it changed.
+export function setModel(m) {
+  if (!MODELS[m] || m === model) return false;
+  model = m;
+  notify();
+  return true;
+}
+const loadRaw = (m) => C(m).rawP ||= get(m, MODELS[m].meta, local(MODELS[m].meta))
+  .then((r) => ok(r, MODELS[m].meta).json()).catch((e) => { C(m).rawP = null; throw e; });
 // the step nearest the viewer's clock, or null when the build has no steps
-function nearestStep(m) {
-  const steps = Array.isArray(m.steps) ? m.steps.filter((s) => s && /^[\w.-]+$/.test(s.wind) && /^[\w.-]+$/.test(s.waves)) : [];
+function nearestStep(meta) {
+  const steps = Array.isArray(meta.steps) ? meta.steps.filter((s) => s && /^[\w.-]+$/.test(s.wind) && /^[\w.-]+$/.test(s.waves)) : [];
   let best = null;
   for (const s of steps) if (!best || Math.abs(Date.parse(s.valid) - Date.now()) < Math.abs(Date.parse(best.valid) - Date.now())) best = s;
   return best;
 }
-// ocean.json as the layers read it: the top-level times and spots replaced by the chosen step's
+// the meta as the layers read it: the top-level times and spots replaced by the chosen step's
 const view = (m, s) => (!s ? m : { ...m, valid: s.valid, validWaves: s.valid, spots: s.spots || m.spots, step: s,
   wind: { ...m.wind, forecastHour: s.forecastHour, source: s.windSource || m.wind.source },
   waves: { ...m.waves, forecastHour: s.forecastHour, source: s.waveSource || m.waves.source } });
 function watchSteps() {
   if (stepTimer) return;
   stepTimer = setInterval(() => {
-    if (!rawP || typeof document !== 'undefined' && document.hidden) return;
-    rawP.then((m) => {
-      const s = nearestStep(m);
-      if (s && s.valid !== stepKey) { stepKey = s.valid; windP = waveP = null; updateSubs.forEach((f) => f()); }
-    }).catch(() => {});
+    if (typeof document !== 'undefined' && document.hidden) return;
+    for (const m of Object.keys(cache)) {
+      const c = cache[m];
+      if (!c || !c.rawP) continue;
+      c.rawP.then((meta) => {
+        const s = nearestStep(meta);
+        if (s && s.valid !== c.stepKey) { c.stepKey = s.valid; c.windP = c.waveP = null; notify(); }
+      }).catch(() => {});
+    }
   }, STEP_CHECK_MS);
 }
-export function loadMeta() {
-  return loadRaw().then((m) => { const s = nearestStep(m); if (s) { stepKey = s.valid; watchSteps(); } return view(m, s); });
+const withModel = (meta, m) => ({ ...meta, modelId: m, modelLabel: MODELS[m].label });
+export function loadMeta(m = model) {
+  return loadRaw(m).then((meta) => { const s = nearestStep(meta); if (s) { C(m).stepKey = s.valid; watchSteps(); } return withModel(view(meta, s), m); });
 }
 // One of the chosen step's files, with its meta; if that file cannot be read, the single snapshot file and the
 // top-level meta that describes it.
-async function stepFile(key, single, singleUrl) {
-  const meta = await loadMeta();
+async function stepFile(m, key) {
+  const meta = await loadMeta(m);
   if (meta.step) {
-    try { const r = await get(meta.step[key], new URL('./data/' + meta.step[key], import.meta.url)); if (r.ok) return [meta, await r.arrayBuffer()]; }
+    try { const r = await get(m, meta.step[key], local(meta.step[key])); if (r.ok) return [meta, await r.arrayBuffer()]; }
     catch (e) { /* fall through to the single file */ }
   }
-  const r = ok(await get(single, singleUrl), single);
-  return [view(await loadRaw(), null), await r.arrayBuffer()];
+  const single = MODELS[m][key];
+  const r = ok(await get(m, single, local(single)), single);
+  return [withModel(view(await loadRaw(m), null), m), await r.arrayBuffer()];
 }
 // Wind: { meta, nLat, nLon, lat0, step, u: Float32Array, v: Float32Array } (m/s, rows from the south, columns from 0 E)
-export function loadWind() {
-  return windP ||= stepFile('wind', 'wind_gfs.bin', WIND_URL)
+export function loadWind(m = model) {
+  const c = C(m);
+  return c.windP ||= stepFile(m, 'wind')
     .then(([meta, buf]) => {
       const g = meta.wind.grid, n = g.nLat * g.nLon;
-      if (buf.byteLength !== 2 * n) throw new Error('wind file size does not match ocean.json');
+      if (buf.byteLength !== 2 * n) throw new Error('wind file size does not match ' + MODELS[m].meta);
       const raw = new Int8Array(buf), u = new Float32Array(n), v = new Float32Array(n);
       for (let i = 0; i < n; i++) { u[i] = raw[i] * 0.5; v[i] = raw[n + i] * 0.5; }
       return { meta, ...g, u, v };
-    }).catch((e) => { windP = null; throw e; });
+    }).catch((e) => { c.windP = null; throw e; });
 }
-// Waves: { meta, nLat, nLon, lat0, step, f: { Thgt, Tper, Tdir, shgt, ... } as Float32Array with NaN for no data }
-export function loadWaves() {
-  return waveP ||= stepFile('waves', 'waves_ww3.bin', WAVE_URL)
+// Waves: { meta, nLat, nLon, lat0, step, f: { Thgt, Tper, Tdir, ... } as Float32Array with NaN for no data }
+// (GFS: 9 fields incl. the swell partition shgt/sper/sdir; ECMWF: Thgt, Tper, Tdir, mper. The fields list is in the meta.)
+export function loadWaves(m = model) {
+  const c = C(m);
+  return c.waveP ||= stepFile(m, 'waves')
     .then(([meta, buf]) => {
       const w = meta.waves, g = w.grid, n = g.nLat * g.nLon;
-      if (buf.byteLength !== w.fields.length * n) throw new Error('wave file size does not match ocean.json');
+      if (buf.byteLength !== w.fields.length * n) throw new Error('wave file size does not match ' + MODELS[m].meta);
       const raw = new Uint8Array(buf), f = {};
       w.fields.forEach((name, k) => {
         const a = new Float32Array(n), s = w.scale[name];
@@ -87,7 +119,15 @@ export function loadWaves() {
         f[name] = a;
       });
       return { meta, ...g, f };
-    }).catch((e) => { waveP = null; throw e; });
+    }).catch((e) => { c.waveP = null; throw e; });
+}
+// The "Data:" credit line for a layer's details, per model. ECMWF's CC BY 4.0 licence asks for this attribution.
+export function dataLine(meta, builder) {
+  const when = meta && meta.built ? ` on ${fmt(meta.built)}.` : '.';
+  if (meta && meta.modelId === 'ecmwf')
+    return `Data: ${meta.attribution || '© European Centre for Medium-Range Weather Forecasts (ECMWF). Source: ECMWF open data, IFS. Licence: CC BY 4.0.'} ` +
+      `Steps every 3 hours; the one nearest your clock is shown. Not an official ECMWF product. A snapshot built by build_ecmwf.py${when}`;
+  return `Data: NOAA NCEP model output from NOMADS (US Government work, public domain); redrawn here, not an official NOAA product. A snapshot built by ${builder || 'build_ocean.py'}${when}`;
 }
 
 const fmt = (iso) => {

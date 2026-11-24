@@ -10,8 +10,8 @@
 const R2_HOST = 'pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev';
 const IS_LOCAL = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
 const TILE_BASE = IS_LOCAL ? './tiles-build/tiles/' : `https://${R2_HOST}/terrain/`;
-const SHELL = 'oceany-shell-b55', TILES = 'oceany-tiles-1', TILE_MAX = 600;
-const PRECACHE = ['./', './index.html', './globe.js?v=b55', './tour.js?v=b51', './dots.js?v=b43', './terrain.js?v=b55', './terrarium.js', './terrain-source.js?v=t6', './tilepack.js?v=p2', './terrain-worker.js?v=w1', TILE_BASE + 'coverage.json',
+const SHELL = 'oceany-shell-b56', TILES = 'oceany-tiles-1', TILE_MAX = 600;
+const PRECACHE = ['./', './index.html', './globe.js?v=b56', './tour.js?v=b51', './dots.js?v=b43', './terrain.js?v=b55', './terrarium.js', './terrain-source.js?v=t6', './tilepack.js?v=p2', './terrain-worker.js?v=w1', './data-source.js', TILE_BASE + 'coverage.json',
   './layers.json', './regions.json', './manifest.webmanifest', './assets/earth_dots.json', './assets/earth_dots.bin',
   './assets/stars.bin', './assets/icons/icon-192.png', './assets/icons/icon-512.png',
   '../01-seafloor/viewer/vendor/three.module.js', '../01-seafloor/viewer/vendor/three.core.js'];
@@ -76,6 +76,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   if (req.method === 'HEAD' && url.origin === location.origin && isDown()) { e.respondWith(new Response(null, { status: 204 })); return; }
   if (req.method !== 'GET') return;
+  if (url.hostname === R2_HOST && url.pathname.startsWith('/data/')) return;   // b56: refreshed layer data and latest.json: never cache first
   if (TILE_HOSTS.includes(url.hostname) || (url.origin === location.origin && OWN_TILE.test(url.pathname))) { e.respondWith(tile(req)); return; }
   if (url.origin !== location.origin) return;
   e.respondWith((async () => {

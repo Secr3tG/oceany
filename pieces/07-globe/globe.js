@@ -1323,6 +1323,8 @@ function flyToStorm(layer) {
   flyTo(null, null, RADIUS + followDist(layer, t0.rating), { dir: () => follow && follow.dir, pitch: followPitch(layer), extra: 800 });
 }
 function releaseFollow() { if (follow) { follow = null; zoom.target = clampAlt(zoom.target); northEase = true; } }   // ends: ease back to north-up
+// b56: a live storm card's Fly button (08-storms/hurricanes_live.js) asks the globe to follow that storm
+addEventListener('oceany:fly-storm', e => { const l = layers.find(x => x.userData.layerId === e.detail.layerId && x.visible); if (!l) return; e.detail.handled = true; if (follow) releaseFollow(); flyToStorm(l); });
 // North-up: eases the heading back to 0 (after a follow, or from the N button). A turn-drag cancels it.
 // At whole-globe range the Earth always sits north-up when nothing holds it (no drag, follow, or turned flight): a view
 // that arrives there turned (zoomed out from a turned close view, a flight that carried a heading) eases back by itself.
@@ -1486,10 +1488,10 @@ const NOTICE = {
   liveLayer: 'Not an official product. Do not use for safety decisions.',
   liveExtra: { 'tornado-live': 'If a warning is in effect where you are, follow weather.gov and local officials.' },
   liveCue: { 'tornado-live': 'NOAA reports active tornado warnings' },   // the glow's tooltip: a report, never an instruction
-  liveIds: new Set(['hurricanes', 'tornado-live', 'aurora', 'quakes-live', 'snow', 'wind', 'waves', 'swell']),  // live data and model layers (the SPC tornado archive is history)
+  liveIds: new Set(['hurricanes', 'hurricanes-live', 'tornado-live', 'aurora', 'quakes-live', 'snow', 'wind', 'waves', 'swell']),  // live data and model layers (the SPC tornado archive is history)
   // the on-globe line under the standing line: live feeds and model output (hurricanes are an IBTrACS replay of past
   // tracks, so their line stays in the panel only)
-  globeIds: new Set(['hurricanes', 'tornadoes', 'tornado-live', 'aurora', 'quakes-live', 'snow', 'wind', 'waves', 'swell']),
+  globeIds: new Set(['hurricanes', 'hurricanes-live', 'tornadoes', 'tornado-live', 'aurora', 'quakes-live', 'snow', 'wind', 'waves', 'swell']),
 };
 {
   const a = document.getElementById('notice-standing');
@@ -2137,7 +2139,7 @@ const tourApi = { TOUR, PROFILE, view, zoom, pan, regions, POP, popOpen, popClos
   layers, openSection, get section() { const b = barBtns.find(x => x.getAttribute('aria-expanded') === 'true'); return b ? b.dataset.sec : null; },
   get follow() { return follow; }, releaseFollow,
   stormAt: () => {
-    const h = layers.find(l => l.userData.layerId === 'hurricanes' && l.visible); if (!h) return null;
+    const h = layers.find(l => /^hurricanes/.test(l.userData.layerId) && l.visible); if (!h) return null;
     for (const t of targetsOf(h)) {
       const pos = latLonToVector3(t.lat, t.lon, RADIUS); if (!facing({ pos }) || !inFront(pos)) continue;
       const [x, y] = screenOf(pos); if (x > 30 && y > 70 && x < innerWidth - 30 && y < innerHeight - 70) return [x, y, t.name];

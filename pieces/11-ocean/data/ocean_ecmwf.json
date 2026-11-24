@@ -1,0 +1,129 @@
+{
+ "modelId": "ecmwf",
+ "valid": "2026-11-24T21:00:00Z",
+ "validWaves": "2026-11-24T21:00:00Z",
+ "built": "2026-11-24T20:52+00:00",
+ "wind": {
+  "model": "ECMWF IFS (0.25 degree, every 2nd point kept)",
+  "short": "ECMWF IFS",
+  "run": "2026-11-24 12 UTC",
+  "forecastHour": 9,
+  "source": "https://storage.googleapis.com/ecmwf-open-data/20261124/12z/ifs/0p25/oper/20261124120000-9h-oper-fc.grib2",
+  "grid": {
+   "lat0": -90,
+   "nLat": 361,
+   "lon0": 0,
+   "nLon": 720,
+   "step": 0.5
+  },
+  "layout": "int8 u[361][720] then v[361][720], m/s x 2 (u east, v north); rows from 90 S, columns from 0 E"
+ },
+ "waves": {
+  "model": "ECMWF IFS wave model (ecWAM), coupled to the IFS atmosphere (0.25 degree, every 2nd point kept)",
+  "short": "ECMWF ecWAM",
+  "run": "2026-11-24 12 UTC",
+  "forecastHour": 9,
+  "source": "https://storage.googleapis.com/ecmwf-open-data/20261124/12z/ifs/0p25/wave/20261124120000-9h-wave-fc.grib2",
+  "grid": {
+   "lat0": -90,
+   "nLat": 361,
+   "lon0": 0,
+   "nLon": 720,
+   "step": 0.5
+  },
+  "fields": [
+   "Thgt",
+   "Tper",
+   "Tdir",
+   "mper"
+  ],
+  "scale": {
+   "Thgt": 0.1,
+   "Tper": 0.1,
+   "Tdir": 2.0,
+   "mper": 0.1
+  },
+  "noData": 255,
+  "fieldNotes": {
+   "Thgt": "significant wave height (swh)",
+   "Tper": "peak period (pp1d)",
+   "Tdir": "mean direction, coming from (mwd)",
+   "mper": "mean period (mwp)"
+  },
+  "layout": "uint8 [4][361][720] in the order of fields; value x scale; directions are 'coming from', degrees clockwise from north"
+ },
+ "licence": "CC BY 4.0",
+ "attribution": "\u00a9 2026 European Centre for Medium-Range Weather Forecasts (ECMWF). Source: ECMWF open data, IFS. Licence: CC BY 4.0. ECMWF does not accept any liability whatsoever for any error or omission in the data, their availability, or for any loss or damage arising from their use. Regridded and rounded here.",
+ "spots": [
+  {
+   "id": "porto_batel",
+   "name": "Porto Batel / Consola\u00e7\u00e3o",
+   "lat": 39.3195,
+   "lon": -9.3558,
+   "gridLat": 39.25,
+   "gridLon": 350.5,
+   "totalHeight": 2.74,
+   "peakPeriod": 10.8,
+   "meanPeriod": 9.1,
+   "meanFrom": 299,
+   "windU": 8.7,
+   "windV": -5.7
+  },
+  {
+   "id": "supertubos",
+   "name": "Supertubos",
+   "lat": 39.3398,
+   "lon": -9.3619,
+   "gridLat": 39.25,
+   "gridLon": 350.5,
+   "totalHeight": 2.74,
+   "peakPeriod": 10.8,
+   "meanPeriod": 9.1,
+   "meanFrom": 299,
+   "windU": 8.7,
+   "windV": -5.7
+  },
+  {
+   "id": "pipeline",
+   "name": "Pipeline",
+   "lat": 21.665,
+   "lon": -158.053,
+   "gridLat": 21.75,
+   "gridLon": 202.0,
+   "totalHeight": 2.15,
+   "peakPeriod": 17.3,
+   "meanPeriod": 13.4,
+   "meanFrom": 4,
+   "windU": -4.5,
+   "windV": 1.4
+  },
+  {
+   "id": "guethary",
+   "name": "Gu\u00e9thary / Parlementia",
+   "lat": 43.427718,
+   "lon": -1.611053,
+   "gridLat": 43.5,
+   "gridLon": 358.25,
+   "totalHeight": 1.55,
+   "peakPeriod": 11.0,
+   "meanPeriod": 8.8,
+   "meanFrom": 284,
+   "windU": 7.7,
+   "windV": 2.0
+  },
+  {
+   "id": "hossegor",
+   "name": "Hossegor / La Gravi\u00e8re",
+   "lat": 43.67562,
+   "lon": -1.443375,
+   "gridLat": 43.75,
+   "gridLon": 358.5,
+   "totalHeight": 1.93,
+   "peakPeriod": 10.4,
+   "meanPeriod": 8.1,
+   "meanFrom": 275,
+   "windU": 8.7,
+   "windV": 2.4
+  }
+ ]
+}

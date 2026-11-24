@@ -4,7 +4,14 @@
   "module": "../08-storms/hurricanes.js",
   "label": "Hurricanes (IBTrACS)",
   "on": true,
-  "v": "o2"
+  "v": "o3"
+ },
+ {
+  "id": "hurricanes-live",
+  "module": "../08-storms/hurricanes_live.js",
+  "label": "Hurricanes live (NHC)",
+  "on": false,
+  "v": "l1"
  },
  {
   "id": "tornadoes",
@@ -39,21 +46,21 @@
   "module": "../11-ocean/wind.js",
   "label": "Wind at 10 m (GFS model)",
   "on": false,
-  "v": "g1"
+  "v": "g2"
  },
  {
   "id": "waves",
   "module": "../11-ocean/waves.js",
   "label": "Wave height (WAVEWATCH III model)",
   "on": false,
-  "v": "g1"
+  "v": "g2"
  },
  {
   "id": "swell",
   "module": "../11-ocean/swell.js",
   "label": "Swell fronts (WAVEWATCH III, illustrative)",
   "on": false,
-  "v": "g1"
+  "v": "g2"
  },
  {
   "id": "quakes-live",

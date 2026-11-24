@@ -29,6 +29,7 @@
 
 import { layerFile } from '../07-globe/data-source.js';   // hosted: newest build on R2; else the files in data/
 import { toXYZ, dotMaterial, densityPoints, makeRamp, dimMaterial, D2R } from './dots_common.js';
+import { loadLiveStorms } from './hurricanes_live.js';   // only for the hint that storms are active right now
 
 const SPACING_DEG = 1.0;        // even dot spacing along the history tracks (about 110 km)
 const WAKE_DEG = 0.25;          // dot spacing of the wake left behind a moving storm (about 28 km): a row of separate dots that fade with age, not a line
@@ -404,7 +405,7 @@ export async function createLayer({ THREE, radius = 1.0, makeDotMaterial, palett
     for (let a = 1; a < slot; a++) { const v = order[a]; let b = a - 1; while (b >= 0 && before(focus[v], focus[order[b]])) { order[b + 1] = order[b]; b--; } order[b + 1] = v; }
     for (let c = 0; c < 6; c++) hazeReach[c] = 0.03 + 0.005 * c;
     for (let s = slot - 1; s >= 0; s--) { const fo = focus[order[s]]; hazeReach[fo.rating] = CLOUD_OF_R34 * fo.r34 * KM * radius; }
-    group.status = statusText();
+    group.status = statusText() + liveHint;
   };
   let lastStatus = '', lastStatusH = -1e9;
   const statusText = () => {
@@ -437,6 +438,13 @@ export async function createLayer({ THREE, radius = 1.0, makeDotMaterial, palett
     `rotation is counter-clockwise in the north and clockwise in the south, slowed for display. While you watch one storm up close the replay slows so it lasts at least 20 s (pacing for display, not recorded speed). Dots behind each storm are its recorded track. Where a record leaves the wind blank it is filled from the storm's neighbouring records. ` +
     `Faint background dots: where storms passed most often since 1980. Categories: Saffir-Simpson on 1-minute wind (approximate outside the Atlantic and East Pacific).`;
   group.status = '';
+  // Hint (2026-11-24): this layer is a replay of records; storms happening now are in the "Hurricanes live" layer (NHC)
+  let liveHint = '';
+  loadLiveStorms().then((j) => {
+    const n = j ? j.storms.length : 0;
+    if (n) liveHint = ` · ${j.test ? 'TEST: ' : ''}${n} storm${n > 1 ? 's' : ''} active now: turn on "Hurricanes live" (NHC).`;
+  });
+  group.details += ' Storms happening now are in the separate "Hurricanes live" layer (NHC advisories).';
   group.userData = {
     tracks, density, wake, storms: stormDots, meta: meta.meta, dots: { tracks: trackDots, density: M, wake: wakeDots, perStorm: DOTS },
     replay: { start: tStart, end: tEnd, storms: win.length, busiest, hoursPerSecond: HOURS_PER_S },

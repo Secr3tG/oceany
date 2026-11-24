@@ -6,7 +6,8 @@ Run by the refresh-layers workflow before anything is installed:
 latest.json is the published one from R2 (missing or empty file = nothing published yet). Prints one JSON line:
     {"due": ["ocean"], "plan": {"ocean": "2026112312"}, "extra": {"hurricanes": {...}}, "failed": []}
   due    layers whose source has something newer than what is published (only these are built)
-  plan   ocean: the GFS run this check found on NOMADS (build_ocean.py --run uses exactly that run)
+  plan   ocean: the GFS run this check found on NOMADS (build_ocean.py --run uses exactly that run);
+         ecmwf: the IFS run found on the mirror (build_ecmwf.py --run)
   extra  fields publish_layers.py adds to the layer's latest.json entry (the source file's Last-Modified time)
   failed layers whose check failed while the published copy is old: the workflow turns red for these
 
@@ -15,25 +16,41 @@ when data is actually due. Rules per layer:
   ocean       the GFS run that should be out by now (cycle + 3 h 35 min). Published already: done, no request. Else two
               HEADs (the last kept hour's .idx of GFS and GFS-Wave): there = due; not there = missing, and the
               retry run 30 min later asks once more.
+  ecmwf       the IFS run that should be out by now: ECMWF open data appears all at once, 7 h 34 min after 00/12 UTC
+              and 6 h 27 min after 06/18 UTC (Last-Modified on data.ecmwf.int, 22-23 Nov 2026), on the Google Cloud
+              mirror about 2 min later. Published already: no request. Else two HEADs (the last kept step's .index of
+              the oper and wave streams on the mirror): there = due; not there = missing, the retry 30 min later asks again.
   snow        today's IMS file. Published already: done, no request. Else one HEAD: there = due; not there = missing.
   hurricanes  IBTrACS since-1980 file: due when its Last-Modified differs from the published one.
   tornadoes   SPC tornado file: the same.
   quakes      always due (weekly schedule); publish_layers.py uploads nothing when the result is byte-identical.
+  hurricanes-live  NHC's routine advisories come at 03, 09, 15 and 21 UTC. The workflow runs this check every 3 h at
+              :12; with no NHC storm in the published copy, only the four advisory hours ask anything. Then one
+              conditional GET of CurrentStorms.json (If-None-Match: 304 and no body when nothing changed) and, at
+              the advisory hours, one HEAD of IBTrACS ACTIVE. While a storm is active the 00/06/12/18 runs ask too, which
+              catches intermediate (3-hourly, with coastal warnings) and special advisories.
 The URLs repeat the ones in the builders (build_ocean.py, build_snow.py, build_hurricanes.py, build_tornadoes.py):
 change both together.
 """
-import datetime, email.utils, json, sys, time, urllib.request
+import datetime, email.utils, json, sys, time, urllib.error, urllib.request
 
 NOMADS = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/"
 IMS = "https://noaadata.apps.nsidc.org/NOAA/G02156/24km/{y}/ims{y}{d:03d}_00UTC_24km_v1.3.asc.gz"
 IBTRACS = ("https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-"
            "ibtracs/v04r01/access/csv/ibtracs.since1980.list.v04r01.csv")
+ECMWF = "https://storage.googleapis.com/ecmwf-open-data/"   # Google Cloud copy of ECMWF open data (build_ecmwf.py MIRRORS[0])
 SPC = "https://www.spc.noaa.gov/wcm/data/1950-2025_actual_tornadoes.csv"
+NHC_JSON = "https://www.nhc.noaa.gov/CurrentStorms.json"
+IBTRACS_ACTIVE = IBTRACS.replace("since1980", "ACTIVE")
+ADVISORY_HOURS = (3, 9, 15, 21)              # NHC routine advisories, UTC
 AGENT = {"User-Agent": "oceany-layer-check/1.0"}
 UTC = datetime.timezone.utc
-OLD_HOURS = {"ocean": 16, "snow": 48}      # a missing source is an error only when the published copy is older than this
+OLD_HOURS = {"ocean": 16, "ecmwf": 20, "snow": 48, "hurricanes-live": 24}      # a missing source is an error only when the published copy is older than this
 RELEASE = datetime.timedelta(hours=3, minutes=35)   # NCEP: GFS / GFS-Wave hours 0-12 on NOMADS about 3 h 35 min after the cycle
 LAST_STEP = 13                              # build_ocean.py STEPS[-1]
+ECMWF_LAST_STEP = 18                        # build_ecmwf.py STEPS[-1]
+ECMWF_RELEASE = {0: datetime.timedelta(hours=7, minutes=40), 12: datetime.timedelta(hours=7, minutes=40),   # + mirror lag
+                 6: datetime.timedelta(hours=6, minutes=33), 18: datetime.timedelta(hours=6, minutes=33)}
 
 def head(url):
     """Last-Modified of a URL (a datetime), True when it exists without one, None when it does not exist."""
@@ -64,6 +81,21 @@ def check_ocean(pub, now):
         return True, run.strftime("%Y%m%d%H")
     return None, None                        # not posted yet: the retry run 30 min later asks once more
 
+def check_ecmwf(pub, now):
+    # the newest IFS run whose open data should be out by now
+    run = now.replace(minute=0, second=0, microsecond=0, hour=now.hour - now.hour % 6)
+    while run + ECMWF_RELEASE[run.hour] > now:
+        run -= datetime.timedelta(hours=6)
+    old_run = parse(pub.get("modelRun"))
+    if old_run and old_run >= run:
+        return False, None                   # already published: no request to ECMWF at all
+    day, hh = run.strftime("%Y%m%d"), run.strftime("%H")
+    base = f"{ECMWF}{day}/{hh}z/ifs/0p25/"
+    name = f"{day}{hh}0000-{ECMWF_LAST_STEP}h"
+    if head(f"{base}oper/{name}-oper-fc.index") and head(f"{base}wave/{name}-wave-fc.index"):
+        return True, run.strftime("%Y%m%d%H")
+    return None, None                        # not there yet: the retry run 30 min later asks once more
+
 def check_snow(pub, now):
     d = now.date()                           # IMS posts the file for day D in the afternoon of day D (UTC)
     if pub.get("dataTime") == iso(datetime.datetime(d.year, d.month, d.day, tzinfo=UTC)):
@@ -82,8 +114,37 @@ def check_modified(url):
         return iso(lm) != pub.get("sourceModified"), {"sourceModified": iso(lm), "dataTime": iso(lm)}
     return check
 
-CHECKS = {"ocean": check_ocean, "snow": check_snow, "hurricanes": check_modified(IBTRACS),
-          "tornadoes": check_modified(SPC), "quakes": lambda pub, now: (True, None)}
+def check_live(pub, now):
+    # sourceModified holds "<CurrentStorms.json ETag>|<IBTrACS ACTIVE Last-Modified>" from the last build
+    old_etag, _, old_act = (pub.get("sourceModified") or "|").partition("|")
+    routine = now.hour in ADVISORY_HOURS
+    if not routine and not pub.get("nhcStorms") and pub.get("dataTime"):
+        return False, None                   # nothing active and no advisory due: no request at all
+    try:
+        req = urllib.request.Request(NHC_JSON, headers=dict(AGENT, **({"If-None-Match": old_etag} if old_etag else {})))
+        r = urllib.request.urlopen(req, timeout=30)
+        etag, nhc_new = r.headers.get("ETag") or "", True
+    except urllib.error.HTTPError as e:
+        if e.code != 304:
+            return None, None
+        etag, nhc_new = old_etag, False
+    except Exception:
+        return None, None
+    finally:
+        time.sleep(0.3)
+    act, act_new = old_act, False
+    if routine:                              # IBTrACS ACTIVE changes about three times a week: the advisory hours are enough
+        lm = head(IBTRACS_ACTIVE)
+        if isinstance(lm, datetime.datetime):
+            act = iso(lm); act_new = act != old_act
+    token = f"{etag}|{act}"
+    if not (nhc_new and etag != old_etag) and not act_new:
+        return False, None
+    return True, {"sourceModified": token}
+
+CHECKS = {"ocean": check_ocean, "ecmwf": check_ecmwf, "snow": check_snow, "hurricanes": check_modified(IBTRACS),
+          "tornadoes": check_modified(SPC), "quakes": lambda pub, now: (True, None),
+          "hurricanes-live": check_live}
 
 def main(argv):
     path = argv[argv.index("--latest") + 1]
@@ -106,8 +167,8 @@ def main(argv):
             continue
         if due:
             out["due"].append(name)
-            if name == "ocean":
-                out["plan"]["ocean"] = info
+            if name in ("ocean", "ecmwf"):
+                out["plan"][name] = info
             elif info:
                 out["extra"][name] = info
         print(f"{name}: {'due' if due else 'unchanged'}" + (f" ({info})" if due and info else ""), file=sys.stderr)

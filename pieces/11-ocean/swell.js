@@ -171,7 +171,7 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
 
   async function load() {
     state = 'loading'; text();
-    try { const w = await loadWaves(); meta = w.meta; build(w); state = 'ok'; geo.setDrawRange(0, n); }
+    try { const w = await loadWaves('gfs'); meta = w.meta; build(w); state = 'ok'; geo.setDrawRange(0, n); }
     catch (e) { err = (e && e.message) || 'network error'; state = 'failed'; }
     text();
   }
@@ -190,6 +190,7 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
       `Broad, slow fronts in the palette's sea colours (the wind layer is fine neutral streaks); the leading front of each train is the brightest. Brightness rises with swell height where the front is (5 m and up: full); colour with period (6 s mid, 18 s and up near white). ` +
       `Only the primary swell partition is drawn: a second swell or the wind sea at the same place is not shown (the wave-height layer shows the whole sea). ` +
       `Fronts go dark at land and sea ice, where the model has no data; the model cannot see inside bays or around headlands. ` +
+      `Always GFS-Wave, also when the wind and wave-height layers show ECMWF: ECMWF's open data has no swell partitions. ` +
       `Data: NOAA NCEP model output from NOMADS (US Government work, public domain); redrawn here, not an official NOAA product. A snapshot built by build_ocean.py` + (meta ? ` on ${fmtTime(meta.built)}.` : '.');
     let st = '';
     if (state === 'waiting' || state === 'loading') st = 'Loading the swell snapshot…';
@@ -210,7 +211,7 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
   // Reads only the small ocean.json (the swell offshore of each unlocked spot, worked out by build_ocean.py). Never throws.
   pts.checkActivity = async () => {
     try {
-      const m = await loadMeta();
+      const m = await loadMeta('gfs');
       if (Math.abs(ageHours(m.validWaves)) > STALE_HOURS) return { active: false, where: null, note: '' };
       const hits = (m.spots || []).filter((s) => s.swellHeight >= ACT_H && s.swellPeriod >= ACT_T).sort((a, b) => b.swellHeight * b.swellPeriod - a.swellHeight * a.swellPeriod);
       if (!hits.length) return { active: false, where: null, note: '' };

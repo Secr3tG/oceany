@@ -19,15 +19,22 @@ on:
     - cron: '50 3,9,15,21 * * *'    # ocean (wind, waves, swell): GFS / GFS-Wave hours 0-12 are on NOMADS about 3 h 35 min
                                     # after 00/06/12/18 UTC (NCEP production status, 30-day average); one run = +3 h to +13 h
     - cron: '20 4,10,16,22 * * *'   # ocean retry: asks NOAA only if the run above found the files missing
+    - cron: '45 0,12 * * *'         # ECMWF IFS wind and waves, 18 and 06 UTC runs: ECMWF open data is out 6 h 27 min after
+                                    # 06/18 UTC (all steps at once; Last-Modified, 22-23 Nov 2026), Google mirror ~2 min later
+    - cron: '50 7,19 * * *'         # ECMWF, 00 and 12 UTC runs: out 7 h 34 min after the run; one run = +6 h to +18 h, 3-hourly
+    - cron: '15 1,13 * * *'         # ECMWF retry (06/18 runs): asks only if the run above found the files missing
+    - cron: '20 8,20 * * *'         # ECMWF retry (00/12 runs)
     - cron: '40 19 * * *'           # snow and sea ice: the day's IMS file (NSIDC lists it at 14:10, time zone not stated)
     - cron: '40 21 * * *'           # snow retry: asks only if today's file was missing
     - cron: '52 13 * * *'           # hurricane records (IBTrACS): has the file changed?
     - cron: '17 2 * * 1'            # earthquakes since 1970 (USGS ComCat), Mondays
     - cron: '47 2 3 * *'            # US tornado records (SPC), monthly; also keeps the schedule alive
+    - cron: '12 */3 * * *'          # live hurricanes (NHC): every 3 h on the advisory clock (b56: was hourly):
+                                    # asks NHC at 03/09/15/21 UTC, and at 00/06/12/18 too while a storm is active; see layer_due.py
   workflow_dispatch:
     inputs:
       layers:
-        description: 'Layers to check and build, space-separated: ocean snow hurricanes tornadoes quakes'
+        description: 'Layers to check and build, space-separated: ocean ecmwf snow hurricanes tornadoes quakes hurricanes-live'
         required: true
         default: 'ocean'
 
@@ -49,6 +56,7 @@ jobs:
     outputs:
       due: ${{ steps.due.outputs.due }}
       plan: ${{ steps.due.outputs.plan }}
+      plan_ecmwf: ${{ steps.due.outputs.plan_ecmwf }}
       extra: ${{ steps.due.outputs.extra }}
     steps:
       - uses: actions/checkout@v4
@@ -65,14 +73,16 @@ jobs:
         run: |
           case "$SCHED" in
             '50 3,9,15,21 * * *'|'20 4,10,16,22 * * *') L="ocean" ;;
+            '45 0,12 * * *'|'50 7,19 * * *'|'15 1,13 * * *'|'20 8,20 * * *') L="ecmwf" ;;
             '40 19 * * *'|'40 21 * * *')               L="snow" ;;
             '52 13 * * *')   L="hurricanes" ;;
             '17 2 * * 1')    L="quakes" ;;
             '47 2 3 * *')    L="tornadoes" ;;
+            '12 */3 * * *')   L="hurricanes-live" ;;
             *)               L="$ASKED" ;;
           esac
           for l in $L; do
-            case "$l" in ocean|snow|hurricanes|tornadoes|quakes) ;; *) echo "::error::unknown layer '$l'"; exit 1 ;; esac
+            case "$l" in ocean|ecmwf|snow|hurricanes|tornadoes|quakes|hurricanes-live) ;; *) echo "::error::unknown layer '$l'"; exit 1 ;; esac
           done
           curl -fsS --max-time 20 "https://pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev/data/latest.json?t=$(date +%s)" -o latest.json || : > latest.json
           python3 scripts/layer_due.py --latest latest.json $L > due.json
@@ -82,6 +92,7 @@ jobs:
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write("due=" + " ".join(d["due"]) + "\n")
               f.write("plan=" + d["plan"].get("ocean", "") + "\n")
+              f.write("plan_ecmwf=" + d["plan"].get("ecmwf", "") + "\n")
               f.write("extra=" + json.dumps(d["extra"], separators=(",", ":")) + "\n")
               f.write("failed=" + " ".join(d["failed"]) + "\n")
           print("due:", d["due"] or "nothing", "| failed checks:", d["failed"] or "none")
@@ -115,8 +126,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install the two packages the builders use
-        run: pip install --disable-pip-version-check numpy==2.0.2 pillow==11.3.0
+      - name: Install the packages the builders use (imagecodecs decodes ECMWF's CCSDS packing)
+        run: pip install --disable-pip-version-check numpy==2.0.2 pillow==11.3.0 imagecodecs==2024.12.30
 
       # The earthquake builder keeps one CSV per year in raw/ and only downloads the current year again when the
       # earlier ones are there; the cache saves about 57 requests to USGS each week.
@@ -133,14 +144,17 @@ jobs:
         env:
           LAYERS: ${{ needs.check.outputs.due }}
           PLAN: ${{ needs.check.outputs.plan }}
+          PLAN_ECMWF: ${{ needs.check.outputs.plan_ecmwf }}
         run: |
           build() {
             case "$1" in
               ocean)      python pieces/11-ocean/build_ocean.py --run "$PLAN" ;;
+              ecmwf)      python pieces/11-ocean/build_ecmwf.py --run "$PLAN_ECMWF" ;;
               snow)       python pieces/10-sky/build_snow.py ;;
               hurricanes) python pieces/08-storms/build_hurricanes.py && python pieces/08-storms/build_hurricane_radii.py ;;
               tornadoes)  python pieces/08-storms/build_tornadoes.py ;;
               quakes)     python pieces/12-quakes/build_history.py ;;
+              hurricanes-live) python pieces/08-storms/build_hurricanes_live.py ;;
             esac
           }
           ok=""; failed=""

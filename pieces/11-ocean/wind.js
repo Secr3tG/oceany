@@ -17,7 +17,8 @@
 // Regional zoom: a second set of NEAR_TRACERS is drawn only around the point under the camera when it is close (as swell's
 // near trains: birth places do not depend on the camera, so nothing slides when the view moves).
 
-import { loadWind, onOceanUpdate, fmtTime, fmtRun, staleNote, SAFETY, rampColours, RAMP_GLSL, LIMB_GLSL } from './ocean_data.js';
+import { loadWind, dataLine, onOceanUpdate, fmtTime, fmtRun, staleNote, SAFETY, rampColours, RAMP_GLSL, LIMB_GLSL } from './ocean_data.js';
+import { mountModelSwitch } from './ocean_model.js';
 
 const TRACERS = 12000;         // tracers on the whole globe (each is TAIL dots)
 const NEAR_TRACERS = 60000;    // extra tracers drawn only near the view centre when the camera is close (regional zoom)
@@ -144,7 +145,7 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
 
   function text() {
     const m = meta && meta.wind;
-    pts.label = m ? `Wind at 10 m: GFS, valid ${fmtTime(meta.valid)}` : 'Wind at 10 m: NOAA GFS (model)';
+    pts.label = m ? `Wind at 10 m: ${meta.modelLabel || 'GFS'}, valid ${fmtTime(meta.valid)}` : 'Wind at 10 m (model)';
     pts.details = `${SAFETY} Model output, not measurement. ` +
       (m ? `Model: ${m.model}. Run: ${fmtRun(m.run)}. Valid: ${fmtTime(meta.valid)}. ` : 'Model: NOAA NCEP GFS. ') +
       `Wind 10 m above the ground or sea, on a 0.5 degree grid (every 2nd point of the model's 0.25 degree grid, about 55 km), smoothly interpolated between grid points. ` +
@@ -153,11 +154,10 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
       `The field is frozen at the valid time, so a track shows the wind of that moment, not where the air really went. ` +
       `Drawn as fine neutral streaks (brighter = faster, up to ${V_TOP} m/s and above), so they stay apart from the swell layer's broad coloured fronts. More tracers are drawn as you zoom in. ` +
       `Dots sit just above the base sphere; over high ground they may sit inside the exaggerated mountains. ` +
-      `Data: NOAA NCEP model output from NOMADS (US Government work, public domain); redrawn here, not an official NOAA product. A snapshot built by build_ocean.py` +
-      (meta ? ` on ${fmtTime(meta.built)}.` : '.');
+      dataLine(meta);
     let st = '';
     if (state === 'waiting' || state === 'loading') st = 'Loading the wind snapshot…';
-    else if (state === 'failed') st = `Wind snapshot not available (${err}); nothing drawn. Run pieces/11-ocean/build_ocean.py.`;
+    else if (state === 'failed') st = `Wind snapshot not available (${err}); nothing drawn. Run pieces/11-ocean/${meta && meta.modelId === 'ecmwf' ? 'build_ecmwf.py' : 'build_ocean.py'}.`;
     else st = `Strongest: ${peak.s.toFixed(0)} m/s (${(peak.s * 3.6).toFixed(0)} km/h) near ${Math.abs(peak.lat).toFixed(1)}°${peak.lat < 0 ? 'S' : 'N'} ${Math.abs(peak.lon).toFixed(1)}°${peak.lon < 0 ? 'W' : 'E'}.` + staleNote(meta.valid);
     pts.status = st;
     pts.userData.onChange?.(pts);
@@ -170,7 +170,8 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
   };
   pts.setDim = (k) => { mat.uniforms.uOpacity.value = Math.max(0, Math.min(1, k)); };
   pts.setPalette = setPalette;
-  onOceanUpdate(() => { if (state === 'ok' || state === 'failed') load(); });   // newer build while open (hosted only)
+  onOceanUpdate(() => { if (state === 'ok' || state === 'failed') load(); });   // newer build while open (hosted only), or the GFS / ECMWF switch
+  mountModelSwitch(pts);
   pts.userData.layer = { get state() { return state; }, load, mat };
   text();
   return pts;

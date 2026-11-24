@@ -47,12 +47,25 @@ LAYERS = {
                                        builtAt=iso(j.get("built")),
                                        stepsFrom=iso(((j.get("steps") or [{}])[0]).get("valid")),
                                        stepsTo=iso(((j.get("steps") or [{}])[-1]).get("valid")))),
+    # ecmwf: ECMWF IFS wind + waves (build_ecmwf.py), one file pair per 3-hourly step, as listed in ocean_ecmwf.json's steps
+    "ecmwf": dict(dir="pieces/11-ocean/data", files=["ocean_ecmwf.json", "wind_ifs.bin", "waves_ifs.bin"],
+                  more=lambda j: [f for s in j.get("steps") or [] for f in (s["wind"], s["waves"])],
+                  times=lambda j: dict(dataTime=iso(j.get("valid")), modelRun=iso((j.get("wind") or {}).get("run")),
+                                       builtAt=iso(j.get("built")),
+                                       stepsFrom=iso(((j.get("steps") or [{}])[0]).get("valid")),
+                                       stepsTo=iso(((j.get("steps") or [{}])[-1]).get("valid")))),
     "snow": dict(dir="pieces/10-sky/data", files=["snow_ims24.json", "snow_ims24.bin"],
                  times=lambda j: dict(dataTime=iso(j.get("valid")), builtAt=iso(j.get("built")))),
     "hurricanes": dict(dir="pieces/08-storms/data", files=["tracks.json", "tracks.bin", "density_points.bin", "track_radii.bin"],
                        times=lambda j: dict(dataTime=iso((j.get("meta") or {}).get("accessed")))),
     "tornadoes": dict(dir="pieces/08-storms/data", files=["tornado_tracks.json", "tornado_tracks.bin", "tornado_density_points.bin"],
                       times=lambda j: dict(dataTime=iso(j.get("fileLastModified")))),
+    # hurricanes-live: one small JSON (build_hurricanes_live.py). Its "unchanged" test hashes the storms themselves, not the
+    # build times, so a run that finds the same advisories uploads nothing. nhcStorms tells layer_due.py to check hourly.
+    "hurricanes-live": dict(dir="pieces/08-storms/data", files=["live_storms.json"],
+                            hash=lambda j: json.dumps([j.get("storms"), j.get("recent")], sort_keys=True).encode(),
+                            times=lambda j: dict(dataTime=iso(j.get("dataTime")), builtAt=iso(j.get("built")),
+                                                 nhcStorms=len(j.get("storms") or []), otherStorms=len(j.get("recent") or []))),
     "quakes": dict(dir="pieces/12-quakes/data", files=["quakes_m5.json", "quakes_m5.bin"],
                    times=lambda j: dict(dataTime=iso(j.get("lastEvent")), builtAt=iso(j.get("built")))),
 }
@@ -124,6 +137,7 @@ def main(argv):
         missing = [p for p in paths if not os.path.exists(p) or os.path.getsize(p) == 0]
         if missing: sys.exit(f"{name}: missing or empty {missing}")
         sha = digest([p for p in paths if not p.endswith(".json")])   # the data itself; the JSON carries build times
+        if "hash" in L: sha = hashlib.sha256(L["hash"](meta)).hexdigest()   # a JSON-only layer: its own content test
         old = latest["layers"].get(name)
         if old and old.get("sha256") == sha:
             src = (extra.get(name) or {}).get("sourceModified")
@@ -135,7 +149,7 @@ def main(argv):
         for f, p in zip(files, paths):
             dest.put(base + f, p, LONG_CACHE)
         entry = {"base": base, "files": files, "dataTime": None, "modelRun": None, "builtAt": None}
-        entry.update({k: v for k, v in L["times"](meta).items() if v})
+        entry.update({k: v for k, v in L["times"](meta).items() if v or v == 0})
         entry.update({k: v for k, v in (extra.get(name) or {}).items() if k in ("dataTime", "sourceModified") and v})
         entry["builtAt"] = entry["builtAt"] or now.strftime("%Y-%m-%dT%H:%M:%SZ")
         entry["publishedAt"] = now.strftime("%Y-%m-%dT%H:%M:%SZ")

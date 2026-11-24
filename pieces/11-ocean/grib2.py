@@ -11,7 +11,8 @@ land has none in the wave files), 7 = the packed numbers. Every value is (R + X 
 (WMO GRIB2 manual, section 5).
 
 Handled: grid template 3.0 (regular latitude-longitude), product template 4.0, packing templates 5.0 (simple),
-5.3 (complex with spatial differencing) and 5.40 (JPEG 2000, decoded with Pillow), bitmap present or absent.
+5.3 (complex with spatial differencing), 5.40 (JPEG 2000, decoded with Pillow) and 5.42 (CCSDS, what ECMWF's open
+data uses; decoded with imagecodecs, which wraps libaec), bitmap present or absent.
 
   messages(buf)      yields one dict per message: discipline, category, number, surface (type, value), ref, lead_h,
                      valid (datetimes), ni, nj, lats (1-D, as stored), lons (1-D, 0..360), values (2-D, NaN = no data)
@@ -51,6 +52,24 @@ def unpack_simple(d, n, nbits):
         return np.zeros(n, np.int64)
     bits = np.unpackbits(np.frombuffer(bytes(d), dtype=np.uint8))[: n * nbits].reshape(n, nbits)
     return bits.dot(1 << np.arange(nbits - 1, -1, -1, dtype=np.int64))
+
+
+def unpack_ccsds(p, d, n, nbits):
+    """Template 5.42 (ECMWF open data): the whole numbers are compressed with CCSDS 121.0 (adaptive Rice coding),
+    the lossless method spacecraft use. Section 5 gives libaec its settings: flags, block size, reference sample interval."""
+    if nbits == 0:
+        return np.zeros(n, np.int64)
+    import imagecodecs                                            # only needed for these files (pip install imagecodecs)
+    flags, block, rsi = p[21], p[22], int.from_bytes(bytes(p[23:25]), "big")
+    width = 1 if nbits <= 8 else 2 if nbits <= 16 else 3 if nbits <= 24 and flags & 2 else 4
+    raw = imagecodecs.aec_decode(bytes(d), bitspersample=nbits, flags=flags, blocksize=block, rsi=rsi)
+    b = np.frombuffer(raw, np.uint8)[: n * width].reshape(n, width).astype(np.int64)
+    if not flags & 4:                                             # flag 4 = most significant byte first; otherwise reversed
+        b = b[:, ::-1]
+    X = np.zeros(n, np.int64)
+    for k in range(width):
+        X = (X << 8) | b[:, k]
+    return X
 
 
 def unpack_jpeg2000(d, n, nbits):
@@ -146,6 +165,8 @@ def _message(msg):
         X = unpack_complex(p, d, nbits)
     elif template == 40:
         X = unpack_jpeg2000(d, n_packed, nbits)
+    elif template == 42:
+        X = unpack_ccsds(p, d, n_packed, nbits)
     else:
         raise ValueError(f"packing template 5.{template} not supported")
     vals = (R + X * 2.0 ** E) / 10.0 ** D

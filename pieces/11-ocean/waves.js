@@ -6,7 +6,8 @@
 //   const layer = await createLayer({ THREE, radius, makeDotMaterial, palette });   layer.update(t) every frame
 //   layer.label / .details / .status, layer.setDim(k), layer.setPalette(name, palette)
 
-import { loadWaves, onOceanUpdate, fmtTime, fmtRun, staleNote, SAFETY, rampColours } from './ocean_data.js';
+import { loadWaves, dataLine, onOceanUpdate, fmtTime, fmtRun, staleNote, SAFETY, rampColours } from './ocean_data.js';
+import { mountModelSwitch } from './ocean_model.js';
 
 const D2R = Math.PI / 180;
 const LIFT = 0.0012;          // radii above the base sphere (the ocean is at the base radius), so the field sits on the sea dots
@@ -78,14 +79,13 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
 
   function text() {
     const m = meta && meta.waves;
-    pts.label = m ? `Wave height: WAVEWATCH III, valid ${fmtTime(meta.validWaves)}` : 'Wave height: WAVEWATCH III (model)';
+    pts.label = m ? `Wave height: ${meta.modelId === 'ecmwf' ? 'ECMWF' : 'WAVEWATCH III'}, valid ${fmtTime(meta.validWaves)}` : 'Wave height (model)';
     pts.details = `${SAFETY} Model output, not measurement. ` +
       (m ? `Model: ${m.model}. Run: ${fmtRun(m.run)}. Valid: ${fmtTime(meta.validWaves)}. ` : 'Model: NOAA NCEP GFS-Wave (WAVEWATCH III), forced by GFS winds. ') +
       `Significant wave height of the whole sea (swell and wind sea together): roughly the average of the highest third of the waves. ` +
       `One dot per 0.5 degree cell (every second point of the model's 0.25 degree grid; about 55 km north-south), never finer (each dot nudged at random within its own cell, so the grid does not form moire rings); colour and brightness rise with height, from calm (dark) to ${H_TOP} m and above (brightest). ` +
       `No dot means no model data: land and sea ice. ` +
-      `Data: NOAA NCEP model output from NOMADS (US Government work, public domain); redrawn here, not an official NOAA product. A snapshot built by build_ocean.py` +
-      (meta ? ` on ${fmtTime(meta.built)}.` : '.');
+      dataLine(meta);
     let st = '';
     if (state === 'waiting' || state === 'loading') st = 'Loading the wave snapshot…';
     else if (state === 'failed') st = `Wave snapshot not available (${err}); nothing drawn. Run pieces/11-ocean/build_ocean.py.`;
@@ -105,7 +105,8 @@ export async function createLayer({ THREE, radius = 1, makeDotMaterial, palette 
   pts.onBeforeRender = (r, s, camera) => { mat.uniforms.uOpacity.value = OPACITY * dim * gain(camera); };
   pts.setDim = (k) => { dim = Math.max(0, Math.min(1, k)); mat.uniforms.uOpacity.value = OPACITY * dim; };
   pts.setPalette = (name, p) => { pal = p || pal; colour(); };
-  onOceanUpdate(() => { if (state === 'ok' || state === 'failed') load(); });   // newer build while open (hosted only)
+  onOceanUpdate(() => { if (state === 'ok' || state === 'failed') load(); });   // newer build while open (hosted only), or the GFS / ECMWF switch
+  mountModelSwitch(pts);
   pts.userData.layer = { get state() { return state; }, load };
   text();
   return pts;
