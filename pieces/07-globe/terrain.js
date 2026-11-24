@@ -53,6 +53,14 @@ const TILE_LAND_K = LAND_DOT_D / 0.9;
 // children load, seen close, showed ~30 px blurred discs for seconds; capped, it reads as sharp sparse dots, like the
 // base globe at mid zoom (capComp brightens capped dots a little, hue kept by HUE_MAX).
 const TILE_MAX_PX = 12, TILE_CAP_COMP = 3;
+// b54 (2026-11-24): where our data ends coarse (a tile with no finer level built under it: outside the spot boxes, z10 in the
+// Himalayas; the polar caps' last level), no finer tile is ever coming, and the camera can sit far closer than the floor
+// assumes (the floor is measured from sea level; 7-8 km of drawn relief and the tilt bring the ground within a few km).
+// Capped at TILE_MAX_PX there, the dots were 12 px on a 15-70 px grid: the Himalayas read 73 % black between correctly
+// drawn dots. Such last-level tiles are drawn up to LEAF_MAX_PX instead: the coarse grid is stretched into a lit surface
+// (soft, wide dots, the same light per area), with no more detail than the data has. Stand-ins and tiles whose finer
+// level is coming keep the cap.
+const LEAF_MAX_PX = 96;
 const SHORE_K = 1.3;           // land next to sea, a little brighter (base globe 1.2)
 // Polar caps: web-mercator tiles stop at ±85.05°. Poleward of that, POLAR tiles fill in: a quadtree over a square in
 // azimuthal-equidistant coordinates round each pole (half-width POLE_S degrees of arc), drawn and refined exactly like
@@ -858,6 +866,8 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       // round 4: a stand-in tile coarser than the base globe's ~41 km grid (z2 at mid latitudes) is not drawn and does
       // not cover the base globe (updateCover): it showed as a dark square of sparse dots while its children loaded
       t.points.material.uniforms.uOpacity.value = coarseStandIn(t) ? 0 : t.fade * alpha;
+      if (t.leafPx === undefined && !t.si && coverageKnown()) t.leafPx = (t.polar ? t.z >= POLE_MAX_Z : t.z < MAX_Z && !kidsBuilt(t)) ? LEAF_MAX_PX : 0;   // b54
+      t.points.material.uniforms.uMaxPx.value = (t.leafPx || TILE_MAX_PX) * renderer.getPixelRatio();
       t.points.visible = t.fade > 0;
       if (!t.shownNow && t.fade === 0) live.delete(t);
     }
