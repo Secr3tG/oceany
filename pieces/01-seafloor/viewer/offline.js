@@ -5,7 +5,14 @@
   const q = new URLSearchParams(location.search).get('offline');
   const sw = 'serviceWorker' in navigator ? navigator.serviceWorker : null;
   const mine = r => new URL(r.scope).pathname.endsWith('/01-seafloor/viewer/');
-  if (sw && q === '1') sw.register('./sw.js', { scope: './' }).catch(e => console.info('Oceany viewer: offline mode not available:', e && e.message));
+  if (sw && q === '1') sw.register('./sw.js', { scope: './' }).then(() => sw.ready).then(warmSurround).catch(e => console.info('Oceany viewer: offline mode not available:', e && e.message));
+  // b57: the surroundings' terrain (terrain2 packs, cross-origin Range reads the worker leaves alone) is kept by tilepack.js
+  // in its own Cache API stores; the worker lists the five spots' tiles in ./surround-tiles, loaded here once, a few at a time.
+  async function warmSurround() {
+    const r = await caches.match('./surround-tiles', { cacheName: 'reefviewer-meta-1' }); if (!r) return;
+    const list = await r.json(), { fetchTerrarium } = await import('../../07-globe/terrarium.js?v=2');
+    for (let k = 0; k < list.length; k += 4) await Promise.allSettled(list.slice(k, k + 4).map(([z, x, y]) => fetchTerrarium(z, x, y)));
+  }
   if (sw && q === '0') {
     sw.getRegistrations().then(rs => rs.forEach(r => { if (mine(r)) r.unregister(); }));
     if (window.caches) caches.keys().then(ks => ks.forEach(k => { if (k.startsWith('reefviewer-')) caches.delete(k); }));

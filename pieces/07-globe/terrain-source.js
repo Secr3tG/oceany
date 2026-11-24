@@ -26,8 +26,10 @@ const pngCoverage = () => pngP || (pngP = fetch(OWN_BASE + 'coverage.json').then
 // ?terrain=v1 keeps the old PNG tiles (fallback switch). On this Mac ?terrain_src=local reads tiles-build/v2/out/ (serve it
 // with tiles-build/v2/serve.py: Range support). Where the browser cannot decode it (no DecompressionStream deflate-raw), the
 // pack source fails to start or its coverage.json does not load, the page uses the PNG tiles above.
-// Only the globe (terrain.js) starts the packs, through startPacks(); other pages (the reef viewer's terrarium.js) stay on
-// the PNG tiles and their coverage, unchanged.
+// The globe (terrain.js) starts the packs through startPacks(); since b57 (2026-11-25) the reef viewer's surroundings
+// (terrarium.js) read the same packs through startPacks({ packsOnly: true }): same Cache API stores, so a visitor coming from
+// the globe already holds most tiles. packsOnly never falls back to the PNG tiles (no request to terrain/ from the viewer;
+// ?terrain=v1 does not apply there): where the packs cannot be read the viewer simply draws no surroundings.
 export const V2_ASKED = !USE_AWS && new URLSearchParams(location.search).get('terrain') !== 'v1';
 const V2_BASE = (IS_LOCAL && SRC_Q === 'local') ? new URL('./tiles-build/v2/out/', import.meta.url).href : 'https://tiles.hvid.studio/terrain2/';
 let pack = null, packP = null, b2 = null, b2Wait = null;
@@ -61,9 +63,10 @@ function overlay(t2, ov) {
   });
 }
 // resolves to the pack source once its coverage is in, or null (v1 asked, unsupported, failed): then PNG tiles and their coverage
-export function startPacks() {
+export function startPacks({ packsOnly = false } = {}) {
   if (packP) return packP;
-  if (!V2_ASKED) return (packP = (USE_AWS ? Promise.resolve() : pngCoverage()).then(() => null));
+  if (packsOnly && USE_AWS) return (packP = Promise.resolve(null));
+  if (!V2_ASKED && !packsOnly) return (packP = (USE_AWS ? Promise.resolve() : pngCoverage()).then(() => null));
   return (packP = import('./tilepack.js?v=p2')
     .then(async m => {
       if (!m.supported) { console.warn('terrain v2: no DecompressionStream deflate-raw here, using the PNG tiles'); return null; }
@@ -83,7 +86,7 @@ export function startPacks() {
       return (pack = overlay(ps, ob));
     })
     .catch(e => { console.warn('terrain v2 unavailable, using the PNG tiles:', e && e.message || e); return null; })
-    .then(ps => (ps || pngCoverage().then(() => null))));
+    .then(ps => (ps || (packsOnly ? null : pngCoverage().then(() => null)))));
 }
 export const terrainFormat = () => (pack ? 'v2' : 'png');
 // For pages that read PNG tiles directly (terrarium.js): resolves once the coverage covered() answers from is in. Lazy (a

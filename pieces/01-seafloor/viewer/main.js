@@ -5,7 +5,7 @@
 // WORTH READING: section 3 (palettes) and section 5 (what the buttons do).
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { USE_AWS, SEABED } from '../../07-globe/terrain-source.js?v=t3';   // same module as terrarium.js: Oceany's own tiles unless ?terrain_src=aws
+import { USE_AWS, SEABED } from '../../07-globe/terrain-source.js?v=t7';   // same module as terrarium.js: Oceany's terrain2 packs unless ?terrain_src=aws
 
 // ---------- 1. Setup: renderer, scene, camera ----------
 const canvas = document.getElementById('scene');
@@ -319,7 +319,7 @@ async function ensureSurround(label) {
   if (!(label in surroundCache)) {
     surroundCache[label] = (async () => {
       try {
-        const { buildSurround } = await import('./surround.js?v=s5');
+        const { buildSurround } = await import('./surround.js?v=s6');
         const s = await buildSurround({ meta: c.meta, pos: c.pos, N: c.N });
         if (!s) return null;
         const off = /^LAT/.test(c.meta.datum || '') ? MSL_ABOVE_LAT : 0;
@@ -354,6 +354,13 @@ function colourSurround() {
   }
   s.colorAttr.needsUpdate = true; s.palette = currentPalette;
 }
+// b57: the seabed sources the sea dots actually used (bathy2 surveys where they exist, GEBCO elsewhere), finest first
+function seabedLine(beds) {
+  const one = b => `${b.name} (measured about every ${b.label})`;
+  const list = beds.length === 1 ? one(beds[0]) : beds.slice(0, -1).map(one).join(', ') + ' and ' + one(beds[beds.length - 1]);
+  const coarse = beds.some(b => b.m > 100);
+  return `Seabed there is from ${list}` + (coarse ? ', so it is coarse and approximate.' : '.');
+}
 function setSurroundNote() {                   // one caption line saying what the dimmer dots are
   let el = document.getElementById('surround-note');
   const s = cur && cur.surround && surroundPts.visible ? cur.surround : null;
@@ -364,7 +371,7 @@ function setSurroundNote() {                   // one caption line saying what t
     ? `Surroundings (dimmer dots): global terrain tiles (AWS Terrain Tiles, test switch), ~${Math.round(s.landM)} m per dot on land, ` +
       `~${Math.round(s.seaM / 10) * 10} m at sea, coarse. Seabed there is low-resolution and approximate (mostly ETOPO1, a ~1.85 km grid)` + (land.length ? `; land from ${land.join(', ')}.` : '.')
     : `Surroundings (dimmer dots): Oceany terrain tiles, ~${Math.round(s.landM)} m per dot on land (Copernicus DEM, a surface model: trees and buildings included), ` +
-      `~${Math.round(s.seaM / 10) * 10} m apart at sea. Seabed there is from ${SEABED.name}, measured only about every ${SEABED.label}, so it is coarse and approximate. Not for navigation.`;
+      `~${Math.round(s.seaM / 10) * 10} m apart at sea. ` + seabedLine(s.seabeds && s.seabeds.length ? s.seabeds : [SEABED]) + ' Not for navigation.';
   document.getElementById('caption').appendChild(el);
 }
 

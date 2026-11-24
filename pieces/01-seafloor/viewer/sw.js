@@ -8,23 +8,21 @@
 //    use that prefix. All names here start 'reefviewer-'; this worker deletes only 'reefviewer-*' caches.
 //  - ?offline=0 here unregisters only the registration whose scope ends '/01-seafloor/viewer/' (the globe's likewise).
 // What is kept:
-//  - shell, the five spots' data files, their slices (json), swell files, lookup index files, live/<spot>.json snapshots,
-//    and the terrain tiles for each spot's surroundings (zoom 12 land, zoom 10 sea, the same tiles surround.js asks for,
-//    computed here from each data file's extent with the same maths).
+//  - shell, the five spots' data files, their slices (json), swell files, lookup index files, live/<spot>.json snapshots.
+//  - the terrain for each spot's surroundings (b57: terrain2 packs on tiles.hvid.studio, no longer the v1 PNGs on R2 terrain/):
+//    this worker only works out which tiles surround.js asks for (zoom 12 over the lidar box plus RANGE_M, zoom 10 parents,
+//    same maths) and stores that list as ./surround-tiles in its META cache; offline.js then loads them through terrarium.js,
+//    so tilepack.js keeps them in its own Cache API stores (oceany-terrain2-v1 / oceany-bathy2-v1). The packs are cross-origin
+//    Range requests: this worker never touches them.
 //  - everything else same-origin the viewer fetches (big lookup T*.bin files, 14 MB slice .bin files) is kept the first
 //    time it is fetched online, so a spot works offline for the parts that were used.
-//  - same-origin: network first (a normal reload is fresh), cached copy when the network is gone; tiles: cache first.
-const SHELL = 'reefviewer-shell-14', TILES = 'reefviewer-tiles-3', META = 'reefviewer-meta-1';
-// Oceany's own tiles, same rule as terrain-source.js OWN_BASE: Cloudflare R2 when hosted, tiles-build/tiles/ on this Mac.
-const IS_LOCAL = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
-const OWN_TILES = IS_LOCAL ? new URL('../../07-globe/tiles-build/tiles/', self.location.href).href
-                           : 'https://pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev/terrain/';
-const tileUrl = (z, x, y) => `${OWN_TILES}${z}/${x}/${y}.png`;
+//  - same-origin: network first (a normal reload is fresh), cached copy when the network is gone.
+const SHELL = 'reefviewer-shell-15', META = 'reefviewer-meta-1';   // b57: reefviewer-tiles-3 (v1 PNGs) is deleted on activate
 const LIVE = ['porto_batel', 'pipeline', 'supertubos', 'guethary', 'hossegor'];
-const SHELL_FILES = ['./', './index.html', './style.css?v=z10', './main.js?v=z16', './play.js?v=c5c', './live.js?v=n2', './tutorial.js?v=c3n',
-  './offline.js?v=o1', './live_core.js?v=n2', './live_lookup.js?v=l4', './swell_model.js?v=c3', './surround.js?v=s5',
+const SHELL_FILES = ['./', './index.html', './style.css?v=z10', './main.js?v=z17', './play.js?v=c5c', './live.js?v=n2', './tutorial.js?v=c3n',
+  './offline.js?v=o2', './live_core.js?v=n2', './live_lookup.js?v=l4', './swell_model.js?v=c3', './surround.js?v=s6',
   './vendor/three.module.js', './vendor/three.core.js', './vendor/addons/controls/OrbitControls.js',
-  '../../07-globe/terrarium.js?v=1', '../../07-globe/tour.js?v=b51', '../../07-globe/terrain-source.js?v=t3', OWN_TILES + 'coverage.json', './data/slices.json',
+  '../../07-globe/terrarium.js?v=2', '../../07-globe/tour.js?v=b51', '../../07-globe/terrain-source.js?v=t7', '../../07-globe/tilepack.js?v=p2', './data/slices.json',
   '../../06-live-wave/lookup/index.json', '../../06-live-wave/lookup/shore.json',
   '../../06-live-wave/lookup_pipeline/index.json', '../../06-live-wave/lookup_pipeline/shore.json'];
 const LIVE_FILES = LIVE.map(k => `../../../live/${k}.json`);
@@ -35,7 +33,7 @@ const M_PER_DEG = 111195.0, EARTH_C = 40075016.7, RANGE_M = 5000;
 
 self.addEventListener('install', e => { e.waitUntil(precache().then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('reefviewer-') && ![SHELL, TILES, META].includes(k)).map(k => caches.delete(k))))
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('reefviewer-') && ![SHELL, META].includes(k)).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
@@ -51,8 +49,8 @@ async function precache() {
       const d = await res.json(); tilesFor(d, tiles);
     } catch (err) { /* that spot's map stays online-only */ }
   }
-  const tc = await caches.open(TILES);
-  await Promise.all([...tiles.values()].map(async u => { if (await tc.match(u)) return; try { const r = await fetch(u, { mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' }); if (r.ok) await tc.put(u, r); } catch (err) { /* later, at runtime */ } }));
+  const m = await caches.open(META);
+  await m.put('./surround-tiles', new Response(JSON.stringify([...tiles.values()]), { headers: { 'content-type': 'application/json' } }));
   await stamp();
 }
 // same tile maths as surround.js: z12 tiles over the lidar box plus RANGE_M, z10 parents of those
@@ -67,7 +65,7 @@ function tilesFor(d, out) {
   const px0 = Math.floor(gx(lonOfX(bx0 - RANGE_M))), px1 = Math.ceil(gx(lonOfX(bx1 + RANGE_M)));
   const py0 = Math.floor(gy(latOfZ(bz0 - RANGE_M))), py1 = Math.ceil(gy(latOfZ(bz1 + RANGE_M)));
   for (let ty = Math.floor(py0 / 256); ty <= Math.floor(py1 / 256); ty++)
-    for (let tx = Math.floor(px0 / 256); tx <= Math.floor(px1 / 256); tx++) { out.set(`12/${tx}/${ty}`, tileUrl(12, tx, ty)); out.set(`10/${tx >> 2}/${ty >> 2}`, tileUrl(10, tx >> 2, ty >> 2)); }
+    for (let tx = Math.floor(px0 / 256); tx <= Math.floor(px1 / 256); tx++) { out.set(`12/${tx}/${ty}`, [12, tx, ty]); out.set(`10/${tx >> 2}/${ty >> 2}`, [10, tx >> 2, ty >> 2]); }
 }
 
 async function tellOffline() { for (const c of await self.clients.matchAll()) c.postMessage({ type: 'reefviewer-offline' }); }
@@ -75,7 +73,6 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.href.startsWith(OWN_TILES) && url.pathname.endsWith('.png')) { e.respondWith(tile(req)); return; }
   if (url.origin !== location.origin) return;
   e.respondWith(fetch(req).then(res => {
     if (res.ok && res.type === 'basic') {
@@ -89,11 +86,3 @@ self.addEventListener('fetch', e => {
     return hit || Response.error();
   }));
 });
-async function tile(req) {
-  const c = await caches.open(TILES);
-  const hit = await c.match(req, { ignoreVary: true });
-  if (hit) return hit;
-  const res = await fetch(req);
-  if (res.ok) await c.put(req, res.clone());
-  return res;
-}
