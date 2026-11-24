@@ -15,8 +15,8 @@
 //     .setShowPaths(bool): adds a "show all paths" checkbox under the layer, default off.
 import * as THREE from 'three';
 import { makeDotMaterial, palette, setPalette, PALETTES, updateDotScale, dotScale, dotExag, seaExag, applyCssPalette, landTone, oceanTone, LAND_DOT_D, HUE_MAX, ICE_LAT } from './dots.js';
-import { createTerrain } from './terrain.js';
-import { USE_AWS as TERRAIN_AWS } from './terrain-source.js?v=t3';
+import { createTerrain } from './terrain.js?v=b52';
+import { USE_AWS as TERRAIN_AWS } from './terrain-source.js?v=t4';
 
 const RADIUS = 1.0;
 const D2R = Math.PI / 180;
@@ -1067,6 +1067,8 @@ function flyTo(r, done, endDist = 1.18, opt = {}) {
     startDir, endDir, getDir: opt.dir, startAlt: Math.max(1e-6, Number.isFinite(view.alt) ? view.alt : 2.6), endAlt: Math.max(1e-6, Number.isFinite(endDist) ? endDist - RADIUS : view.alt), startPitch: view.pitch,
     endPitch: opt.pitch ?? null, done, northUp: Math.abs(view.heading) < 2 * D2R };   // north-up before: north-up after (the path carries the facing round)
   // a flight out to the whole globe (the return from the seafloor viewer, Home) turns north-up on the way (northFrame)
+  // terrain v2 (b52): start loading the landing spot's tiles now, so land is there when the flight ends (terrain.js prefetch)
+  if (!terrainOff && terrain.prefetch) { const e = flight.endDir; terrain.prefetch(Math.asin(Math.max(-1, Math.min(1, e.y))) / D2R, Math.atan2(-e.z, e.x) / D2R, flight.endAlt); }
   flight.toNorth = flight.endAlt >= WHOLE_ALT && !follow;
   if (flight.toNorth) northEase = true;
   view.manual = flight.endPitch;

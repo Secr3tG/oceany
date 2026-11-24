@@ -19,8 +19,12 @@
 // - Each tile becomes one THREE.Points of 128 × 128 dots (each dot = the mean of 2 × 2 source pixels), positioned
 //   relative to the tile's own centre (no float jitter close up) and lifted by elevation × exaggeration in the shader.
 // - Tiles are kept in an LRU cache of CACHE_MAX; the least recently used tiles that are off screen are disposed.
+// - While finer tiles download, the area they will cover is drawn by stand-ins: the nearest loaded coarser tile resampled
+//   smoothly onto the finer grid (no added detail; see SI_PX). Requests go centre of the screen first, are cancelled when
+//   they leave the view, and tiles ahead of a fly or zoom are prefetched (PF_LOOK, and prefetch() for globe.js flights).
+// - ?terrain=v2: tiles come from the terrain2 packs through tilepack.js (terrain-source.js); the PNG path is the default.
 import * as THREE from 'three';
-import { tileUrl, covered as srcHas, coverageKnown, tileSources, SEABED, seabedOf, USE_AWS } from './terrain-source.js?v=t3';
+import { tileUrl, covered as srcHas, coverageKnown, tileSources, SEABED, seabedOf, USE_AWS, V2_ASKED, startPacks } from './terrain-source.js?v=t4';
 import { makeDotMaterial, palette, dotExag, morphT, landTone, oceanTone, SHALLOW_M, LAND_DOT_D, HUE_MAX } from './dots.js';
 
 const R_EARTH = 6371000;
@@ -30,7 +34,7 @@ const TARGET_PX = 2.5;         // split a tile while its dots are further apart 
                                // (Benn: regional views of Britain / the North Sea were coarse 4 px dots, ~z6 at 1,800 km; now ~z7)
 const CACHE_MAX = 220;         // tiles kept (≈ 0.3 MB each: positions, byte colours, elevations); ~70 MB at most
 const MAX_WANT = 96;           // tiles queued for fetching at once, nearest-first
-const MAX_INFLIGHT = 12;          // AWS: 6 per host name, two host names; ours: same origin (HTTP/2 multiplexes when hosted)
+const MAX_INFLIGHT = 12, MAX_INFLIGHT_V2 = 24;   // v2: the pack source does its own network limiting and merges neighbours into one range, so it gets more at once          // AWS: 6 per host name, two host names; ours: same origin (HTTP/2 multiplexes when hosted)
 const TILE_BUDGET = 150;       // tiles drawn + wanted in one view, at most (the target spacing adapts to stay under it)
 const DEEP_AT = 6000;          // same colour ramp as the base globe
 // Water deeper than SHALLOW_M: dots drawn SEA_DOT_K × wider (soft, overlapping: the sea floor here is ETOPO1 at
@@ -63,10 +67,39 @@ const SKIP_TO_Z = USE_AWS ? 10 : 99;   // AWS: from z10 every level is loaded (f
 const REFINE_MAX = 4;          // cap on the adaptive target spacing (TARGET_PX × refine): past ~4 it climbed and oscillated
 const FADE_MS = 400;           // round 4: 250 → 400, so a tile arriving over its parent or the base globe eases in
 const BUILD_MS = 6;            // time budget per frame for building decoded tiles (ms)           // a tile that comes or goes cross-fades with the level it replaces over this long
+// Stand-ins (2026-11-24 night): while finer tiles download, the part of the view they will cover is drawn from the nearest
+// loaded coarser tile, resampled smoothly (Catmull-Rom, clamped: no value outside the 2 × 2 source dots it sits between)
+// onto the finer tile's own dot grid, so the screen shows a smooth surface at close to the right dot density instead of
+// sparse capped dots. Interpolation only: it carries no detail the coarser tile does not have, and the readout names that
+// real tile, never the stand-in (status, finestM and detailEnds never count stand-ins). Built at the first level whose dots are
+// SI_PX css px apart or closer (one or two levels above the level the view ends on: a quarter to a sixteenth of the tiles),
+// at most SI_PER_FRAME a frame inside the BUILD_MS budget, and counted toward the tile cache. When the real tile comes in,
+// its heights ease from the stand-in's to its own over FADE_MS (geomorph) while the two cross-fade as before.
+const SI_PX = 6, SI_DEPTH = 10;
+// Round 3: no stand-ins where frames are slow (frame interval averaging over SLOW_MS, back under FAST_MS: software GL, an
+// overloaded machine). There every drawn dot costs frame time and loading is paced by frames. Measured (SwiftShader,
+// Peniche, 3 runs each): stand-ins drew 1.4-1.6 M dots during loading against 0.5-0.8 M without, frames took ~210 ms
+// instead of ~120, and the final level came ~1.8 s later (12.1 / 15.1 / 11.6 s vs 10.3 / 13.2 / 10.0 s; HEAD 10.2 / 8.9 /
+// 10.3 s). On a GPU (Metal) the same view is readable sooner with them than HEAD (1.4-1.5 s vs 1.9 s).
+const SLOW_MS = 45, FAST_MS = 35;
+// Data-level balance (see select: held): at most LVL_JUMP levels between the data of neighbouring drawn tiles; a real tile
+// that would break it waits at most HOLD_MS.
+const LVL_JUMP = 3, HOLD_MS = 1200;
+// Prefetch along a fly or zoom: the camera's ground point and viewing distance are extrapolated PF_LOOK s ahead from the
+// last ~0.6 s of motion, and the tiles there are fetched at low priority (at most PF_SLOTS of the MAX_INFLIGHT slots).
+const PF_LOOK = 0.75, PF_SLOTS = 8, PF_MAX = 24;
 const BLOCK = [0, 4, 1024, 1028];   // byte offsets of a 2 × 2 pixel block in a 256-wide RGBA tile
 const D2R = Math.PI / 180;
 const lonOf = (px, n) => px / n * 360 - 180;                                         // px in tile units (x + frac)
 const latOf = (py, n) => Math.atan(Math.sinh(Math.PI * (1 - 2 * py / n))) / D2R;
+// unit() of a web-mercator point (row py of n, longitude in degrees) without the latitude: with m = π(1 − 2py/n), the
+// latitude is the Gudermannian of m, so cos(lat) = 1/cosh(m) and sin(lat) = tanh(m). Same vector as
+// unit(latOf(py, n), lon) to ~4e-16 (far below the float32 the positions are stored in), with one exp instead of
+// atan + sinh + cos + sin (build profile 2026-11-24: positions were half of build()).
+function unitM(py, n, lon, out) {
+  const m = Math.PI * (1 - 2 * py / n), e = Math.exp(m), ie = 1 / e, ch = (e + ie) / 2, lo = lon * D2R;
+  return out.set(Math.cos(lo) / ch, (e - ie) / (e + ie), -Math.sin(lo) / ch);
+}
 function unit(lat, lon, out = new THREE.Vector3()) {
   const la = lat * D2R, lo = lon * D2R;
   return out.set(Math.cos(la) * Math.cos(lo), Math.sin(la), -Math.cos(la) * Math.sin(lo));
@@ -104,7 +137,7 @@ const parKey = d => d.polar ? `p${d.polar}/${d.z - 1}/${d.x >> 1}/${d.y >> 1}` :
 
 // Timing probe: set window.__terrainLog = [] in the console and each tile records when it was asked for, requested,
 // answered, decoded, built and first drawn (performance.now ms). Off (no cost) otherwise.
-const tlog = (t, k) => { const L = globalThis.__terrainLog; if (!L) return; if (!t.tm) { t.tm = { key: t.key, z: t.z }; L.push(t.tm); } t.tm[k] ??= performance.now(); };
+const tlog = (t, k) => { const L = globalThis.__terrainLog; if (!L || t.si) return; if (!t.tm) { t.tm = { key: t.key, z: t.z }; L.push(t.tm); } t.tm[k] ??= performance.now(); };
 export function createTerrain({ scene, camera, renderer, baseElev = null, lite = false }) {
   // lite (phone / touch screen, set by globe.js). Phone 2026-11-23 late: a portrait phone keeps the desktop's 40° across
   // (globe.js fitFov), so the same stretch of coast is ~390 css px wide instead of ~1,440: at the desktop's 2.5 px split
@@ -117,8 +150,17 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   const group = new THREE.Group(); group.visible = false; scene.add(group);
   const cache = new Map();                // key -> tile { ...desc, state, points, elev, sources, hasOcean, used }
   const queue = [];                       // decoded tiles waiting to be built (a few per frame)
+  const sic = new Map();                  // stand-ins: key -> tile (si: true, srcZ: level of the tile it was resampled from)
+  const siQueue = new Map();              // stand-ins asked for by the last select passes: key -> { d, src, prio, id }
+  const SI_PER_FRAME = lite ? 1 : 3, SI_MAX = Math.floor(CACHE * 0.4);
+  const morphing = new Set();             // tiles whose drawn heights are easing from a stand-in's to their own
+  const pf = new Map();                   // prefetch: key -> { z, x, y, until, prio }
+  let pack = null; startPacks().then(p => { pack = p; });   // terrain v2 (default; ?terrain=v1 = PNGs): the pack source once it is up (null: PNG tiles)
   let pending = -1;                       // tiles wanted or loading at the last select (-1: not run yet)
   let enabled = false, loadedOk = 0, loadFails = 0, lastErr = '', inflight = 0, lastSelect = 0, shown = [], frameNo = 0, selectId = 0;
+  let shownSI = [], measured = [], siKick = false;   // stand-ins drawn; real tiles the readout counts (drawn ones and the sources of drawn stand-ins)
+  let frameEma = 16, slow = false;
+  let siMs = 0, siCount = 0, lastUpd = 0, heldKeys = new Set();                // stand-in build time (siDebug)
   const frustum = new THREE.Frustum(), projView = new THREE.Matrix4(), sphere = new THREE.Sphere();
   const camPos = new THREE.Vector3();
   const pxPerUnit = () => innerHeight / (2 * Math.tan(camera.fov * D2R / 2));
@@ -189,12 +231,28 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     }
     return false;
   }
-  const selFwd = new THREE.Vector3(), selTmp = new THREE.Vector3();
+  const selFwd = new THREE.Vector3(), selTmp = new THREE.Vector3(), ndc = new THREE.Vector3();
+  // How far a tile is from the middle of the screen: the gap between the view centre and the tile's nearest edge as seen,
+  // in half screen heights (0 = it holds the centre). Tiles behind the camera count as 2.
+  function scrDist(d) {
+    const dist = camPos.distanceTo(d.center); if (dist <= d.radius) return 0;
+    const rN = d.radius / dist / Math.tan(camera.fov * D2R / 2);
+    if (selTmp.copy(d.center).sub(camPos).dot(selFwd) <= 0) return Math.max(0, 2 - rN);
+    ndc.copy(d.center).project(camera);
+    return Math.max(0, Math.hypot(ndc.x * camera.aspect, ndc.y) - rN);
+  }
   // Walk the quadtree: returns tiles to draw (shown) and tiles to fetch (wanted, with a priority).
   function select() {
-    const want = [], show = [];
+    const want = [], show = [], siShow = [], srcShown = [];
     camera.getWorldDirection(selFwd);
-    const prio = d => d.z * 10 + (1 - selFwd.dot(selTmp.copy(d.center).sub(camPos).normalize())) * 5;
+    // Request order (2026-11-24 night): the middle of the screen first, coarser first among tiles about as near it. One
+    // level coarser is worth 3/16 of the screen height (was: coarser first everywhere, then nearest the view axis). At 0.5
+    // the finest tiles under the centre came in before the middle levels round them, and stood as a raised block among
+    // stand-ins smoothed from a level-3 tile.
+    // Slow frames (no stand-ins, see SLOW_MS): the old order, coarser first everywhere. Without stand-ins the finest tiles
+    // under the centre cannot be drawn until their siblings and the levels between are in, so centre-first left the centre
+    // coarse for longer (SwiftShader Peniche: first readable 10.4-10.8 s vs 6-7 s).
+    const prio = slow ? (d => d.z * 10 + (1 - selFwd.dot(selTmp.copy(d.center).sub(camPos).normalize())) * 5) : (d => scrDist(d) * 4 + d.z * 0.75);
     // Look ahead: below a tile that is still loading, ask for the tiles this view will end on too (down to the target
     // spacing), instead of one level per round trip. Coarser first (prio), so parents still arrive before their
     // children (the build waits for a loading parent: fillOceanVoid needs it). Not counted toward the tile budget.
@@ -208,13 +266,70 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       for (const k of kids(d)) {
         if (!visible(k)) continue;
         const kt = cache.get(k.key); if (kt) kt.keep = selectId;
-        const last = k.z >= maxZ(k) || spacingPx(k) <= TPX * refine || !kidsBuilt(k) || nearCap(k);
-        if (!ready(k) && (last || k.z >= SKIP_TO_Z)) { want.push([prio(k), k]); extra++; }
+        const sk = spacingPx(k), last = k.z >= maxZ(k) || sk <= TPX * refine || !kidsBuilt(k) || nearCap(k);
+        // 2026-11-24 night: also the level three above the last one (dots 4-8 × the target apart: a sixty-fourth as many
+        // tiles), the source the stand-ins below it are smoothed from while the last level loads
+        const src = !slow && !last && !k.polar && sk > TPX * refine * 4 && sk <= TPX * refine * 8;
+        // round 2: source tiles ahead of the rest (as if 4 levels coarser): a few of them give the whole view stand-ins from
+        // one data level, instead of a sharp centre among stand-ins from level 3 (the seam)
+        if (!ready(k) && (last || src || k.z >= SKIP_TO_Z)) { want.push([prio(k) - (src ? 3 : 0), k, src && !last && k.z < SKIP_TO_Z]); extra++; }
         ahead(k, depth + 1);
       }
     }
     // d is drawn by itself or, all the way across, by finer tiles that are in (up to 8 levels down; a miss fails fast down one branch)
-    const covered = (d, depth = 0) => ready(d) || (depth < 8 && d.z < maxZ(d) && kidsBuilt(d) && kids(d).filter(visible).every(k => covered(k, depth + 1)));
+    // Data-level balance (round 2, the seam): no tile is drawn from data more than LVL_JUMP levels finer than what its
+    // same-level neighbours were drawn from in the last pass (lvlNb). A real tile that would break that is held back for up
+    // to HOLD_MS after it was built (its stand-in stays), and stand-ins take their source no finer than that. Without it a
+    // block of fine tiles under the centre stood above stand-ins smoothed from a level-3 tile, with a dark gap along its edge.
+    const allowMemo = new Map(); heldKeys = new Set();
+    const allowed = d => { let a = allowMemo.get(d.key); if (a === undefined) { a = lvlNb(d) + LVL_JUMP; allowMemo.set(d.key, a); } return a; };
+    const held = d => {
+      if (d.polar || d.z <= MIN_Z + 1) return false; const t = cache.get(d.key);
+      // only while tiles are still coming (pending, last pass): with nothing on its way the neighbours will not improve
+      const h = !slow && pending > 0 && !!t && t.state === 'ready' && t.builtAt > lastNow - HOLD_MS && d.z > allowed(d);
+      if (h) heldKeys.add(d.key); return h;
+    };
+    const covered = (d, depth = 0) => (ready(d) && !held(d)) || (depth < 8 && d.z < maxZ(d) && kidsBuilt(d) && kids(d).filter(visible).every(k => covered(k, depth + 1)));
+    // Stand-ins, refined like the real quadtree: the visible children of a drawn tile (real, or a stand-in) are drawn by
+    // finer real tiles where those cover them, else by stand-ins resampled from src (the finest real tile drawn above
+    // them). Returns those children, or null while one is not built yet (it is asked for; the parent stays this pass).
+    // the stand-in source for c: its nearest loaded real ancestor below src (kept and counted by the readout), else src
+    function bestSrc(c, src) {
+      const cap = allowed(c);
+      for (let z = c.z - 1, x = c.x >> 1, y = c.y >> 1; z > src.z; z--, x >>= 1, y >>= 1) {
+        if (z > cap) continue;
+        const t = cache.get(`${z}/${x}/${y}`);
+        if (t && t.state === 'ready' && t.elev) { t.keep = selectId; return t; }
+      }
+      return src;
+    }
+    function siKids(k, src) {
+      const items = [], used = []; let ok = true;
+      for (const c of kids(k)) {
+        if (!visible(c)) continue;
+        if (covered(c)) { items.push(c); continue; }
+        const cs = bestSrc(c, src), s = sic.get(c.key); if (s) s.keep = selectId;
+        // a better source (within the balance cap). Never a coarser one: downgrading churned rebuilds and hid the coast
+        // that finer data already showed
+        // Upgrades only for 2+ levels (or the parent itself), and behind new stand-ins in the queue: rebuilding every
+        // stand-in for each level that landed (3, 4, 5…) starved the builds that fill the view.
+        if (!s) siAsk(c, cs, prio(c));
+        else if (cs.z >= s.srcZ + 2 || (cs.z > s.srcZ && cs.z === c.z - 1)) siAsk(c, cs, prio(c) + 4);
+        if (s && s.state === 'ready') { items.push(s); const st = cache.get(s.srcKey); if (st) { st.keep = selectId; used.push(st); } }
+        else ok = false;
+      }
+      if (!ok || !items.length) return null;
+      srcShown.push(...used); return items;
+    }
+    // a drawn stand-in splits on down to the level whose dots are SI_PX apart (or the level the view ends on)
+    function siVisit(s, src, depth) {
+      s.keep = selectId;
+      if (depth < SI_DEPTH && s.z < MAX_Z && spacingPx(s) > Math.max(SI_PX, TPX * refine) && kidsBuilt(s) && !nearCap(s)) {
+        const items = siKids(s, src);
+        if (items) { for (const it of items) if (it.si) siVisit(it, src, depth + 1); else visit(it); return; }
+      }
+      siShow.push(s);
+    }
     let holes = 0;                        // visible roots with nothing drawn (globe.js keeps the base globe up while > 0)
     let capped = false;                   // some visible tile wanted finer dots that were never built (outside the spot boxes)
     const caps = [];
@@ -228,6 +343,12 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
         for (const k of ks) { const kt = cache.get(k.key); if (kt) kt.keep = selectId; }
         if (ks.length && ks.every(k => covered(k))) { ks.forEach(k => visit(k)); return; }
         if (spacingPx(d) > TPX * refine) for (const k of ks) if (!ready(k)) { want.push([prio(k), k]); ahead(k, 0); }   // the next level (a closer stand-in soon) and, via ahead, the last one
+        // stand-ins: d is drawn and too coarse here, its children are not all in: draw them smoothed from d (or from
+        // stand-ins already built from a coarser tile) instead of d's sparse dots. Not from tiles coarser than the base globe.
+        if (!slow && isReady && !d.polar && ks.length && spacingPx(d) > TPX * refine && !coarseStandIn(t)) {
+          const items = siKids(d, t);
+          if (items) { srcShown.push(t); for (const it of items) if (it.si) siVisit(it, t, 1); else visit(it); return; }
+        }
       }
       if (isReady) show.push(t);
       else { if (!t || t.state === 'new' || t.state === 'loading') want.push([prio(d), d]); if (root) holes++; }   // 'loading' too: a root nobody else asks for was aborted every other pass (round 3)
@@ -239,7 +360,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     const need = show.length + want.length - extra;
     if (need > BUDGET) refine = Math.min(REFINE_MAX, refine * 1.25);
     else if (need < BUDGET * 0.6 && refine > 1) refine = Math.max(1, refine / 1.1);
-    return { show, want: want.slice(0, MAX_WANT).map(w => w[1]) };
+    return { show, want: want.slice(0, MAX_WANT).map(w => [w[1], w[0], !!w[2]]), siShow, measured: [...new Set([...show, ...srcShown])] };
   }
 
   // A polar tile: heights sampled from the base globe (no fetch), so it is ready the frame it is asked for.
@@ -253,35 +374,58 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     let maxAbs = 0; for (let q = 0; q < elev.length; q++) maxAbs = Math.max(maxAbs, Math.abs(elev[q]));
     t.elev = elev; t.maxAbs = maxAbs; cache.set(d.key, t); queue.push(t);
   }
-  async function load(d) {
+  // Old format: one terrarium PNG, 256 × 256 px, each 2 × 2 block averaged to one dot. Returns the heights and whether the
+  // tile is mostly an ocean void (exactly 0 m).
+  async function decodePng(r) {
+    const bmp = await createImageBitmap(await r.blob());
+    const cv = new OffscreenCanvas(256, 256), cx = cv.getContext('2d', { willReadFrequently: true });
+    cx.drawImage(bmp, 0, 0); bmp.close();
+    const px = cx.getImageData(0, 0, 256, 256).data;
+    const elev = new Float32Array(N * N);
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      let s = 0, sn = 0, n = 0;          // s: sum of the 4 pixels; sn/n: sum/count of the non-zero ones
+      const base = (2 * j * 256 + 2 * i) * 4;
+      for (let q = 0; q < 4; q++) {      // the 2 × 2 block: byte offsets 0, 4, 1024, 1028 (no per-dot arrays)
+        const k = base + BLOCK[q];
+        const h = px[k] * 256 + px[k + 1] + px[k + 2] / 256 - 32768;
+        s += h; if (h !== 0) { sn += h; n++; }
+      }
+      // exactly 0 m next to sea floor is an ocean void (see fillOceanVoid), not data: leave it out of the mean
+      elev[j * N + i] = n && n < 4 && sn < 0 ? sn / n : s / 4;
+    }
+    let zeros = 0; for (let q = 3; q < px.length; q += 4) if (px[q - 3] === 128 && px[q - 2] === 0 && px[q - 1] === 0) zeros++;
+    return { elev, voidTile: zeros > 0.5 * 256 * 256 };
+  }
+  const NO_HEADERS = new Headers();
+  async function load(d, prio = 0) {
     if (d.polar) return loadPolar(d);
     const t = Object.assign(d, { state: 'loading', used: frameNo, ctrl: new AbortController() });
     cache.set(d.key, t); inflight++; tlog(t, 'req');
     try {
-      const r = await fetch(tileUrl(d.z, d.x, d.y), { signal: t.ctrl.signal, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
-      tlog(t, 'resp');
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      t.sources = tileSources(d.z, r.headers);
-      const bmp = await createImageBitmap(await r.blob());
-      const cv = new OffscreenCanvas(256, 256), cx = cv.getContext('2d', { willReadFrequently: true });
-      cx.drawImage(bmp, 0, 0); bmp.close();
-      const px = cx.getImageData(0, 0, 256, 256).data;
-      const elev = new Float32Array(N * N);
-      for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-        let s = 0, sn = 0, n = 0;          // s: sum of the 4 pixels; sn/n: sum/count of the non-zero ones
-        const base = (2 * j * 256 + 2 * i) * 4;
-        for (let q = 0; q < 4; q++) {      // the 2 × 2 block: byte offsets 0, 4, 1024, 1028 (no per-dot arrays)
-          const k = base + BLOCK[q];
-          const h = px[k] * 256 + px[k + 1] + px[k + 2] / 256 - 32768;
-          s += h; if (h !== 0) { sn += h; n++; }
-        }
-        // exactly 0 m next to sea floor is an ocean void (see fillOceanVoid), not data: leave it out of the mean
-        elev[j * N + i] = n && n < 4 && sn < 0 ? sn / n : s / 4;
+      // ?terrain=v2: the pack source (tilepack.js) once it is up; PNG tiles when it is not asked for, not supported or failed
+      const ps = V2_ASKED ? await startPacks() : null;
+      let got;
+      if (ps) {
+        if (t.ctrl.signal.aborted) throw new Error('aborted');
+        const tile = await ps.getTile(d.z, d.x, d.y, { signal: t.ctrl.signal, prio });
+        tlog(t, 'resp');
+        if (t.ctrl.signal.aborted) throw new Error('aborted');
+        if (!tile) throw new Error('HTTP 404');      // absent from its pack: like a missing PNG (failed, not asked for again)
+        t.sources = tileSources(d.z, NO_HEADERS);
+        const elev = new Float32Array(tile.elev);     // own copy: despike / fillOceanVoid write into it
+        let zeros = 0; for (let q = 0; q < elev.length; q++) if (elev[q] === 0) zeros++;
+        got = { elev, voidTile: zeros > 0.5 * N * N };
+      } else {
+        const r = await fetch(tileUrl(d.z, d.x, d.y), { signal: t.ctrl.signal, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
+        tlog(t, 'resp');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        t.sources = tileSources(d.z, r.headers);
+        got = await decodePng(r);
       }
+      const elev = got.elev;
       // A tile that is mostly exactly 0 m is an ocean void with at most a few stray rows of junk (seen: -5,725 and
       // -10,681 m rows in an all-zero tile): drop its sea values, so fillOceanVoid rebuilds them from the parent (land kept).
-      let zeros = 0; for (let q = 3; q < px.length; q += 4) if (px[q - 3] === 128 && px[q - 2] === 0 && px[q - 1] === 0) zeros++;
-      if (zeros > 0.5 * 256 * 256) for (let q = 0; q < elev.length; q++) if (elev[q] < 0) elev[q] = 0;
+      if (got.voidTile) for (let q = 0; q < elev.length; q++) if (elev[q] < 0) elev[q] = 0;
       despike(elev);
       let maxAbs = 0; for (let q = 0; q < elev.length; q++) maxAbs = Math.max(maxAbs, Math.abs(elev[q]));
       t.elev = elev; t.maxAbs = maxAbs; t.state = 'decoded'; tlog(t, 'dec'); queue.push(t); loadedOk++; loadFails = 0;
@@ -290,6 +434,112 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       else { t.state = 'failed'; loadFails++; lastErr = String(e && e.message || e); console.warn('terrain tile', d.key, lastErr);
         if (!/HTTP 404/.test(lastErr)) setTimeout(() => { if (cache.get(d.key) === t) cache.delete(d.key); }, 20000); }   // a network blip: asked for again later   // e.g. a missing tile: treated as empty; counted, so the readout can say so
     } finally { inflight--; t.ctrl = null; }
+  }
+
+  // Smooth resample (stand-ins and their geomorph): heights at tile d's 128 × 128 dots from a coarser (or same-level) tile
+  // src, Catmull-Rom across src's dot grid, each value clamped to the lowest and highest of the 2 × 2 src dots it lies
+  // between, so it never overshoots: no peak higher or trench deeper than the data. Past src's edge the neighbouring tile
+  // at src's level is read (nb(z, x, y) -> heights or null), else the edge row is repeated.
+  function resample(d, src, se, nb) {
+    const f = 2 ** (d.z - src.z), out = new Float32Array(N * N), P = N + 4, pad = new Float32Array(P * P), pn = 2 ** src.z;
+    const nbs = new Array(9);
+    for (let j = -2; j < N + 2; j++) for (let i = -2; i < N + 2; i++) {   // src heights with a 2-dot border from its neighbours
+      let v;
+      if (i >= 0 && i < N && j >= 0 && j < N) v = se[j * N + i];
+      else {
+        const dx = i < 0 ? -1 : i >= N ? 1 : 0, dy = j < 0 ? -1 : j >= N ? 1 : 0, q = (dy + 1) * 3 + dx + 1;
+        if (nbs[q] === undefined) nbs[q] = src.y + dy >= 0 && src.y + dy < pn ? nb(src.z, (src.x + dx + pn) % pn, src.y + dy) : null;
+        v = nbs[q] ? nbs[q][(j - dy * N) * N + (i - dx * N)] : se[Math.max(0, Math.min(N - 1, j)) * N + Math.max(0, Math.min(N - 1, i))];
+      }
+      pad[(j + 2) * P + i + 2] = v;
+    }
+    const cw = (t, w, o) => { const t2 = t * t, t3 = t2 * t; w[o] = (-t3 + 2 * t2 - t) / 2; w[o + 1] = (3 * t3 - 5 * t2 + 2) / 2; w[o + 2] = (-3 * t3 + 4 * t2 + t) / 2; w[o + 3] = (t3 - t2) / 2; };
+    const ix = new Int32Array(N), wx = new Float32Array(4 * N), iy = new Int32Array(N), wy = new Float32Array(4 * N);
+    const ox = (d.x - src.x * f) * N, oy = (d.y - src.y * f) * N;
+    for (let a = 0; a < N; a++) {
+      const u = (ox + a + 0.5) / f - 0.5, i0 = Math.floor(u); ix[a] = i0 + 2; cw(u - i0, wx, 4 * a);
+      const v = (oy + a + 0.5) / f - 0.5, j0 = Math.floor(v); iy[a] = j0 + 2; cw(v - j0, wy, 4 * a);
+    }
+    for (let j = 0; j < N; j++) {
+      const r1 = iy[j] * P, w0 = wy[4 * j], w1 = wy[4 * j + 1], w2 = wy[4 * j + 2], w3 = wy[4 * j + 3];
+      for (let i = 0; i < N; i++) {
+        const c = r1 + ix[i], a0 = wx[4 * i], a1 = wx[4 * i + 1], a2 = wx[4 * i + 2], a3 = wx[4 * i + 3];
+        const row = o => a0 * pad[o - 1] + a1 * pad[o] + a2 * pad[o + 1] + a3 * pad[o + 2];
+        let h = w0 * row(c - P) + w1 * row(c) + w2 * row(c + P) + w3 * row(c + 2 * P);
+        const p00 = pad[c], p01 = pad[c + 1], p10 = pad[c + P], p11 = pad[c + P + 1];
+        const lo = Math.min(p00, p01, p10, p11), hi = Math.max(p00, p01, p10, p11);
+        out[j * N + i] = h < lo ? lo : h > hi ? hi : h;
+      }
+    }
+    return out;
+  }
+  const realNb = (z, x, y) => { const t = cache.get(`${z}/${x}/${y}`); return t && t.state === 'ready' && t.elev || null; };
+  const siNb = (z, x, y) => { const t = sic.get(`${z}/${x}/${y}`); return t && t.state === 'ready' && (t.disp || t.elev) || null; };
+  function siAsk(d, src, prio) {
+    const e = siQueue.get(d.key);
+    if (e) { e.src = src; e.d = d; e.prio = prio; e.id = selectId; return; }
+    if (sic.size + siQueue.size < SI_MAX) siQueue.set(d.key, { d, src, prio, id: selectId });
+  }
+  // Build (or, from a finer source, rebuild in place with a geomorph) one stand-in. false when it is no longer needed.
+  function siBuild({ d, src }) {
+    if (cache.get(src.key) !== src || src.state !== 'ready' || !src.elev) return false;
+    const rt = cache.get(d.key); if (rt && rt.state === 'ready' && !(rt.builtAt > lastNow - HOLD_MS)) return false;   // in and drawable (a held one gets its stand-in)
+    let s = sic.get(d.key);
+    if (s && s.srcZ >= src.z) return false;
+    const elev = resample(d, src, src.elev, realNb);
+    let maxAbs = 0; for (let q = 0; q < elev.length; q++) maxAbs = Math.max(maxAbs, Math.abs(elev[q]));
+    if (s) {
+      const from = Float32Array.from(s.disp);
+      s.elev = elev; s.maxAbs = maxAbs; s.srcZ = src.z; s.srcKey = src.key;
+      const dk = s.points.geometry.attributes.aDotK;
+      for (let k = 0; k < N * N; k++) dk.array[k] = dotK(elev[k]);
+      dk.needsUpdate = true;
+      // colours ease over the same morph as the heights (round 2: they switched at once)
+      const ga = s.points.geometry.attributes, c0 = Uint8Array.from(ga.color.array), p0 = Uint8Array.from(ga.aParCol.array);
+      colourTile(s);
+      s.cTo = Uint8Array.from(ga.color.array); s.pTo = Uint8Array.from(ga.aParCol.array); s.cFrom = c0; s.pFrom = p0;
+      ga.color.array.set(c0); ga.aParCol.array.set(p0);
+      startMorph(s, from);
+    } else {
+      s = Object.assign(desc(d.z, d.x, d.y), { si: true, state: 'decoded', elev, maxAbs, srcZ: src.z, srcKey: src.key, sources: [], used: frameNo, keep: selectId, ctrl: null });
+      build(s); sic.set(s.key, s);
+    }
+    return true;
+  }
+  function disposeSI(s) {
+    live.delete(s); morphing.delete(s); sic.delete(s.key);
+    if (s.points) { group.remove(s.points); s.points.geometry.dispose(); s.points.material.dispose(); s.points = null; }
+  }
+  // the drawn stand-in under a real tile that has just come in (same tile or a coarser one), to geomorph from
+  function standInUnder(t) {
+    if (t.polar || !sic.size) return null;
+    for (let z = t.z, x = t.x, y = t.y; z >= MIN_Z && z >= t.z - 6; z--, x >>= 1, y >>= 1) {
+      const s = sic.get(`${z}/${x}/${y}`); if (s && s.points && s.fade > 0) return s;
+    }
+    return null;
+  }
+  // Heights geomorph: the tile's drawn heights (t.disp, its aElev) ease from `from` to t.elev over FADE_MS from the first
+  // frame it is drawn. Block means (aParElev) follow, so the level geomorph in dots.js stays consistent.
+  function startMorph(t, from) { t.mFrom = from; t.mT0 = null; t.mBuilt = performance.now(); morphing.add(t); }
+  function morphFrame(now) {
+    for (const t of morphing) {
+      if (!t.points) { morphing.delete(t); continue; }
+      let a = 1;
+      if (t.mT0 == null && t.shownNow) t.mT0 = now;
+      if (t.mT0 != null) a = Math.max(0, Math.min(1, (now - t.mT0) / FADE_MS));
+      else if (performance.now() - t.mBuilt < HOLD_MS + 500) continue;   // not drawn by then: the stand-in is gone, start at its own heights
+      const w = a * a * (3 - 2 * a);
+      const e = t.elev, f = t.mFrom, dp = t.disp, pel = t.pel;
+      for (let k = 0; k < N * N; k++) dp[k] = f[k] + (e[k] - f[k]) * w;
+      for (let j = 0; j < N; j += 2) for (let i = 0; i < N; i += 2) { const k = j * N + i; pel[k] = (dp[k] + dp[k + 1] + dp[k + N] + dp[k + N + 1]) / 4; }
+      const g = t.points.geometry; g.attributes.aElev.needsUpdate = true; g.attributes.aParElev.needsUpdate = true;
+      if (t.cFrom) {
+        const c = g.attributes.color.array, pc = g.attributes.aParCol.array, c0 = t.cFrom, c1 = t.cTo, p0 = t.pFrom, p1 = t.pTo;
+        for (let q = 0; q < c.length; q++) { c[q] = c0[q] + (c1[q] - c0[q]) * w; pc[q] = p0[q] + (p1[q] - p0[q]) * w; }
+        g.attributes.color.needsUpdate = true; g.attributes.aParCol.needsUpdate = true;
+      }
+      if (a >= 1) { morphing.delete(t); t.mFrom = t.cFrom = t.cTo = t.pFrom = t.pTo = null; }
+    }
   }
 
   // Spikes: some Terrarium tiles over the ocean carry a line or two of bogus pixels (e.g. -10,681 m in a -5,400 m plain).
@@ -405,10 +655,15 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   // keeper's offset to the block centre, aPar.w = 1 on keepers; aParElev the block's mean elevation. As the tile's dots
   // close up on screen the other three fade and the keeper moves to the centre, doubles in size and takes the block's
   // mean colour and height: at the split threshold a tile looks like its parent, so a level change does not pop.
+  const dotK = h => h < -COAST_M ? SEA_DOT_K : h > 0 ? TILE_LAND_K : TILE_LAND_K + (SEA_DOT_K - TILE_LAND_K) * Math.max(0, -h) / COAST_M;
+  // Build profile: set globalThis.__buildProf = {} in the console; each section's total ms and the tile count accumulate.
+  const prof = (P, k, t0) => { const t1 = performance.now(); if (P) P[k] = (P[k] || 0) + t1 - t0; return t1; };
   function build(t) {
-    if (fillOceanVoid(t, t.elev) + inpaintVoid(t, t.elev)) {   // parent loaded by now (lower zooms fetch first)
+    const P = globalThis.__buildProf; let pt = performance.now(); const pt0 = pt;
+    if (!t.si && fillOceanVoid(t, t.elev) + inpaintVoid(t, t.elev)) {   // parent loaded by now (lower zooms fetch first); stand-ins come from filled tiles
       despike(t.elev); let m = 0; for (const v of t.elev) m = Math.max(m, Math.abs(v)); t.maxAbs = m;
     }
+    pt = prof(P, 'fill', pt);
     const n = 2 ** t.z, NN = N * N, pos = new Float32Array(NN * 3), sz = new Float32Array(NN), dk = new Float32Array(NN), v = new THREE.Vector3();
     const par = new Float32Array(NN * 4), pel = new Float32Array(NN), rs = new Float32Array(N), e = t.elev;
     const cosC = Math.cos(t.latC * D2R);
@@ -426,11 +681,12 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
         if (t.polar) {
           const [la, lo, c] = polarLL(t.polar, -POLE_S + (t.x + (i + 0.5 + jx) / N) * pw, -POLE_S + (t.y + (j + 0.5 + jy) / N) * pw);
           unit(la, lo, v).sub(t.center); out = c > POLE_S;
-        } else unit(latOf(t.y + (j + 0.5 + jy) / N, n), lonOf(t.x + (i + 0.5 + jx) / N, n), v).sub(t.center);   // relative to tile centre
+        } else unitM(t.y + (j + 0.5 + jy) / N, n, lonOf(t.x + (i + 0.5 + jx) / N, n), v).sub(t.center);   // relative to tile centre
         pos[3 * k] = v.x; pos[3 * k + 1] = v.y; pos[3 * k + 2] = v.z; sz[k] = s;
-        dk[k] = out ? -1 : e[k] < -COAST_M ? SEA_DOT_K : e[k] > 0 ? TILE_LAND_K : TILE_LAND_K + (SEA_DOT_K - TILE_LAND_K) * Math.max(0, -e[k]) / COAST_M;   // -1: outside a polar cap, not drawn; shallow water eases from the land dot size to the deep one (round 2: its fine 0.9-spacing dots read as black holes along the coast)
+        dk[k] = out ? -1 : dotK(e[k]);   // -1: outside a polar cap, not drawn; shallow water eases from the land dot size to the deep one (round 2: its fine 0.9-spacing dots read as black holes along the coast)
       }
     }
+    pt = prof(P, 'pos', pt);
     const n2 = n / 2, pw2 = 2 * pw;
     for (let j = 0; j < N; j += 2) for (let i = 0; i < N; i += 2) {
       const k = j * N + i, ks = [k, k + 1, k + N, k + N + 1];
@@ -438,15 +694,24 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       const GI = (t.x * N + i) >> 1, GJ = (t.y * N + j) >> 1, pz = t.z - 1;
       const pjx = jit(GI, GJ, pz), pjy = jit(GJ + 7919, GI, pz);
       if (t.polar) { const [la, lo] = polarLL(t.polar, -POLE_S + (GI + 0.5 + pjx) / N * pw2, -POLE_S + (GJ + 0.5 + pjy) / N * pw2); unit(la, lo, v).sub(t.center); }
-      else unit(latOf((GJ + 0.5 + pjy) / N, n2), lonOf((GI + 0.5 + pjx) / N, n2), v).sub(t.center);
+      else unitM((GJ + 0.5 + pjy) / N, n2, lonOf((GI + 0.5 + pjx) / N, n2), v).sub(t.center);
       par[4 * k] = v.x - pos[3 * k]; par[4 * k + 1] = v.y - pos[3 * k + 1]; par[4 * k + 2] = v.z - pos[3 * k + 2];
       par[4 * k + 3] = 1;
       pel[k] = (e[ks[0]] + e[ks[1]] + e[ks[2]] + e[ks[3]]) / 4;
     }
     t.rowScale = rs;
+    pt = prof(P, 'par', pt);
+    // drawn heights: a stand-in keeps its own copy (it may geomorph to a finer source); a real tile that replaces a drawn
+    // stand-in starts at the stand-in's heights and eases to its own (morphFrame)
+    const si = t.si ? null : standInUnder(t);
+    const from = si ? resample(t, si, si.disp, siNb) : null;
+    if (t.si || from) t.disp = Float32Array.from(from || e);
+    pt = prof(P, 'from', pt);
+    if (from) for (let j = 0; j < N; j += 2) for (let i = 0; i < N; i += 2) { const k = j * N + i; pel[k] = (from[k] + from[k + 1] + from[k + N] + from[k + N + 1]) / 4; }
+    t.pel = pel;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('aElev', new THREE.BufferAttribute(e, 1));
+    g.setAttribute('aElev', new THREE.BufferAttribute(t.disp || e, 1));
     g.setAttribute('aSize', new THREE.BufferAttribute(sz, 1));
     g.setAttribute('aDotK', new THREE.BufferAttribute(dk, 1));
     g.setAttribute('aPar', new THREE.BufferAttribute(par, 4));
@@ -460,21 +725,27 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     t.points.frustumCulled = false;
     t.points.visible = false;
     t.fade = 0;
+    pt = prof(P, 'geomMat', pt);
     colourTile(t);
+    pt = prof(P, 'colour', pt);
     group.add(t.points);
-    t.state = 'ready'; tlog(t, 'built');
+    if (P) { P.total = (P.total || 0) + pt - pt0; P.n = (P.n || 0) + 1; if (t.si) P.si = (P.si || 0) + 1; }
+    if (from) startMorph(t, from);
+    t.state = 'ready'; t.builtAt = lastNow; tlog(t, 'built');
   }
 
   function dispose(t) {
     if (t.ctrl) t.ctrl.abort();
-    live.delete(t);
+    live.delete(t); morphing.delete(t);
     if (t.points) { group.remove(t.points); t.points.geometry.dispose(); t.points.material.dispose(); }
     cache.delete(t.key);
   }
+  // stand-ins count toward the cache: the ones not drawn go first, then real tiles least recently used
   function evict() {
-    if (cache.size <= CACHE) return;
-    const old = [...cache.values()].filter(t => t.state !== 'loading' && !t.shownNow && !(t.fade > 0) && t.keep !== selectId).sort((a, b) => a.used - b.used);
-    for (const t of old) { if (cache.size <= CACHE) break; dispose(t); }
+    if (cache.size + sic.size <= CACHE) return;
+    for (const s of [...sic.values()].filter(s => !s.shownNow && !(s.fade > 0)).sort((a, b) => a.used - b.used)) { if (cache.size + sic.size <= CACHE) return; disposeSI(s); }
+    const old = [...cache.values()].filter(t => t.state !== 'loading' && !t.shownNow && !(t.fade > 0) && t.keep !== selectId && !(t.pfUntil > lastNow)).sort((a, b) => a.used - b.used);
+    for (const t of old) { if (cache.size + sic.size <= CACHE) break; dispose(t); }
   }
 
   // Cross-fade: a tile that joins the drawn set fades in over FADE_MS while the tile(s) it replaces fade out over the
@@ -496,6 +767,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       t.points.visible = t.fade > 0;
       if (!t.shownNow && t.fade === 0) live.delete(t);
     }
+    morphFrame(now);
   }
   function update(now) {
     if (lite) TPX = liteTpx();   // phone 2026-11-23 late (rotation and resizes change the short side)
@@ -503,16 +775,43 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     frameNo++;
     morphT.value = TPX * refine * renderer.getPixelRatio();
     // builds: as many as fit in ~6 ms of this frame (at least one); a tile whose parent is still on its way waits for it
-    const tb0 = performance.now();
-    for (let b = 0, tries = queue.length; tries > 0 && queue.length && (b === 0 || performance.now() - tb0 < BUILD_MS); tries--) {
+    // Budget: BUILD_MS at 60 fps; when frames are slow anyway (a loaded machine, software GL), up to 12 % of the last
+    // frame interval (at most 16 ms; round 3: a quarter / 30 ms made slow frames slower still), so decoded tiles do not wait several slow frames each in the queue (measured
+    // 2026-11-24: build() is ~1.4 ms a tile; the 300-700 ms between decode and build seen under load was queue wait).
+    const fdt = lastUpd ? Math.min(500, now - lastUpd) : 16; lastUpd = now;
+    if (fdt >= 6) frameEma += (fdt - frameEma) * 0.1;   // ignores a second call in the same frame (a probe rendering extra)
+    slow = slow ? frameEma > FAST_MS : frameEma > SLOW_MS;
+    const budget = Math.min(16, Math.max(BUILD_MS, 0.12 * fdt));
+    const tb0 = performance.now(); let built = 0; const UP = globalThis.__buildProf; let ut = tb0;
+    for (let b = 0, tries = queue.length; tries > 0 && queue.length && (b === 0 || performance.now() - tb0 < budget); tries--) {
       const t = queue.shift(); if (cache.get(t.key) !== t) continue;
       const par = cache.get(parKey(t));
       if (par && par.state === 'loading' && t.z > SKIP_TO_Z) { queue.push(t); continue; }   // only fillOceanVoid (z > 10) needs the parent
-      build(t); b++;
+      build(t); b++; built++;
     }
+    ut = prof(UP, 'u.build', ut);
+    // stand-ins: nearest the middle of the screen first; one a frame even when real builds used the budget (they would
+    // starve while tiles stream in, which is exactly when they are needed), more while the budget lasts. lite: on frames
+    // that also built a real tile, only every other frame.
+    if (siQueue.size) {
+      const list = [...siQueue.values()].sort((a, c) => a.prio - c.prio);
+      let n = 0;
+      for (const e of list) {
+        if (e.id < selectId - 1) { siQueue.delete(e.d.key); continue; }   // not asked for by the last two passes
+        if (n >= SI_PER_FRAME || (n && performance.now() - tb0 >= budget) || (!n && built && lite && frameNo & 1)) break;
+        siQueue.delete(e.d.key);
+        const t0 = performance.now();
+        if (siBuild(e)) { n++; siMs += performance.now() - t0; siCount++; }
+      }
+      if (n && !siQueue.size) siKick = true;   // all asked-for stand-ins built: refine again next frame, not in 120 ms
+    }
+    ut = prof(UP, 'u.si', ut);
     fadeFrame(now);
+    ut = prof(UP, 'u.fade', ut);
     updateCover();
-    if (now - lastSelect < 120) return;
+    ut = prof(UP, 'u.cover', ut); if (UP) UP.frames = (UP.frames || 0) + 1;
+    if (now - lastSelect < (siKick ? 30 : 120)) return;
+    siKick = false;
     covDirty = true;
     lastSelect = now;
     camPos.copy(camera.position);
@@ -520,24 +819,40 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     frustum.setFromProjectionMatrix(projView);
     selectId++;
-    const { show, want } = select();
-    pending = want.length + inflight;
+    ut = performance.now();
+    const { show, want, siShow, measured: ms } = select();
+    ut = prof(UP, 'u.select', ut);
+    // Round 4: pending counts only what this view still wants (loading or not). Not stand-in sources (the level three up),
+    // prefetches, or fetches left running on the path after the view stopped wanting them: a warm reload over a slow line
+    // waited a full round trip (~3 s) for such tiles after everything on screen was in.
+    const needKeys = new Set(); for (const [d, , helper] of want) if (!helper) needKeys.add(d.key);
+    pending = needKeys.size;
     for (const t of shown) t.shownNow = false;
+    for (const t of shownSI) t.shownNow = false;
     for (const t of show) { t.shownNow = true; t.used = frameNo; live.add(t); tlog(t, 'shown'); }
-    shown = show;
-    edgeRamp(show);
+    for (const t of siShow) { t.shownNow = true; t.used = frameNo; live.add(t); }
+    shown = show; shownSI = siShow; measured = ms;
+    noteLevels(show, siShow);
+    edgeRamp(siShow.length ? [...show, ...siShow] : show);
+    for (const s of [...sic.values()]) if (!s.shownNow && !(s.fade > 0) && s.keep !== selectId) disposeSI(s);   // replaced or left the view
     // drop fetches that are no longer wanted, start new ones nearest-first
-    const wantKeys = new Set(want.map(d => d.key));
+    const wantKeys = new Set(want.map(w => w[0].key));
     // round 3: a fetch still on the path of this view (keep) runs on even if a finer level is now wanted (in a wheel zoom it
-    // becomes the stand-in); only tiles that left the view are dropped
-    for (const t of cache.values()) if (t.state === 'loading' && !wantKeys.has(t.key) && t.keep !== selectId && t.ctrl) t.ctrl.abort();
-    if (globalThis.__terrainLog) { const W = globalThis.__terrainWant ??= {}; for (const d of want) W[d.key] ??= performance.now(); }
-    for (const d of want) {
-      if (inflight >= MAX_INFLIGHT) break;
-      if (!cache.has(d.key)) load(d);
+    // becomes the stand-in); tiles that left the view or dropped out of the wanted list are cancelled, unless prefetched
+    // ahead of the camera (pfUntil) and not yet expired
+    for (const t of cache.values()) if (t.state === 'loading' && !wantKeys.has(t.key) && t.keep !== selectId && !(t.pfUntil > now) && t.ctrl) t.ctrl.abort();
+    if (globalThis.__terrainLog) { const W = globalThis.__terrainWant ??= {}; for (const [d] of want) W[d.key] ??= performance.now(); }
+    const maxIn = pack ? MAX_INFLIGHT_V2 : MAX_INFLIGHT;
+    for (const [d, p, helper] of want) {
+      if (inflight >= maxIn) break;
+      if (!cache.has(d.key)) { load(d, p); if (helper) d.srcOnly = true; }
+      else if (!helper && cache.get(d.key).srcOnly) cache.get(d.key).srcOnly = false;
       else cache.get(d.key).used = frameNo;
     }
+    motionPrefetch(now);
+    runPrefetch(now, maxIn);
     evict();
+    prof(UP, 'u.rest', ut);
   }
 
   // b38 (Egmond seam): for each drawn mercator tile, which of its four edges borders a drawn tile one or more levels coarser
@@ -575,9 +890,98 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   }
 
 
+  // Data level drawn in the last pass: real tiles their own level, stand-ins their source's. lvlOwn: by drawn key; lvlUnder:
+  // the lowest level drawn anywhere below a key (4 levels up from each drawn tile).
+  let lvlOwn = new Map(), lvlUnder = new Map();
+  function noteLevels(show, sis) {
+    lvlOwn = new Map(); lvlUnder = new Map();
+    const note = (t, l) => {
+      if (t.polar) return;
+      lvlOwn.set(t.key, l);
+      for (let k = 1, x = t.x >> 1, y = t.y >> 1; k <= 4 && t.z - k >= MIN_Z; k++, x >>= 1, y >>= 1) {
+        const key = `${t.z - k}/${x}/${y}`, o = lvlUnder.get(key); if (o === undefined || l < o) lvlUnder.set(key, l);
+      }
+    };
+    for (const t of show) note(t, t.z);
+    for (const t of sis) note(t, t.srcZ);
+  }
+  // the lowest data level drawn last pass on the 8 same-level neighbours of d (Infinity where nothing was drawn)
+  function lvlNb(d) {
+    const n = 2 ** d.z; let m = Infinity;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const y = d.y + dy; if (y < 0 || y >= n) continue;
+      let x = (d.x + dx + n) % n, l = lvlUnder.get(`${d.z}/${x}/${y}`);
+      if (l === undefined) { let yy = y; for (let z = d.z; z >= MIN_Z; z--, x >>= 1, yy >>= 1) { const o = lvlOwn.get(`${z}/${x}/${yy}`); if (o !== undefined) { l = o; break; } } }
+      if (l !== undefined && l < m) m = l;
+    }
+    return m;
+  }
+
+  // ---------- prefetch ----------
+  // Tiles at (lat, lon) for a view from `dist` radii away (looking at it): the level the view would end on there (walked up
+  // to the finest level that exists) as a 3 × 3 block, after one tile three levels coarser that the stand-ins can come from.
+  // Kept until `until` (ms); tier 0 (asked for by globe.js) before tier 1 (camera motion).
+  function prefetchAt(lat, lon, dist, until, tier) {
+    if (!(Math.abs(lat) < 85) || !Number.isFinite(lon) || !(dist > 0)) return;
+    const la = lat * D2R, my = (1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2, ppu = pxPerUnit(), tp = TPX * refine;
+    const at = z => { const n = 2 ** z; return [((Math.floor((lon + 180) / 360 * n) % n) + n) % n, Math.min(n - 1, Math.floor(my * n))]; };
+    let z = MIN_Z; while (z < MAX_Z && 2 * Math.PI / 2 ** z * Math.cos(la) / N / dist * ppu > tp) z++;
+    while (z > MIN_Z && !srcHas(z, ...at(z))) z--;
+    const list = [];
+    const zs = Math.max(3, z - 3); if (zs < z) list.push([zs, ...at(zs)]);
+    const [cx, cy] = at(z), n = 2 ** z;
+    list.push([z, cx, cy]);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && cy + dy >= 0 && cy + dy < n) list.push([z, (cx + dx + n) % n, cy + dy]);
+    list.forEach(([tz, tx, ty], i) => {
+      if (!srcHas(tz, tx, ty)) return;
+      const key = `${tz}/${tx}/${ty}`, o = pf.get(key), p = tier * 100 + i;
+      if (o) { o.until = Math.max(o.until, until); o.prio = Math.min(o.prio, p); return; }
+      if (pf.size < PF_MAX) pf.set(key, { z: tz, x: tx, y: ty, until, prio: p, sent: false });
+    });
+  }
+  // camera motion: the ground point in the middle of the view and the distance to it, over the last ~0.6 s
+  const pfHist = [], pfG = new THREE.Vector3(), pfFwd = new THREE.Vector3();
+  function motionPrefetch(now) {
+    camera.getWorldDirection(pfFwd);
+    const c = camPos, b = c.dot(pfFwd), disc = b * b - (c.lengthSq() - 1);
+    let dist;
+    if (disc > 0 && -b - Math.sqrt(disc) > 0) { dist = -b - Math.sqrt(disc); pfG.copy(c).addScaledVector(pfFwd, dist); }
+    else { pfG.copy(c).normalize(); dist = c.length() - 1; }
+    if (!(dist > 0)) return;
+    pfHist.push({ t: now, g: pfG.clone(), dist });
+    while (pfHist.length > 2 && now - pfHist[0].t > 650) pfHist.shift();
+    const h = pfHist[0], dt = (now - h.t) / 1000;
+    if (dt < 0.15) return;
+    const k = PF_LOOK / dt, ang = pfG.angleTo(h.g), zr = Math.log(dist / h.dist);
+    if (ang < 0.08 * dist && Math.abs(zr) < 0.05) return;            // still (or nearly): nothing to get ahead of
+    const gp = pfG.clone().addScaledVector(pfG.clone().sub(h.g), k).normalize();
+    const dp = Math.max(dist * 0.1, Math.min(dist * 10, dist * Math.exp(zr * k)));
+    prefetchAt(Math.asin(gp.y) / D2R, Math.atan2(-gp.z, gp.x) / D2R, dp, now + 1200, 1);
+  }
+  // Prefetched tiles load like wanted ones, behind them, in at most PF_SLOTS of the slots; with ?terrain=v2 they go to the
+  // pack source's own prefetch (into its persistent cache, no decode).
+  function runPrefetch(now, maxIn) {
+    if (!pf.size) return;
+    for (const [key, p] of pf) if (p.until < now) pf.delete(key);
+    const list = [...pf.values()].sort((a, b) => a.prio - b.prio);
+    for (const p of list) {
+      const key = `${p.z}/${p.x}/${p.y}`, c = cache.get(key);
+      if (c) { if (c.state === 'loading' || c.state === 'ready') { c.pfUntil = p.until; c.used = frameNo; } continue; }
+      if (pack) { if (!p.sent) { p.sent = true; try { pack.prefetch(p.z, p.x, p.y); } catch (e) { /* best effort */ } } continue; }
+      if (inflight >= Math.min(maxIn, PF_SLOTS)) break;
+      const d = desc(p.z, p.x, p.y); load(d, 1000 + p.prio); d.pfUntil = p.until;
+    }
+  }
+  // globe.js, at the start of a flight: the tiles where it will land (altRadii: the camera's height there, in radii)
+  function prefetch(lat, lon, altRadii) { prefetchAt(lat, lon, altRadii, performance.now() + 6000, 0); }
+
   function setEnabled(on) {
     enabled = on; group.visible = on && alpha > 0.001;
+    lastUpd = 0;   // the first frame after a switch is not a slow frame
     if (!on) {
+      for (const s of [...sic.values()]) disposeSI(s);
+      siQueue.clear(); shownSI = []; measured = [];
       for (const t of [...cache.values()]) if (t.state === 'loading') t.ctrl && t.ctrl.abort();
       for (const t of live) { t.fade = 0; t.shownNow = false; t.points.visible = false; }   // fade in again when switched back on
       live.clear(); shown = []; lastNow = 0; covData.fill(0); coverTex.needsUpdate = true; covFull = false; lastHoles = 1;
@@ -586,6 +990,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
 
   // What is on screen, for the honesty readout: the tile nearest the middle of the view.
   function status() {
+    const shown = measured;                 // real tiles only: stand-ins are drawn from these and add no detail
     if (!enabled || !shown.length) return null;
     const fwd = new THREE.Vector3(); camera.getWorldDirection(fwd);
     let best = null, bd = -2;
@@ -601,6 +1006,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     const oceanInView = shown.some(t => t.hasOcean);
     const landSrc = [...new Set(shown.flatMap(t => t.sources || []).filter(s => s !== 'etopo1'))];
     const polarInView = shown.some(t => t.polar);
+    if (!best) return null;                 // no tile faced the camera (NaN directions while the camera sat on a tile centre): seen as null.polar
     const sb = best.polar ? SEABED : seabedOf(best.z, best.x, best.y);   // the seabed source under the middle of the view
     return { polarInView, polarBest: !!best.polar, refine, z: best.z, mPerDot: best.spacingM, tiles: shown.length, dots, cached: cache.size, oceanInView,
       seabedCoarse: oceanInView && best.spacingM < sb.m * (SEABED_M / SEABED.m) && !best.polar, landSrc, exag: dotExag.value, detailEnds, seabedName: sb.name, seabedLabel: sb.label };
@@ -640,7 +1046,8 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     return 0;
   }
   function setAlpha(a) { alpha = a; group.visible = enabled && a > 0.001; }
-  function recolour() { for (const t of cache.values()) if (t.state === 'ready') colourTile(t); }
+  function recolour() { for (const t of cache.values()) if (t.state === 'ready') colourTile(t); for (const t of sic.values()) if (t.state === 'ready') { t.cFrom = t.cTo = t.pFrom = t.pTo = null; colourTile(t); } }
 
-  return { group, update, setEnabled, setAlpha, status, finestM, recolour, elevationAt, get refine() { return refine; }, get enabled() { return enabled; }, get pending() { return pending; }, get holes() { return lastHoles; }, coverTex, get coverFull() { return covFull; }, get health() { return { ok: loadedOk, fails: loadFails, lastErr, inflight }; }, cache };
+  return { group, update, setEnabled, setAlpha, status, finestM, recolour, elevationAt, get refine() { return refine; }, get enabled() { return enabled; }, get pending() { return pending; }, get holes() { return lastHoles; }, coverTex, get coverFull() { return covFull; }, get health() { return { ok: loadedOk, fails: loadFails, lastErr, inflight }; }, cache,
+    prefetch, get standIns() { return shownSI.length; }, get fading() { let n = 0; for (const t of live) if (t.fade > 0 && t.fade < 1) n++; return n; }, get heldN() { return heldKeys.size; }, get frameEma() { return frameEma; }, get siDebug() { return { msPerBuild: +(siMs / Math.max(1, siCount)).toFixed(2), builds: siCount, built: sic.size, queued: siQueue.size, shown: shownSI.length, morphing: morphing.size, colourMorphs: [...morphing].filter(t => t.cFrom).length, pf: pf.size }; }, get format() { return pack ? 'v2' : 'png'; } };
 }

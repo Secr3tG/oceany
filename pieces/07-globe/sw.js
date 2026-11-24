@@ -10,12 +10,14 @@
 const R2_HOST = 'pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev';
 const IS_LOCAL = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
 const TILE_BASE = IS_LOCAL ? './tiles-build/tiles/' : `https://${R2_HOST}/terrain/`;
-const SHELL = 'oceany-shell-b51', TILES = 'oceany-tiles-1', TILE_MAX = 600;
-const PRECACHE = ['./', './index.html', './globe.js?v=b51', './tour.js?v=b51', './dots.js?v=b43', './terrain.js?v=b43', './terrarium.js', './terrain-source.js?v=t3', TILE_BASE + 'coverage.json',
+const SHELL = 'oceany-shell-b52', TILES = 'oceany-tiles-1', TILE_MAX = 600;
+const PRECACHE = ['./', './index.html', './globe.js?v=b52', './tour.js?v=b51', './dots.js?v=b43', './terrain.js?v=b52', './terrarium.js', './terrain-source.js?v=t4', './tilepack.js?v=p1', TILE_BASE + 'coverage.json',
   './layers.json', './regions.json', './manifest.webmanifest', './assets/earth_dots.json', './assets/earth_dots.bin',
   './assets/stars.bin', './assets/icons/icon-192.png', './assets/icons/icon-512.png',
   '../01-seafloor/viewer/vendor/three.module.js', '../01-seafloor/viewer/vendor/three.core.js'];
 const TILE_HOSTS = ['s3.amazonaws.com', 'elevation-tiles-prod.s3.amazonaws.com', R2_HOST];   // R2: tiles and coverage.json, cache first
+// Terrain v2 packs (https://tiles.hvid.studio/terrain2/, b52) are cross-origin and not in TILE_HOSTS, so this worker never
+// touches them: their Range (206) answers must not be stored cache-first; tilepack.js keeps its own Cache API copy.
 const OWN_TILE = /\/tiles-build\/tiles\/\d+\/\d+\/\d+\.png$/;
 
 // b38: the layer modules are cached at install too, under the versioned URL the page imports offline (module?v=<ent.v>,
