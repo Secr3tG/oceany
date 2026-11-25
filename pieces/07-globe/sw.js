@@ -7,8 +7,8 @@
 //   at most TILE_MAX kept (oldest dropped).
 // Scope is this folder: the spot viewers (pieces/01-seafloor/viewer/) are other pages and are NOT made offline by this.
 const R2_HOST = 'pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev';
-const SHELL = 'oceany-shell-b59', TILES = 'oceany-tiles-1', TILE_MAX = 600;
-const PRECACHE = ['./', './index.html', './globe.js?v=b59', './tour.js?v=b51', './wonders.js?v=w1', './wonders.json', './dots.js?v=b58', './terrain.js?v=b58', './terrarium.js?v=3', './terrain-source.js?v=t8', './tilepack.js?v=p2', './terrain-worker.js?v=w1', './data-source.js',
+const SHELL = 'oceany-shell-b60', TILES = 'oceany-tiles-1', TILE_MAX = 600;
+const PRECACHE = ['./', './index.html', './globe.js?v=b60', './tour.js?v=b51', './wonders.js?v=w2', './wonders.json', './dots.js?v=b58', './terrain.js?v=b58', './terrarium.js?v=3', './terrain-source.js?v=t8', './tilepack.js?v=p2', './terrain-worker.js?v=w1', './data-source.js',
   './layers.json', './regions.json', './manifest.webmanifest', './assets/earth_dots.json', './assets/earth_dots.bin',
   './assets/stars.bin', './assets/icons/icon-192.png', './assets/icons/icon-512.png',
   '../01-seafloor/viewer/vendor/three.module.js', '../01-seafloor/viewer/vendor/three.core.js'];

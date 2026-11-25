@@ -90,3 +90,21 @@ For each unlocked spot in `07-globe/regions.json`, the nearest **0.25° grid poi
 | Typical winter swell at Supertubos, Guéthary, Hossegor (and the Peniche reference snapshots in `pieces/02-reefs/data`) | NOAA NCEP GFS-Wave (WAVEWATCH III) 0.25°, from the NOAA archive on AWS: https://noaa-gfs-bdp-pds.s3.amazonaws.com/ (`gfs.YYYYMMDD/CC/wave/gridded/`) | US Government work, public domain | `build_typical_swell.py`, `data/typical_swell.json` |
 
 Replaces Open-Meteo (non-commercial free tier). Period labels: same open point as above (peak vs mean).
+
+## Wave forecast for the time bar (build_forecast.py, 25 Nov 2026)
+- **GFS-Wave (WAVEWATCH III)**, NOAA NCEP, US Government work, public domain. Read from NOAA Open Data Dissemination
+  on AWS: `https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.YYYYMMDD/HH/wave/gridded/gfswave.tHHz.global.0p25.fFFF.grib2`
+  (+ `.idx` for byte ranges); NOMADS as fallback. Checked 25 Nov 2026: hourly files to f120, 3-hourly to f384.
+  Fields used: HTSGW, WVHGT, SWELL/SWPER/SWDIR partition 1, WVDIR.
+- **ECMWF IFS ecWAM open data**, © ECMWF, CC BY 4.0, from `https://storage.googleapis.com/ecmwf-open-data/` (mirror of
+  data.ecmwf.int). Checked 25 Nov 2026: 00z run wave stream to 240 h; params include swh, mwd, pp1d, mwp, mp2 and
+  period-band heights h1012 … h2530; no swell/wind-sea split. Fields used: swh, pp1d, mwd.
+- Kept: 0 to +120 h every 3 h, +126 to +168 h every 6 h (49 steps). 0.5 degree to +120 h (desktop), 1 degree for every
+  step (phones, and desktop after +120 h). Six uint8 planes per step, gzip. Measured 25 Nov: GFS 25.0 MB per run
+  (hi ~450 KB/step, lo ~150 KB/step), ECMWF 20.1 MB.
+
+## Sea depth for the swell lines' refraction (waves.js, b60)
+- `data/depth_hi.bin.gz` (0.133 degree) and `data/depth_lo.bin.gz` (0.267 degree, phones), built by `build_depth.py`
+  from the GEBCO 2026 Grid, averaged down by the globe's terrain build. Credit: GEBCO Compilation Group (2026) GEBCO
+  2026 Grid. Free to use and copy with this credit (GEBCO terms of use).
+- Used only to bend the drawn swell crests over the shelf (refraction, drawn by the page, not by the wave model).

@@ -24,6 +24,11 @@ on:
     - cron: '50 7,19 * * *'         # ECMWF, 00 and 12 UTC runs: out 7 h 34 min after the run; one run = +6 h to +18 h, 3-hourly
     - cron: '15 1,13 * * *'         # ECMWF retry (06/18 runs): asks only if the run above found the files missing
     - cron: '20 8,20 * * *'         # ECMWF retry (00/12 runs)
+    - cron: '25 4,10,16,22 * * *'   # wave forecast for the time bar, GFS-Wave 0 to +168 h (build_forecast.py): f168 is
+                                    # on NOAA's AWS bucket about 4 h 10 min after the cycle (25 Nov 2026)
+    - cron: '55 4,10,16,22 * * *'   # wave forecast GFS retry: asks only if the run above found the files missing
+    - cron: '55 7,19 * * *'         # wave forecast ECMWF, 00 and 12 UTC runs (complete to +168 h 7 h 37 min after)
+    - cron: '25 8,20 * * *'         # wave forecast ECMWF retry
     - cron: '40 19 * * *'           # snow and sea ice: the day's IMS file (NSIDC lists it at 14:10, time zone not stated)
     - cron: '40 21 * * *'           # snow retry: asks only if today's file was missing
     - cron: '52 13 * * *'           # hurricane records (IBTrACS): has the file changed?
@@ -34,7 +39,7 @@ on:
   workflow_dispatch:
     inputs:
       layers:
-        description: 'Layers to check and build, space-separated: ocean ecmwf snow hurricanes tornadoes quakes hurricanes-live'
+        description: 'Layers to check and build, space-separated: ocean ecmwf snow hurricanes tornadoes quakes hurricanes-live wavefc-gfs wavefc-ecmwf'
         required: true
         default: 'ocean'
 
@@ -57,6 +62,8 @@ jobs:
       due: ${{ steps.due.outputs.due }}
       plan: ${{ steps.due.outputs.plan }}
       plan_ecmwf: ${{ steps.due.outputs.plan_ecmwf }}
+      plan_wfg: ${{ steps.due.outputs.plan_wfg }}
+      plan_wfe: ${{ steps.due.outputs.plan_wfe }}
       extra: ${{ steps.due.outputs.extra }}
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +81,8 @@ jobs:
           case "$SCHED" in
             '50 3,9,15,21 * * *'|'20 4,10,16,22 * * *') L="ocean" ;;
             '45 0,12 * * *'|'50 7,19 * * *'|'15 1,13 * * *'|'20 8,20 * * *') L="ecmwf" ;;
+            '25 4,10,16,22 * * *'|'55 4,10,16,22 * * *') L="wavefc-gfs" ;;
+            '55 7,19 * * *'|'25 8,20 * * *')           L="wavefc-ecmwf" ;;
             '40 19 * * *'|'40 21 * * *')               L="snow" ;;
             '52 13 * * *')   L="hurricanes" ;;
             '17 2 * * 1')    L="quakes" ;;
@@ -82,7 +91,7 @@ jobs:
             *)               L="$ASKED" ;;
           esac
           for l in $L; do
-            case "$l" in ocean|ecmwf|snow|hurricanes|tornadoes|quakes|hurricanes-live) ;; *) echo "::error::unknown layer '$l'"; exit 1 ;; esac
+            case "$l" in ocean|ecmwf|snow|hurricanes|tornadoes|quakes|hurricanes-live|wavefc-gfs|wavefc-ecmwf) ;; *) echo "::error::unknown layer '$l'"; exit 1 ;; esac
           done
           curl -fsS --max-time 20 "https://pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev/data/latest.json?t=$(date +%s)" -o latest.json || : > latest.json
           python3 scripts/layer_due.py --latest latest.json $L > due.json
@@ -93,6 +102,8 @@ jobs:
               f.write("due=" + " ".join(d["due"]) + "\n")
               f.write("plan=" + d["plan"].get("ocean", "") + "\n")
               f.write("plan_ecmwf=" + d["plan"].get("ecmwf", "") + "\n")
+              f.write("plan_wfg=" + d["plan"].get("wavefc-gfs", "") + "\n")
+              f.write("plan_wfe=" + d["plan"].get("wavefc-ecmwf", "") + "\n")
               f.write("extra=" + json.dumps(d["extra"], separators=(",", ":")) + "\n")
               f.write("failed=" + " ".join(d["failed"]) + "\n")
           print("due:", d["due"] or "nothing", "| failed checks:", d["failed"] or "none")
@@ -127,7 +138,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install the packages the builders use (imagecodecs decodes ECMWF's CCSDS packing)
-        run: pip install --disable-pip-version-check numpy==2.0.2 pillow==11.3.0 imagecodecs==2024.12.30
+        run: pip install --disable-pip-version-check numpy==2.0.2 pillow==11.3.0 imagecodecs==2024.12.30 scipy==1.13.1
 
       # The earthquake builder keeps one CSV per year in raw/ and only downloads the current year again when the
       # earlier ones are there; the cache saves about 57 requests to USGS each week.
@@ -145,6 +156,8 @@ jobs:
           LAYERS: ${{ needs.check.outputs.due }}
           PLAN: ${{ needs.check.outputs.plan }}
           PLAN_ECMWF: ${{ needs.check.outputs.plan_ecmwf }}
+          PLAN_WFG: ${{ needs.check.outputs.plan_wfg }}
+          PLAN_WFE: ${{ needs.check.outputs.plan_wfe }}
         run: |
           build() {
             case "$1" in
@@ -155,6 +168,8 @@ jobs:
               tornadoes)  python pieces/08-storms/build_tornadoes.py ;;
               quakes)     python pieces/12-quakes/build_history.py ;;
               hurricanes-live) python pieces/08-storms/build_hurricanes_live.py ;;
+              wavefc-gfs)   timeout 1200 python pieces/11-ocean/build_forecast.py --model gfs ${PLAN_WFG:+--run "$PLAN_WFG"} ;;
+              wavefc-ecmwf) timeout 1200 python pieces/11-ocean/build_forecast.py --model ecmwf ${PLAN_WFE:+--run "$PLAN_WFE"} ;;
             esac
           }
           ok=""; failed=""
@@ -174,7 +189,8 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           OK: ${{ steps.build.outputs.ok }}
           EXTRA: ${{ needs.check.outputs.extra }}
-        run: python scripts/publish_layers.py $OK --extra "$EXTRA" --dest r2
+          GUARD: ${{ github.event_name == 'workflow_dispatch' && '--max-bucket-gb 9' || '' }}
+        run: python scripts/publish_layers.py $OK --extra "$EXTRA" $GUARD --dest r2   # manual runs measure the bucket first
 
       - name: Report failed builds
         if: steps.build.outputs.failed != ''

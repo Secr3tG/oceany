@@ -25,39 +25,41 @@ const waitGlobe = (ms = 30000) => new Promise((ok, no) => {
 });
 
 const css = `
-#wonders-cap { position: fixed; left: 24px; bottom: 24px; width: min(420px, calc(100vw - 48px)); z-index: 6; box-sizing: border-box;
-  background: color-mix(in srgb, var(--bg, #04060a) 82%, transparent); border: 1px solid color-mix(in srgb, var(--open, #5ff2ff) 22%, transparent);
-  border-radius: 12px; padding: 14px 16px 10px; color: var(--ink, #cfe6f2); font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); transition: opacity .35s, transform .35s; }
+/* b60 (Benn on iPhone, b59: "way too big, you can't even see the wonders"): while the tour runs the globe fills the screen:
+   everything on the page except the globe canvas and the tour strip is hidden (bar, zoom stack, notices, cards, labels),
+   and put back exactly when the tour ends. The strip is small, at the bottom, and carries the safety line itself. */
+body.wonders-on > *:not(#globe):not(#wonders-cap):not(script):not(style):not(link) { visibility: hidden !important; pointer-events: none !important; }
+#wonders-cap { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); z-index: 7;
+  width: min(560px, calc(100vw - 16px)); box-sizing: border-box; padding: 8px 10px 6px 14px; border-radius: 12px; cursor: pointer;
+  background: color-mix(in srgb, var(--bg, #04060a) 58%, transparent); border: 1px solid color-mix(in srgb, var(--open, #5ff2ff) 16%, transparent);
+  color: var(--ink, #cfe6f2); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); transition: opacity .35s; }
 #wonders-cap[hidden] { display: none; }
-#wonders-cap.fade { opacity: 0; transform: translateY(6px); }
-#wonders-cap .w-kick { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--open, #5ff2ff); opacity: .85; }
-#wonders-cap .w-name { font-size: 20px; font-weight: 600; margin: 2px 0 6px; letter-spacing: .01em; }
-#wonders-cap .w-line { font-size: 14px; }
-#wonders-cap .w-data { font-size: 11.5px; color: var(--dim, #6b8696); margin-top: 6px; }
-#wonders-cap .w-row { display: flex; align-items: center; gap: 4px; margin-top: 10px; }
-#wonders-cap .w-row button { all: unset; cursor: pointer; min-width: 36px; height: 32px; padding: 0 10px; box-sizing: border-box; border-radius: 8px;
-  display: inline-flex; align-items: center; justify-content: center; color: var(--ink, #cfe6f2); font-size: 14px;
-  background: color-mix(in srgb, var(--open, #5ff2ff) 7%, transparent); }
-#wonders-cap .w-row button:hover, #wonders-cap .w-row button:focus-visible { background: color-mix(in srgb, var(--open, #5ff2ff) 18%, transparent); }
-#wonders-cap .w-row .w-close { margin-left: auto; }
-#wonders-cap .w-bar { height: 2px; background: color-mix(in srgb, var(--open, #5ff2ff) 12%, transparent); border-radius: 1px; margin-top: 8px; overflow: hidden; }
-#wonders-cap .w-bar i { display: block; height: 100%; width: 0; background: var(--open, #5ff2ff); opacity: .7; }
-#wonders-cap .w-legal { font-size: 10px; color: var(--dim, #6b8696); margin-top: 6px; opacity: .8; }
+#wonders-cap.fade { opacity: 0; }
+#wonders-cap .w-top { display: flex; align-items: center; gap: 6px; }
+#wonders-cap .w-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#wonders-cap .w-n { font-size: 10.5px; color: var(--dim, #6b8696); margin-left: 6px; font-weight: 400; }
+#wonders-cap .w-top button { all: unset; cursor: pointer; width: 30px; height: 30px; border-radius: 15px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 13px; color: var(--ink, #cfe6f2); }
+#wonders-cap .w-top button:hover, #wonders-cap .w-top button:focus-visible { background: color-mix(in srgb, var(--open, #5ff2ff) 16%, transparent); }
+#wonders-cap .w-line { font-size: 13px; color: color-mix(in srgb, var(--ink, #cfe6f2) 88%, transparent); margin-top: 1px;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; transition: opacity .4s; }
+#wonders-cap.short .w-line { -webkit-line-clamp: 1; opacity: .75; }
+#wonders-cap .w-data { display: none; font-size: 11.5px; color: var(--dim, #6b8696); margin-top: 4px; }
+#wonders-cap.open .w-line { -webkit-line-clamp: unset; opacity: 1; }
+#wonders-cap.open .w-data { display: block; }
+#wonders-cap .w-bar { height: 2px; background: color-mix(in srgb, var(--open, #5ff2ff) 10%, transparent); border-radius: 1px; margin-top: 5px; overflow: hidden; }
+#wonders-cap .w-bar i { display: block; height: 100%; width: 0; background: var(--open, #5ff2ff); opacity: .6; }
+#wonders-cap .w-legal { font-size: 10px; color: color-mix(in srgb, #fff 70%, transparent); margin-top: 3px; }
+#wonders-cap .w-live { display: none; }
+#wonders-cap.live .w-live { display: inline; }
+@media (max-width: 600px) { #wonders-cap { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); padding: 6px 6px 5px 12px; } #wonders-cap .w-top button { width: 32px; height: 32px; } }
 #wonders-pill { all: unset; position: fixed; left: 8px; top: calc(62px + env(safe-area-inset-top, 0px)); z-index: 4; cursor: pointer;
   min-height: 44px; padding: 0 14px; box-sizing: border-box; display: inline-flex; align-items: center; gap: 7px; border-radius: 22px;
   font: 13px system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink, #cfe6f2);
   background: color-mix(in srgb, var(--bg, #04060a) 80%, transparent); border: 1px solid color-mix(in srgb, var(--open, #5ff2ff) 30%, transparent); }
 #wonders-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--open, #5ff2ff); box-shadow: 0 0 6px var(--open, #5ff2ff); }
 #wonders-pill[hidden] { display: none; }
-#wonders-cap.lite { left: 8px; right: 8px; bottom: auto; top: calc(62px + env(safe-area-inset-top, 0px)); width: auto; padding: 9px 12px 7px; border-radius: 10px; }
-#wonders-cap.lite .w-name { font-size: 16px; margin: 0 0 3px; }
-#wonders-cap.lite .w-line { font-size: 13px; line-height: 1.38; }
-#wonders-cap.lite .w-data { display: none; }
-#wonders-cap.lite.more .w-data { display: block; }
-#wonders-cap.lite .w-row { margin-top: 6px; }
-#wonders-cap.lite .w-row button { min-width: 44px; height: 36px; }
-#wonders-cap.lite .w-legal { margin-top: 4px; }
 `;
 
 function el(tag, attrs = {}, kids = []) {
@@ -94,18 +96,18 @@ export async function init() {
 
   // ---------- UI ----------
   document.head.appendChild(el('style', { text: css }));
-  const kick = el('div', { class: 'w-kick' }), name = el('div', { class: 'w-name' }), line = el('div', { class: 'w-line' }), data = el('div', { class: 'w-data' });
+  const nameT = el('span'), num = el('span', { class: 'w-n' }), name = el('div', { class: 'w-name' }, [nameT, num]);
+  const line = el('div', { class: 'w-line' }), data = el('div', { class: 'w-data' });
   const bPrev = el('button', { type: 'button', 'aria-label': 'Previous wonder', title: 'Previous (←)', text: '‹' });
   const bPlay = el('button', { type: 'button', 'aria-label': 'Pause', title: 'Play / pause (space)', text: '❚❚' });
   const bNext = el('button', { type: 'button', 'aria-label': 'Next wonder', title: 'Next (→)', text: '›' });
-  const bMore = el('button', { type: 'button', 'aria-label': 'What the data shows here', title: 'What the data shows here', text: 'i' });
   const bClose = el('button', { type: 'button', class: 'w-close', 'aria-label': 'End the wonders tour', title: 'End the tour (Esc)', text: '✕' });
   const barFill = el('i');
-  const cap = el('section', { id: 'wonders-cap', class: LITE ? 'lite' : '', 'aria-label': 'Wonders of the Earth', 'aria-live': 'polite', hidden: '' }, [
-    kick, name, line, data,
-    el('div', { class: 'w-row' }, LITE ? [bPrev, bPlay, bNext, bMore, bClose] : [bPrev, bPlay, bNext, bClose]),
+  const cap = el('section', { id: 'wonders-cap', 'aria-label': 'Wonders of the Earth', 'aria-live': 'polite', title: 'Tap for more', hidden: '' }, [
+    el('div', { class: 'w-top' }, [name, bPrev, bPlay, bNext, bClose]), line, data,
     el('div', { class: 'w-bar' }, [barFill]),
-    el('div', { class: 'w-legal', text: 'For research and play only. Not a forecast or warning service.' }),
+    el('div', { class: 'w-legal' }, [el('span', { text: 'For research and play only. Not a forecast or warning service.' }),
+      el('span', { class: 'w-live', text: ' Not an official product. Do not use for safety decisions.' })]),
   ]);
   document.body.appendChild(cap);
 
@@ -139,10 +141,12 @@ export async function init() {
   function show(i) {
     const s = stops[i];
     cap.classList.add('fade');
+    clearTimeout(S.shortT);
     setTimeout(() => {
-      kick.textContent = `${i + 1} / ${stops.length} · ${KIND[s.kind] || 'Wonder'}`;
-      name.textContent = s.name; line.textContent = s.line; data.textContent = s.data || '';
-      cap.classList.remove('fade');
+      nameT.textContent = s.name; num.textContent = `${i + 1}/${stops.length}`;
+      line.textContent = s.line; data.textContent = s.data || '';
+      cap.classList.remove('fade', 'short', 'open');
+      S.shortT = setTimeout(() => { if (!cap.classList.contains('open')) cap.classList.add('short'); }, 8000);   // the fact folds to one line
     }, 180);
   }
   function setPlaying(p) {
@@ -234,6 +238,30 @@ export async function init() {
   }
 
   // ---------- controls ----------
+  // live and model layers (globe.js NOTICE.liveIds): off while the tour runs, so the safety line they need is not needed,
+  // and back on as they were when it ends. Through each layer's own checkbox, so the globe's state stays in step.
+  const LIVE = new Set(['hurricanes', 'hurricanes-live', 'tornado-live', 'aurora', 'quakes-live', 'snow', 'wind', 'waves', 'swell']);
+  const boxOf = l => l.userData && l.userData.row && l.userData.row.querySelector('input[type=checkbox]');
+  function clearScreen(on) {
+    document.body.classList.toggle('wonders-on', on);
+    if (on) {
+      S.layersOff = [];
+      for (const l of G.layers || []) {
+        if (!l.visible || !LIVE.has(l.userData.layerId)) continue;
+        const b = boxOf(l);
+        if (b) { b.checked = false; b.dispatchEvent(new Event('change')); } else l.visible = false;
+        S.layersOff.push(l);
+      }
+    } else {
+      for (const l of S.layersOff || []) {
+        const b = boxOf(l);
+        if (b) { b.checked = true; b.dispatchEvent(new Event('change')); } else l.visible = true;
+      }
+      S.layersOff = [];
+    }
+    liveLine();
+  }
+  const liveLine = () => cap.classList.toggle('live', (G.layers || []).some(l => l.visible && LIVE.has(l.userData.layerId)));
   function start(i = 0) {
     if (G.TOUR && G.TOUR.g && G.TOUR.g.on) try { G.TOUR.g.end(); } catch (e) { /* ignore */ }
     if (G.popClose) try { G.popClose(); } catch (e) { /* ignore */ }
@@ -242,7 +270,7 @@ export async function init() {
     // the tour is about relief: ground detail on, as zooming in turns it on (globe.js zoom); it stays on after, as there
     const tb = document.getElementById('terrain-toggle');
     if (tb && !tb.checked && !(G.terrain && G.terrain.enabled)) { tb.checked = true; tb.dispatchEvent(new Event('change')); }
-    const hint = document.getElementById('hint'); if (hint) hint.style.visibility = 'hidden';   // the caption takes the bottom left
+    clearScreen(true);
     S.on = true; cap.hidden = false; if (btn) btn.setAttribute('aria-pressed', 'true'); place();
     setPlaying(true); S.last = 0;
     flyTo(i);
@@ -250,7 +278,7 @@ export async function init() {
   }
   function stop() {
     S.on = false; S.phase = 'idle'; cancelAnimationFrame(S.raf);
-    const hint = document.getElementById('hint'); if (hint) hint.style.visibility = '';
+    clearScreen(false);
     cap.hidden = true; if (btn) btn.setAttribute('aria-pressed', 'false'); place();
     view.manual = null; zoom.target = view.alt;     // tilt back to automatic; the zoom carries on from here
   }
@@ -276,7 +304,7 @@ export async function init() {
   bNext.onclick = () => go(1);
   bPlay.onclick = () => { S.playing ? pause() : resume(); };
   bClose.onclick = () => stop();
-  bMore.onclick = () => cap.classList.toggle('more');
+  cap.addEventListener('click', e => { if (e.target.closest('button')) return; cap.classList.toggle('open'); cap.classList.remove('short'); });
 
   // any touch, drag or wheel on the globe pauses (the visitor takes the camera)
   const canvas = document.getElementById('globe');

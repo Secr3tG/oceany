@@ -51,9 +51,9 @@
  {
   "id": "waves",
   "module": "../11-ocean/waves.js",
-  "label": "Wave height (WAVEWATCH III model)",
+  "label": "Waves: height, swell and 7-day forecast (WAVEWATCH III model)",
   "on": false,
-  "v": "g2"
+  "v": "w1"
  },
  {
   "id": "swell",

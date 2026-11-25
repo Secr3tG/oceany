@@ -5,6 +5,8 @@ Run after the layer's build script, from the repo root:
     python3 scripts/publish_layers.py ocean snow --dest r2              (needs the aws CLI and the R2_* variables below)
     python3 scripts/publish_layers.py ocean --dest /some/folder          (test: same layout, written to a folder)
     --extra '<json>'   per-layer fields from scripts/layer_due.py (the source file's Last-Modified time)
+    --max-bucket-gb N  measure the bucket first and upload nothing if it would end above N GB (the 10 GB free tier
+                       minus the 1 GB margin: 9). Lists every object, so the workflow passes it on manual runs only.
 
 Layout in the bucket (the globe reads it through pieces/07-globe/data-source.js):
     data/latest.json                       short cache; per layer: base folder, files, data time, model run, built-at time
@@ -66,6 +68,21 @@ LAYERS = {
                             hash=lambda j: json.dumps([j.get("storms"), j.get("recent")], sort_keys=True).encode(),
                             times=lambda j: dict(dataTime=iso(j.get("dataTime")), builtAt=iso(j.get("built")),
                                                  nhcStorms=len(j.get("storms") or []), otherStorms=len(j.get("recent") or []))),
+    # wavefc-gfs / wavefc-ecmwf: the wave forecast for the time bar (build_forecast.py), 0 to +168 h, 49 steps; about
+    # 37 MB (GFS) and 33 MB (ECMWF) a run, 10 m wind included. keep=2: the run shown and the one before (pages still open on it keep
+    # working), so the bucket holds about 140 MB for both, whatever the number of runs.
+    "wavefc-gfs": dict(dir="pieces/11-ocean/data/forecast/gfs", files=["manifest.json", "mask_hi.bin.gz", "mask_lo.bin.gz"],
+                       more=lambda j: [s[r] for s in j.get("steps") or [] for r in ("hi", "lo", "whi", "wlo") if s.get(r)], keep=2,
+                       times=lambda j: dict(modelRun=iso(j.get("run")), builtAt=iso(j.get("built")),
+                                            dataTime=iso(j.get("run")),
+                                            stepsFrom=iso(((j.get("steps") or [{}])[0]).get("valid")),
+                                            stepsTo=iso(((j.get("steps") or [{}])[-1]).get("valid")))),
+    "wavefc-ecmwf": dict(dir="pieces/11-ocean/data/forecast/ecmwf", files=["manifest.json", "mask_hi.bin.gz", "mask_lo.bin.gz"],
+                         more=lambda j: [s[r] for s in j.get("steps") or [] for r in ("hi", "lo", "whi", "wlo") if s.get(r)], keep=2,
+                         times=lambda j: dict(modelRun=iso(j.get("run")), builtAt=iso(j.get("built")),
+                                              dataTime=iso(j.get("run")),
+                                              stepsFrom=iso(((j.get("steps") or [{}])[0]).get("valid")),
+                                              stepsTo=iso(((j.get("steps") or [{}])[-1]).get("valid")))),
     "quakes": dict(dir="pieces/12-quakes/data", files=["quakes_m5.json", "quakes_m5.bin"],
                    times=lambda j: dict(dataTime=iso(j.get("lastEvent")), builtAt=iso(j.get("built")))),
 }
@@ -106,6 +123,12 @@ class R2:
         r = self.aws("ls", f"s3://{self.bucket}/data/{layer}/", check=False)
         return sorted(l.split()[-1].rstrip("/") for l in r.stdout.decode().splitlines() if l.strip().startswith("PRE "))
     def remove(self, prefix): self.aws("rm", f"s3://{self.bucket}/{prefix}", "--recursive")
+    def total_bytes(self):
+        r = self.aws("ls", f"s3://{self.bucket}/", "--recursive", "--summarize", check=True)
+        for line in r.stdout.decode().splitlines():
+            if line.strip().startswith("Total Size:"):
+                return int(line.split(":")[1])
+        return None
 
 def digest(paths):
     h = hashlib.sha256()
@@ -119,11 +142,24 @@ def main(argv):
     extra = {}                                 # --extra '{"hurricanes": {"sourceModified": ...}}' from layer_due.py
     if "--extra" in argv:
         i = argv.index("--extra"); extra = json.loads(argv[i + 1] or "{}"); argv = argv[:i] + argv[i + 2:]
+    max_gb = None
+    if "--max-bucket-gb" in argv:
+        i = argv.index("--max-bucket-gb"); max_gb = float(argv[i + 1]); argv = argv[:i] + argv[i + 2:]
     names = argv
     bad = [n for n in names if n not in LAYERS]
     if not names or bad: sys.exit(f"layers to publish: {', '.join(LAYERS)} (unknown: {bad})")
     dest = R2() if dest_arg == "r2" else Folder(dest_arg)
 
+    if max_gb is not None and isinstance(dest, R2):
+        new = 0
+        for name in names:
+            L = LAYERS[name]; d = os.path.join(ROOT, L["dir"])
+            meta = json.load(open(os.path.join(d, L["files"][0])))
+            new += sum(os.path.getsize(os.path.join(d, f)) for f in L["files"] + (L["more"](meta) if "more" in L else []))
+        have = dest.total_bytes()
+        if have is None: sys.exit("could not measure the bucket; nothing uploaded")
+        print(f"bucket: {have / 1e9:.2f} GB now, this upload {new / 1e6:.1f} MB, limit {max_gb} GB")
+        if have + new > max_gb * 1e9: sys.exit("would pass the limit; nothing uploaded")
     raw = dest.read("data/latest.json")
     latest = json.loads(raw) if raw else {"schema": 1, "layers": {}}
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -168,7 +204,7 @@ def main(argv):
     # prune: keep the newest KEEP folders per layer (pages still open on an older folder keep working meanwhile)
     for name in changed:
         current = latest["layers"][name]["base"].split("/")[2]
-        for s in dest.stamps(name)[:-KEEP]:
+        for s in dest.stamps(name)[:-LAYERS[name].get("keep", KEEP)]:
             if s != current: dest.remove(f"data/{name}/{s}/"); print(f"{name}: pruned {s}")
 
 if __name__ == "__main__":

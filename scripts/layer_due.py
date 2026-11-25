@@ -45,7 +45,7 @@ IBTRACS_ACTIVE = IBTRACS.replace("since1980", "ACTIVE")
 ADVISORY_HOURS = (3, 9, 15, 21)              # NHC routine advisories, UTC
 AGENT = {"User-Agent": "oceany-layer-check/1.0"}
 UTC = datetime.timezone.utc
-OLD_HOURS = {"ocean": 16, "ecmwf": 20, "snow": 48, "hurricanes-live": 24}      # a missing source is an error only when the published copy is older than this
+OLD_HOURS = {"ocean": 16, "ecmwf": 20, "snow": 48, "hurricanes-live": 24, "wavefc-gfs": 18, "wavefc-ecmwf": 30}      # a missing source is an error only when the published copy is older than this
 RELEASE = datetime.timedelta(hours=3, minutes=35)   # NCEP: GFS / GFS-Wave hours 0-12 on NOMADS about 3 h 35 min after the cycle
 LAST_STEP = 13                              # build_ocean.py STEPS[-1]
 ECMWF_LAST_STEP = 18                        # build_ecmwf.py STEPS[-1]
@@ -96,6 +96,38 @@ def check_ecmwf(pub, now):
         return True, run.strftime("%Y%m%d%H")
     return None, None                        # not there yet: the retry run 30 min later asks once more
 
+# Wave forecast for the time bar (build_forecast.py: 0 to +168 h). Its last step comes later than the hours the ocean
+# layer needs: GFS-Wave f168 was on NOAA's AWS bucket 4 h 10 min after the 06 UTC cycle (25 Nov 2026); ECMWF's 00 UTC
+# wave stream to +168 h was complete on the Google mirror 7 h 37 min after the run. Only 00 and 12 UTC for ECMWF
+# (06 and 18 UTC stop at +90 h).
+AWS_GFS = "https://noaa-gfs-bdp-pds.s3.amazonaws.com/"
+FC_LAST = 168                                # build_forecast.py STEPS[-1]
+FC_GFS_RELEASE = datetime.timedelta(hours=4, minutes=20)
+FC_ECMWF_RELEASE = datetime.timedelta(hours=7, minutes=45)
+
+def check_wavefc_gfs(pub, now):
+    cycle = now - FC_GFS_RELEASE
+    run = cycle.replace(minute=0, second=0, microsecond=0, hour=cycle.hour - cycle.hour % 6)
+    old_run = parse(pub.get("modelRun"))
+    if old_run and old_run >= run:
+        return False, None                   # already published: no request at all
+    day, cyc = run.strftime("%Y%m%d"), run.strftime("%H")
+    if head(f"{AWS_GFS}gfs.{day}/{cyc}/wave/gridded/gfswave.t{cyc}z.global.0p25.f{FC_LAST:03d}.grib2.idx"):
+        return True, run.strftime("%Y%m%d%H")
+    return None, None
+
+def check_wavefc_ecmwf(pub, now):
+    run = now.replace(minute=0, second=0, microsecond=0, hour=now.hour - now.hour % 12)
+    while run + FC_ECMWF_RELEASE > now:
+        run -= datetime.timedelta(hours=12)
+    old_run = parse(pub.get("modelRun"))
+    if old_run and old_run >= run:
+        return False, None
+    day, hh = run.strftime("%Y%m%d"), run.strftime("%H")
+    if head(f"{ECMWF}{day}/{hh}z/ifs/0p25/wave/{day}{hh}0000-{FC_LAST}h-wave-fc.index"):
+        return True, run.strftime("%Y%m%d%H")
+    return None, None
+
 def check_snow(pub, now):
     d = now.date()                           # IMS posts the file for day D in the afternoon of day D (UTC)
     if pub.get("dataTime") == iso(datetime.datetime(d.year, d.month, d.day, tzinfo=UTC)):
@@ -144,7 +176,7 @@ def check_live(pub, now):
 
 CHECKS = {"ocean": check_ocean, "ecmwf": check_ecmwf, "snow": check_snow, "hurricanes": check_modified(IBTRACS),
           "tornadoes": check_modified(SPC), "quakes": lambda pub, now: (True, None),
-          "hurricanes-live": check_live}
+          "hurricanes-live": check_live, "wavefc-gfs": check_wavefc_gfs, "wavefc-ecmwf": check_wavefc_ecmwf}
 
 def main(argv):
     path = argv[argv.index("--latest") + 1]
@@ -167,7 +199,7 @@ def main(argv):
             continue
         if due:
             out["due"].append(name)
-            if name in ("ocean", "ecmwf"):
+            if name in ("ocean", "ecmwf", "wavefc-gfs", "wavefc-ecmwf"):
                 out["plan"][name] = info
             elif info:
                 out["extra"][name] = info
