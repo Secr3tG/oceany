@@ -10,7 +10,7 @@
   // in its own Cache API stores; the worker lists the five spots' tiles in ./surround-tiles, loaded here once, a few at a time.
   async function warmSurround() {
     const r = await caches.match('./surround-tiles', { cacheName: 'reefviewer-meta-1' }); if (!r) return;
-    const list = await r.json(), { fetchTerrarium } = await import('../../07-globe/terrarium.js?v=2');
+    const list = await r.json(), { fetchTerrarium } = await import('../../07-globe/terrarium.js?v=3');
     for (let k = 0; k < list.length; k += 4) await Promise.allSettled(list.slice(k, k + 4).map(([z, x, y]) => fetchTerrarium(z, x, y)));
   }
   if (sw && q === '0') {

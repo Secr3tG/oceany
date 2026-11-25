@@ -34,7 +34,7 @@ rounded to 1 m. Every download, licence quote and date is in `tiles-build/SOURCE
   come from a survey instead of GEBCO; land is unchanged. **EMODnet DTM 2024** (~115 m, CC BY 4.0) at z9-z11 (z10 above
   ~60 N) for Ireland, Cornwall, the North Sea, the Baltic to 61.8 N, Biscay, Iberia, the Mediterranean, the Levant,
   Morocco, the Canaries, Madeira and the Azores. **NOAA NCEI CUDEM** (~10 m, US Government work, public domain,
-  doi:10.25921/ds9v-ky35) at z9-z13 for the main Hawaiian Islands and Sonoma to Big Sur. No tile is built finer than its
+  doi:10.25921/ds9v-ky35) at z9-z13 for the main Hawaiian Islands and Sonoma to Big Sur. **USGS CoNED** topobathymetric models (~10 m, public domain) at z9-z13 for southern and central California; NOAA NCEI CUDEM also for Oregon, Washington and Puerto Rico (built 2026-11-25, upload pending). No tile is built finer than its
   survey's cell (zoom rule in PLAN.md); the readout names the survey and its cell. Credited in both credit blocks below.
 
 **Credit shown** under View › Terrain credits whenever terrain is on, and in About › Credits (from `tiles-build/SOURCES.md`):
@@ -90,3 +90,14 @@ second. A star then sits over longitude α − GMST, so the star overhead a plac
 now. Checked: at 2026-11-22 22:10 UTC the sky turned by GMST 34.6°, which puts the Sun (RA ≈ 238°) over longitude
 ≈ −157°, matching the Sun's longitude at that time from the equation of time. Polaris stays over the north pole.
 Precession since J2000 (~0.3°) and nutation are ignored at this scale. The stars sit at infinity (no parallax).
+
+## Stars, alternative file (`assets/stars-bsd.bin`, built by `build_stars_bsd.py`), 2026-11-24 — not yet switched on
+d3-celestial `data/stars.8.json` (Olaf Frohn, BSD-3-Clause, "Copyright (c) 2015, Olaf Frohn"), downloaded 2026-11-24 from
+https://github.com/ofrohn/d3-celestial (saved git-ignored in `raw/d3-celestial/` with its LICENSE; stars.8.json sha256
+e3ec6cde...2dbc2143). Stars are Hipparcos-numbered, so the upstream ESA question stays open (see
+`research/licences-for-app.md` section I). Same 4-float32 format as `stars.bin` (RA deg, Dec deg, V, B−V; RA converted from
+−180..180 to 0..360; B−V 0.6 where missing). 15,544 stars to V 7.0, 248,704 bytes (desktop); phones keep the brightest half
+(7,772 stars, ~124 KB) through the existing loader rule. No share-alike: ship the BSD licence text with the build.
+Credit: "Star data: d3-celestial (Olaf Frohn), BSD 3-Clause, https://github.com/ofrohn/d3-celestial; Hipparcos-based, filtered to magnitude 7.0."
+**To switch:** in `globe.js` change `fetch('./assets/stars.bin')` to `fetch('./assets/stars-bsd.bin')` (stars section, about line 586), then
+change the two "HYG v4.4 … CC BY-SA 4.0" strings in `skyFrame` and the credits to the line above. Add `stars-bsd.bin` to the `sw.js` precache if stars.bin is listed there.

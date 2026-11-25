@@ -4,7 +4,7 @@ Built from case_porto_batel.py (same solver set-up and numerics: h_over_dp 1.7, 
 outflow); only the profile, the swell and the tide differ. One straight 2D line through the lidar along
 the local wave direction at the take-off (pieces/02-reefs/simulate_swell_spot.py writes the profile), so
 refraction, alongshore variation and anything smaller than a grid cell are not in it.
-Swell: Open-Meteo Marine hindcast, Nov-Mar 2024-26 median swell (2.22 m, 13.5 s, 304 deg).
+Swell: NOAA NCEP GFS-Wave (WAVEWATCH III) 0.25 deg analysis (f000), 39.375 N 9.458 W, Nov-Mar 2024-25 + 2025-26, 193 samples, median primary swell (1.82 m, 12.2 s, 295 deg; pieces/11-ocean/data/typical_swell.json). Rerun 2026-11-25 as s2 (out/supertubos_s2); the s1 run used the earlier Open-Meteo median (2.22 m, 13.5 s).
 Coordinates: s = distance along the line from a "profile origin" 60 m landward of the shoreline (so the
 Porto Batel tools, which work in s = 60-340 m, apply unchanged); s = 60 is the shoreline at this tide.
 Solver x = S_PISTON - s, z = metres above still water. Height above LAT = z + tide_above_lat (the key
@@ -23,10 +23,10 @@ HERE = Path(__file__).resolve().parent
 CFG = dict(
     name="supertubos",
     tide_above_lat=1.7,       # m above LAT (~ Peniche mean level)
-    H=2.2,                   # target incident wave height (m), the spot's typical winter swell
-    T=13.5,                  # wave period (s)
+    H=1.82,                   # target incident wave height (m), the spot's typical winter swell
+    T=12.2,                  # wave period (s)
     s_piston=280.0,           # wavemaker 220 m seaward of the shoreline (s = 60 + 220); 8.9 m of water at this tide
-    stroke_factor=0.973,       # wavemaker stroke / linear-theory stroke (calibrated: see out/calib_supertubos/)
+    stroke_factor=1.009,       # wavemaker stroke / linear-theory stroke (calibrated: see out/calib_supertubos/)
     s_shore=50.0,            # drain line (particle sink), 10 m landward of the shoreline
     shore_outflow=1.0,
     s_bed_end=44.0,          # the lidar bed continues to here

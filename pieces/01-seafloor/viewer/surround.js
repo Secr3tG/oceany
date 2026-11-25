@@ -27,7 +27,7 @@ const EARTH_C = 40075016.7;    // equator length (m), web mercator
 
 export async function buildSurround({ meta, pos, N }) {
   const o = meta && meta.origin; if (!o || !isFinite(o.lat) || !isFinite(o.lon)) return null;
-  const { fetchTerrarium } = await import('../../07-globe/terrarium.js?v=2');
+  const { fetchTerrarium } = await import('../../07-globe/terrarium.js?v=3');
   const cosO = Math.cos(o.lat * Math.PI / 180);
   // lidar box (x east, z south, metres) and its occupancy grid
   let bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;

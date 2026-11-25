@@ -4,7 +4,7 @@ Built from case_porto_batel.py (same solver set-up and numerics: h_over_dp 1.7, 
 outflow); only the profile, the swell and the tide differ. One straight 2D line through the lidar along
 the local wave direction at the take-off (pieces/02-reefs/simulate_swell_spot.py writes the profile), so
 refraction, alongshore variation and anything smaller than a grid cell are not in it.
-Swell: Open-Meteo Marine hindcast, 43.45 N 1.70 W, Nov-Mar 2024-26 median swell (1.58 m, 13.5 s, 305 deg).
+Swell: NOAA NCEP GFS-Wave (WAVEWATCH III) 0.25 deg analysis (f000), 43.45 N 1.70 W, Nov-Mar 2024-25 + 2025-26, 189 samples, median primary swell (1.31 m, 12.4 s, 303 deg; pieces/11-ocean/data/typical_swell.json). Rerun 2026-11-25 as s2 (out/hossegor_s2); the s1 run used the earlier Open-Meteo median (1.58 m, 13.5 s).
 Coordinates: s = distance along the line from a "profile origin" 60 m landward of the shoreline (so the
 Porto Batel tools, which work in s = 60-340 m, apply unchanged); s = 60 is the shoreline at this tide.
 Solver x = S_PISTON - s, z = metres above still water. Height above IGN69 = z + tide_above_lat (the key
@@ -23,10 +23,10 @@ HERE = Path(__file__).resolve().parent
 CFG = dict(
     name="hossegor",
     tide_above_lat=0.0,       # m above IGN69 (~ mean sea level on this coast, within ~0.2 m)
-    H=1.6,                   # target incident wave height (m), the spot's typical winter swell
-    T=13.5,                  # wave period (s)
+    H=1.31,                   # target incident wave height (m), the spot's typical winter swell
+    T=12.4,                  # wave period (s)
     s_piston=535.0,           # wavemaker 475 m seaward of the shoreline (s = 60 + 475); 8.1 m of water, seaward of the outer bar (crest ~6.0 m at 350-360 m out). Long domain: spot_run.py widens the tool window to s 60-515
-    stroke_factor=0.976,       # wavemaker stroke / linear-theory stroke (calibrated: see out/calib_hossegor/)
+    stroke_factor=1.002,       # wavemaker stroke / linear-theory stroke (calibrated: see out/calib_hossegor/)
     s_shore=50.0,            # drain line (particle sink), 10 m landward of the shoreline
     shore_outflow=1.0,
     s_bed_end=44.0,          # the lidar bed continues to here

@@ -3,22 +3,18 @@
 // - Same-origin files (the page, scripts, three.js, dot files, layer modules and their data): network first, so a
 //   normal reload always gets fresh code and data; the copy is kept and used when the network is gone.
 //   Offline, a URL is also matched without its ?v= tag (globe.js adds a Last-Modified tag it cannot read offline).
-// - Terrain tiles (our own, same origin under tiles-build/tiles/; AWS Terrain Tiles only with ?terrain_src=aws): cache first,
-//   at most TILE_MAX kept (oldest dropped). coverage.json goes through the normal same-origin path (network first).
+// - Terrain tiles (AWS Terrain Tiles only, with ?terrain_src=aws; the v1 own-PNG tiles were retired b58): cache first,
+//   at most TILE_MAX kept (oldest dropped).
 // Scope is this folder: the spot viewers (pieces/01-seafloor/viewer/) are other pages and are NOT made offline by this.
-// Tile host, same rule as terrain-source.js: Cloudflare R2 when hosted, tiles-build/tiles/ on this Mac.
 const R2_HOST = 'pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev';
-const IS_LOCAL = ['localhost', '127.0.0.1', '[::1]', ''].includes(location.hostname);
-const TILE_BASE = IS_LOCAL ? './tiles-build/tiles/' : `https://${R2_HOST}/terrain/`;
-const SHELL = 'oceany-shell-b57', TILES = 'oceany-tiles-1', TILE_MAX = 600;
-const PRECACHE = ['./', './index.html', './globe.js?v=b57', './tour.js?v=b51', './dots.js?v=b43', './terrain.js?v=b57', './terrarium.js?v=2', './terrain-source.js?v=t7', './tilepack.js?v=p2', './terrain-worker.js?v=w1', './data-source.js', TILE_BASE + 'coverage.json',
+const SHELL = 'oceany-shell-b58', TILES = 'oceany-tiles-1', TILE_MAX = 600;
+const PRECACHE = ['./', './index.html', './globe.js?v=b58', './tour.js?v=b51', './dots.js?v=b58', './terrain.js?v=b58', './terrarium.js?v=3', './terrain-source.js?v=t8', './tilepack.js?v=p2', './terrain-worker.js?v=w1', './data-source.js',
   './layers.json', './regions.json', './manifest.webmanifest', './assets/earth_dots.json', './assets/earth_dots.bin',
   './assets/stars.bin', './assets/icons/icon-192.png', './assets/icons/icon-512.png',
   '../01-seafloor/viewer/vendor/three.module.js', '../01-seafloor/viewer/vendor/three.core.js'];
-const TILE_HOSTS = ['s3.amazonaws.com', 'elevation-tiles-prod.s3.amazonaws.com', R2_HOST];   // R2: tiles and coverage.json, cache first
+const TILE_HOSTS = ['s3.amazonaws.com', 'elevation-tiles-prod.s3.amazonaws.com'];   // AWS terrarium PNGs (?terrain_src=aws), cache first
 // Terrain v2 packs (https://tiles.hvid.studio/terrain2/, b52) are cross-origin and not in TILE_HOSTS, so this worker never
 // touches them: their Range (206) answers must not be stored cache-first; tilepack.js keeps its own Cache API copy.
-const OWN_TILE = /\/tiles-build\/tiles\/\d+\/\d+\/\d+\.png$/;
 
 // b38: the layer modules are cached at install too, under the versioned URL the page imports offline (module?v=<ent.v>,
 // see globe.js loadOne), plus the bare URL and each module's own relative imports (e.g. dots_common.js, ocean_data.js).
@@ -77,7 +73,7 @@ self.addEventListener('fetch', e => {
   if (req.method === 'HEAD' && url.origin === location.origin && isDown()) { e.respondWith(new Response(null, { status: 204 })); return; }
   if (req.method !== 'GET') return;
   if (url.hostname === R2_HOST && url.pathname.startsWith('/data/')) return;   // b56: refreshed layer data and latest.json: never cache first
-  if (TILE_HOSTS.includes(url.hostname) || (url.origin === location.origin && OWN_TILE.test(url.pathname))) { e.respondWith(tile(req)); return; }
+  if (TILE_HOSTS.includes(url.hostname)) { e.respondWith(tile(req)); return; }
   if (url.origin !== location.origin) return;
   e.respondWith((async () => {
     if (isDown() && req.mode !== 'navigate') { const hit = await fromCache(req); if (hit) return hit; }

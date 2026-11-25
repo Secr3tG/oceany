@@ -5,7 +5,7 @@
 // WORTH READING: section 3 (palettes) and section 5 (what the buttons do).
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { USE_AWS, SEABED } from '../../07-globe/terrain-source.js?v=t7';   // same module as terrarium.js: Oceany's terrain2 packs unless ?terrain_src=aws
+import { USE_AWS, SEABED } from '../../07-globe/terrain-source.js?v=t8';   // same module as terrarium.js: Oceany's terrain2 packs unless ?terrain_src=aws
 
 // ---------- 1. Setup: renderer, scene, camera ----------
 const canvas = document.getElementById('scene');
@@ -319,7 +319,7 @@ async function ensureSurround(label) {
   if (!(label in surroundCache)) {
     surroundCache[label] = (async () => {
       try {
-        const { buildSurround } = await import('./surround.js?v=s6');
+        const { buildSurround } = await import('./surround.js?v=s7');
         const s = await buildSurround({ meta: c.meta, pos: c.pos, N: c.N });
         if (!s) return null;
         const off = /^LAT/.test(c.meta.datum || '') ? MSL_ABOVE_LAT : 0;

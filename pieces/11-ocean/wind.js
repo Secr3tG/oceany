@@ -70,13 +70,16 @@ const VERT = /* glsl */`
     float sp = length(windAt(la, lo));
     vec3 p = (uR) * vec3(cos(la) * cos(lo), sin(la), -cos(la) * sin(lo));
     vec4 mv = modelViewMatrix * vec4(p, 1.0);
-    gl_PointSize = clamp(uSize * (1.0 + 0.25 * farG) * (1.0 - 0.05 * aTail) * uScale / -mv.z, 1.5, uMaxPx);   // a scale, not a higher floor: a floor grows only the far (limb) dots and brought the edge back
+    // b58 (Benn's phone: streaks too thick close in, land and sea hidden): from ~950 km down to ~65 km the streaks thin to
+    // 1 px and fade to 35 %, so the ground reads through them; whole-globe and mid zooms are unchanged
+    float closeK = smoothstep(0.01, 0.15, alt);
+    gl_PointSize = clamp(uSize * (1.0 + 0.25 * farG) * (1.0 - 0.05 * aTail) * uScale / -mv.z, mix(1.0, 1.5, closeK), uMaxPx * mix(0.45, 1.0, closeK));   // a scale, not a higher floor: a floor grows only the far (limb) dots and brought the edge back
     gl_Position = projectionMatrix * mv;
     float x = sqrt(clamp(sp / uVTop, 0.0, 1.0));
     float lum = dot(uInk, vec3(0.3, 0.5, 0.2));
     vColor = mix(uInk, vec3(lum), 0.6) * (0.3 + 0.7 * x) * (1.0 + 1.0 * farG);   // neutral: the palette's ink, mostly grey; brighter = faster
     vA = 2.2 * nearK * sin(3.1415927 * clamp(age, 0.0, 1.0)) * (1.0 - 0.075 * aTail);    // fade in at birth, out at death
-    vA *= limbFade(p, mv);                                              // no bright ring at the limb (ocean_data.js)
+    vA *= limbFade(p, mv) * mix(0.35, 1.0, closeK);                                              // no bright ring at the limb (ocean_data.js)
     if (vA <= 0.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
   }`;
 const FRAG = /* glsl */`

@@ -9,7 +9,7 @@
 // A child that is absent leaves its quadrant NaN (the caller skips non-finite values). Throws when the packs cannot be read
 // or no child exists (the caller treats a throw as a missing tile).
 // ?terrain_src=aws (test switch) keeps the AWS Terrain Tiles PNG path: elevation = R × 256 + G + B / 256 − 32768 m.
-import { tileUrl, tileSources, seabedOf, startPacks, USE_AWS } from './terrain-source.js?v=t7';
+import { tileUrl, tileSources, seabedOf, startPacks, USE_AWS } from './terrain-source.js?v=t8';
 export async function fetchTerrarium(z, x, y) {
   if (USE_AWS) return fetchPng(z, x, y);
   const ps = await startPacks({ packsOnly: true });

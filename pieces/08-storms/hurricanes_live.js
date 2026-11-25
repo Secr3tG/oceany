@@ -212,7 +212,9 @@ export async function createLayer({ THREE, radius = 1.0, makeDotMaterial, palett
     el('div', 'sl-dim', 'Source: NOAA National Hurricane Center; other basins NOAA IBTrACS. Redrawn by Oceany; not official, not endorsed by NOAA/NWS.', f);
   }
 
-  const syncDom = () => { const on = !!group.visible; if (box.hidden === on) box.hidden = !on; };
+  // b58 (Benn's phone): the box shows only while NHC lists an active storm. "None active" / "not available" stays in the
+  // layer's own line in the Layers panel (group.status) instead of a box always on screen.
+  const syncDom = () => { const on = !!group.visible && !!data && data.storms.length > 0; if (box.hidden === on) box.hidden = !on; };
   setInterval(syncDom, 400);
 
   function statusLine() {

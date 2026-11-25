@@ -27,6 +27,13 @@ is for navigation.
   Environmental Information, Continuously Updated Digital Elevation Model (CUDEM), doi:10.25921/ds9v-ky35.
   US Government work, public domain; not endorsed by NOAA. Averaged to ~10 m and resampled.
   Not for navigation.
+- Globe terrain tiles, southern and central California, Oregon, Washington and Puerto Rico seabed
+  (bathy2, z9-z13; built 2026-11-25): U.S. Geological Survey, Coastal National Elevation Database (CoNED)
+  topobathymetric models, Southern California & Channel Islands (2016) and Central California (2017);
+  NOAA National Centers for Environmental Information, Continuously Updated Digital Elevation Model (CUDEM),
+  doi:10.25921/ds9v-ky35, Oregon, Washington and Puerto Rico. US Government works, public domain; not
+  endorsed by USGS or NOAA. Averaged to ~10 m and resampled. Not for navigation.
+  Details: `pieces/07-globe/tiles-build/SOURCES.md` section 7.
 - Danish waters (50 m): Contains data from the Danish Geodata Agency, Denmark's
   Depth Model, 50 m resolution. Obtained 2026-11-11. Terms:
   https://eng.gst.dk/danish-hydrographic-office/denmark-depth-model

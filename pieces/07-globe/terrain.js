@@ -13,7 +13,8 @@
 //   so there is never a gap in the tile layer.
 // - Tilted views: the split test uses the dot spacing as seen on screen, so a tile far off toward the horizon (far away,
 //   and seen at a grazing angle that squashes it) stays at a coarse level. A tile budget keeps memory bounded: when a
-//   view would need more than TILE_BUDGET tiles, the target spacing is raised until it fits, and lowered again after. Where nothing is loaded yet, the base 301k-dot globe shows through.
+//   view would need more than TILE_BUDGET tiles, the far ground is coarsened first (near-first, 2026-11-25: the split
+//   spacing grows with distance past a near radius that shrinks until the view fits; only then is it raised everywhere). Where nothing is loaded yet, the base 301k-dot globe shows through.
 // - Level changes do not pop: each tile geomorphs toward its parent as its dots close up on screen (dots.js, MORPH),
 //   and a tile that comes or goes cross-fades over FADE_MS with the level it replaces.
 // - Each tile becomes one THREE.Points of 128 × 128 dots (each dot = the mean of 2 × 2 source pixels), positioned
@@ -24,8 +25,8 @@
 //   they leave the view, and tiles ahead of a fly or zoom are prefetched (PF_LOOK, and prefetch() for globe.js flights).
 // - ?terrain=v2: tiles come from the terrain2 packs through tilepack.js (terrain-source.js); the PNG path is the default.
 import * as THREE from 'three';
-import { tileUrl, covered as srcHas, coverageKnown, tileSources, SEABED, seabedOf, USE_AWS, V2_ASKED, startPacks } from './terrain-source.js?v=t7';
-import { makeDotMaterial, palette, dotExag, morphT, landTone, oceanTone, SHALLOW_M, LAND_DOT_D, HUE_MAX } from './dots.js';
+import { tileUrl, covered as srcHas, coverageKnown, tileSources, SEABED, seabedOf, USE_AWS, V2_ASKED, startPacks } from './terrain-source.js?v=t8';
+import { makeDotMaterial, palette, dotExag, morphT, morphNear, morphFarMax, grazeP, landTone, oceanTone, SHALLOW_M, LAND_DOT_D, HUE_MAX } from './dots.js';
 
 const R_EARTH = 6371000;
 const N = 128;                 // dots per tile side
@@ -36,6 +37,13 @@ const CACHE_MAX = 220;         // tiles kept (≈ 0.3 MB each: positions, byte c
 const MAX_WANT = 96;           // tiles queued for fetching at once, nearest-first
 const MAX_INFLIGHT = 12, MAX_INFLIGHT_V2 = 24;   // v2: the pack source does its own network limiting and merges neighbours into one range, so it gets more at once          // AWS: 6 per host name, two host names; ours: same origin (HTTP/2 multiplexes when hosted)
 const TILE_BUDGET = 150;       // tiles drawn + wanted in one view, at most (the target spacing adapts to stay under it)
+// 2026-11-25 (close relief): desktop and phone are different products. Desktop: finer split spacing, a larger budget and
+// cache (a drawn tile is ~0.8 MB of GPU attributes + 64 kB of heights: 440 cached ≈ 350 MB GPU at most; measured in
+// review/close-relief). Phone keeps 140 / 200 and TARGET_PX scaled by the screen (liteTpx), plus the MIN_RPX cap.
+const DESK_TPX = 2.5, DESK_BUDGET = 320, DESK_CACHE = 440;   // TPX 2.0 tried: ~1.5× the tiles in low tilted views, loading took twice as long (review/close-relief); the budget goes to the near ground instead
+// Near-first budget: past the near radius (nearD, world units) a tile's split spacing is TARGET_PX × distance / nearD, at most
+// FAR_MAX ×. Over budget, nearD shrinks (×1/1.4 a pass) down to NEAR_MIN × the camera height before refine (everywhere) rises.
+const FAR_MAX = 6, NEAR_MIN = 2.5;
 const DEEP_AT = 6000;          // same colour ramp as the base globe
 // Water deeper than SHALLOW_M: dots drawn SEA_DOT_K × wider (soft, overlapping: the sea floor here is ETOPO1 at
 // ~1.85 km, filled in between, so a smooth field shows no more than the data) and SEA_K × brighter, so close-in water is
@@ -195,8 +203,13 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   // (and the old ×1.25 on top) Peniche stopped at z12 (59 m dots) from 15 km where desktop reaches z13 (30 m), and read as
   // blobs. Lite now splits at a spacing scaled by the screen's short side (390/900 → ×0.45), i.e. about as many dots across
   // the view as on desktop, and gets a larger tile budget and cache to carry them (was 100 / 140).
-  let TPX = TARGET_PX;
-  const BUDGET = lite ? 140 : TILE_BUDGET, CACHE = lite ? 200 : CACHE_MAX;
+  let TPX = lite ? TARGET_PX : DESK_TPX;
+  const BUDGET = lite ? 140 : DESK_BUDGET, CACHE = lite ? 200 : DESK_CACHE;
+  grazeP.value = lite ? 0.5 : 0.42; morphFarMax.value = FAR_MAX;
+  // desktop: near dots may be drawn a little larger (16 css px, phone 12) so the foreground of a low view reads as bigger,
+  // softer points against 1-2 px far ones (the size already falls with distance; this only lifts the cap). Tried LEAF_MAX_PX
+  // for the finest level: the near ground went to blurred blobs (review/close-relief), so crisp capped dots stay.
+  const TILE_PX = lite ? 12 : 16;   // b58: back to last night's 12 / 16 (Benn: the bright, sharp close-up look is the one he wants)
   const liteTpx = () => TARGET_PX * Math.max(0.45, Math.min(1, Math.min(innerWidth, innerHeight) / 900));
   const group = new THREE.Group(); group.visible = false; scene.add(group);
   const cache = new Map();                // key -> tile { ...desc, state, points, elev, sources, hasOcean, used }
@@ -206,7 +219,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   const SI_PER_FRAME = lite ? 2 : 3, SI_MAX = Math.floor(CACHE * 0.4);
   const morphing = new Set();             // tiles whose drawn heights are easing from a stand-in's to their own
   const pf = new Map();                   // prefetch: key -> { z, x, y, until, prio }
-  let pack = null; startPacks().then(p => { pack = p; if (p && p.warmBase && BASE_MAX_Z >= 0) p.warmBase(BASE_MAX_Z); });   // terrain v2 (default; ?terrain=v1 = PNGs): the pack source once it is up (null: PNG tiles); b53: then the world base in the background
+  let pack = null; startPacks().then(p => { pack = p; if (p && p.warmBase && BASE_MAX_Z >= 0) p.warmBase(BASE_MAX_Z); });   // terrain v2 packs (v1 PNGs retired b58; null = no tiles, or AWS PNGs with ?terrain_src=aws): the pack source once it is up; b53: then the world base in the background
   const wk = makeWorkers();
   const workOk = () => !!(wk && wk.ok);
   const geoCache = new Map(), geoPend = new Map();   // stand-in geometry from the worker: key -> { pos, sz, rs, par } / asked-at ms
@@ -259,15 +272,19 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     return frustum.intersectsSphere(sphere);
   }
   let lastHoles = 1;
-  let refine = 1;                         // multiplies TARGET_PX when a view would need more than TILE_BUDGET tiles
+  let refine = 1;                         // multiplies TARGET_PX everywhere when near-first coarsening alone cannot fit the budget
+  let nearD = 1e3;                        // near-first radius (world units); 1e3 = off
   const toCam = new THREE.Vector3();
+  const tdist = d => Math.max(1e-6, camPos.distanceTo(d.center) - d.radius * 0.7);
+  // split threshold for tile d (css px): full detail inside nearD, coarser with distance past it (dots.js reads the same)
+  const thr = d => TPX * refine * Math.min(FAR_MAX, Math.max(1, tdist(d) / nearD));
   function spacingPx(d) {
-    const dist = Math.max(1e-6, camPos.distanceTo(d.center) - d.radius * 0.7);
+    const dist = tdist(d);
     // grazing angle: one screen axis of the tile is squashed by cos(incidence); use the geometric mean of both axes.
     // Only for tiles small enough to be roughly flat, and never below 0.25 so tiles near the camera stay fine.
     toCam.copy(camPos).sub(d.center).normalize();
     const cosI = d.radius < 0.05 ? Math.max(0.0625, Math.abs(toCam.dot(d.center))) : 1;
-    return d.spacingMaxM / R_EARTH * pxPerUnit() / dist * Math.sqrt(cosI);
+    return d.spacingMaxM / R_EARTH * pxPerUnit() / dist * Math.pow(cosI, grazeP.value);
   }
   const kids = d => [0, 1].flatMap(j => [0, 1].map(i => d.polar ? pdesc(d.polar, d.z + 1, 2 * d.x + i, 2 * d.y + j) : desc(d.z + 1, 2 * d.x + i, 2 * d.y + j)));
   const maxZ = d => d.polar ? POLE_MAX_Z : MAX_Z;
@@ -325,14 +342,14 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     // grandchildren when those are (covered()), so the skipped levels are never needed.
     let extra = 0;
     function ahead(d, depth) {
-      if (depth > 12 || d.z >= maxZ(d) || spacingPx(d) <= TPX * refine || !kidsBuilt(d) || nearCap(d)) return;
+      if (depth > 12 || d.z >= maxZ(d) || spacingPx(d) <= thr(d) || !kidsBuilt(d) || nearCap(d)) return;
       for (const k of kids(d)) {
         if (!visible(k)) continue;
         const kt = cache.get(k.key); if (kt) kt.keep = selectId;
-        const sk = spacingPx(k), last = k.z >= maxZ(k) || sk <= TPX * refine || !kidsBuilt(k) || nearCap(k);
+        const sk = spacingPx(k), tk = thr(k), last = k.z >= maxZ(k) || sk <= tk || !kidsBuilt(k) || nearCap(k);
         // 2026-11-24 night: also the level three above the last one (dots 4-8 × the target apart: a sixty-fourth as many
         // tiles), the source the stand-ins below it are smoothed from while the last level loads
-        const src = !slow && !last && !k.polar && sk > TPX * refine * 4 && sk <= TPX * refine * 8;
+        const src = !slow && !last && !k.polar && sk > tk * 4 && sk <= tk * 8;
         // round 2: source tiles ahead of the rest (as if 4 levels coarser): a few of them give the whole view stand-ins from
         // one data level, instead of a sharp centre among stand-ins from level 3 (the seam)
         // b53: a world-base level already in the persistent cache (BASE_MAX_Z and coarser): first, it costs no request and
@@ -393,7 +410,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     // apart) are queued at once, behind it, instead of one level per select pass: after a jump the screen used to show the
     // sparse capped dots of the first levels for ~1 s (6-7 passes) before the stand-ins dense enough to fill it were asked for.
     function siAhead(c, src, depth) {
-      if (depth > 6 || c.z >= MAX_Z || !(spacingPx(c) > Math.max(SI_PX, TPX * refine)) || !kidsBuilt(c) || nearCap(c)) return;
+      if (depth > 6 || c.z >= MAX_Z || !(spacingPx(c) > Math.max(SI_PX, thr(c))) || !kidsBuilt(c) || nearCap(c)) return;
       for (const g of kids(c)) {
         if (!visible(g) || ready(g)) continue;
         const s = sic.get(g.key);
@@ -404,7 +421,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     // a drawn stand-in splits on down to the level whose dots are SI_PX apart (or the level the view ends on)
     function siVisit(s, src, depth) {
       s.keep = selectId;
-      if (depth < SI_DEPTH && s.z < MAX_Z && spacingPx(s) > Math.max(SI_PX, TPX * refine) && kidsBuilt(s) && !nearCap(s)) {
+      if (depth < SI_DEPTH && s.z < MAX_Z && spacingPx(s) > Math.max(SI_PX, thr(s)) && kidsBuilt(s) && !nearCap(s)) {
         const items = siKids(s, src);
         if (items) { for (const it of items) if (it.si) siVisit(it, src, depth + 1); else visit(it); return; }
       }
@@ -417,15 +434,16 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       if (!visible(d)) return;
       const own = cache.get(d.key); if (own) own.keep = selectId;   // on the path to what is drawn: never evicted this pass
       const t = cache.get(d.key), isReady = t && t.state === 'ready';
-      if (d.z < maxZ(d) && spacingPx(d) > TPX * refine && !kidsBuilt(d)) { if (coverageKnown()) capped = true; if (!d.polar) caps.push(d); }
-      else if (d.z < maxZ(d) && ((spacingPx(d) > TPX * refine && !nearCap(d)) || (!isReady && !ready(d)))) {
+      const td = thr(d), sd = spacingPx(d);
+      if (d.z < maxZ(d) && sd > td && !kidsBuilt(d)) { if (coverageKnown()) capped = true; if (!d.polar) caps.push(d); }
+      else if (d.z < maxZ(d) && ((sd > td && !nearCap(d)) || (!isReady && !ready(d)))) {
         const ks = kids(d).filter(visible);
         for (const k of ks) { const kt = cache.get(k.key); if (kt) kt.keep = selectId; }
         if (ks.length && ks.every(k => covered(k))) { ks.forEach(k => visit(k)); return; }
-        if (spacingPx(d) > TPX * refine) for (const k of ks) if (!ready(k)) { want.push([prio(k), k]); ahead(k, 0); }   // the next level (a closer stand-in soon) and, via ahead, the last one
+        if (sd > td) for (const k of ks) if (!ready(k)) { want.push([prio(k), k]); ahead(k, 0); }   // the next level (a closer stand-in soon) and, via ahead, the last one
         // stand-ins: d is drawn and too coarse here, its children are not all in: draw them smoothed from d (or from
         // stand-ins already built from a coarser tile) instead of d's sparse dots. Not from tiles coarser than the base globe.
-        if (!slow && isReady && !d.polar && ks.length && spacingPx(d) > TPX * refine && !coarseStandIn(t)) {
+        if (!slow && isReady && !d.polar && ks.length && sd > td && !coarseStandIn(t)) {
           const items = siKids(d, t);
           if (items) { srcShown.push(t); for (const it of items) if (it.si) siVisit(it, t, 1); else visit(it); return; }
         }
@@ -438,8 +456,21 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     lastHoles = holes; detailEnds = capped; lastCaps = caps;
     want.sort((a, b) => a[0] - b[0]);
     const need = show.length + want.length - extra;
-    if (need > BUDGET) refine = Math.min(REFINE_MAX, refine * 1.25);
-    else if (need < BUDGET * 0.6 && refine > 1) refine = Math.max(1, refine / 1.1);
+    // near-first budget (2026-11-25): over budget, pull the near radius in first (the far ground coarsens, the ground near
+    // the camera keeps full detail); only when it is down to NEAR_MIN × the camera height, raise the spacing everywhere.
+    // Under 60 % of the budget: undo in the reverse order.
+    let farD = 0; for (const t of show) farD = Math.max(farD, tdist(t));
+    const nearMin = NEAR_MIN * Math.max(2e-5, camPos.length() - 1);
+    if (need > BUDGET) {
+      if (nearD > nearMin * 1.001) nearD = Math.max(nearMin, Math.min(nearD, farD) / 1.25);
+      else refine = Math.min(REFINE_MAX, refine * 1.25);
+    } else if (need < BUDGET * 0.6) {
+      // back out slowly (×1.08 a pass) and switch off only far past the view (4 × the farthest drawn tile), so the near radius
+      // does not swing in and out while tiles stream in (each swing re-asks for, and cancels, the far tiles)
+      if (refine > 1) refine = Math.max(1, refine / 1.1);
+      else if (nearD < 1e3) nearD = nearD * 1.08 > 4 * farD ? 1e3 : nearD * 1.08;
+    }
+    nearD = Math.max(nearD, nearMin);
     return { show, want: want.slice(0, MAX_WANT).map(w => [w[1], w[0], !!w[2]]), siShow, measured: [...new Set([...show, ...srcShown])] };
   }
 
@@ -482,7 +513,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     const t = Object.assign(d, { state: 'loading', used: frameNo, ctrl: new AbortController() });
     cache.set(d.key, t); inflight++; tlog(t, 'req');
     try {
-      // ?terrain=v2: the pack source (tilepack.js) once it is up; PNG tiles when it is not asked for, not supported or failed
+      // the pack source (tilepack.js) once it is up; null when not supported or failed (then only ?terrain_src=aws reads PNGs, else the tile counts as absent)
       const ps = V2_ASKED ? await startPacks() : null;
       let got;
       const useW = workOk();
@@ -506,6 +537,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
           got = { elev, voidTile: zeros > 0.5 * N * N };
         }
       } else {
+        if (!USE_AWS) throw new Error('HTTP 404');   // b58: no pack and no v1 PNGs: an absent tile (failed, not asked for again)
         const gp = useW ? wk.run({ op: 'geom', geom: true, z: d.z, x: d.x, y: d.y }).catch(() => null) : null;   // b53: geometry in the worker meanwhile
         const r = await fetch(tileUrl(d.z, d.x, d.y), { signal: t.ctrl.signal, mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer' });
         tlog(t, 'resp');
@@ -867,7 +899,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       // not cover the base globe (updateCover): it showed as a dark square of sparse dots while its children loaded
       t.points.material.uniforms.uOpacity.value = coarseStandIn(t) ? 0 : t.fade * alpha;
       if (t.leafPx === undefined && !t.si && coverageKnown()) t.leafPx = (t.polar ? t.z >= POLE_MAX_Z : t.z < MAX_Z && !kidsBuilt(t)) ? LEAF_MAX_PX : 0;   // b54
-      t.points.material.uniforms.uMaxPx.value = (t.leafPx || TILE_MAX_PX) * renderer.getPixelRatio();
+      t.points.material.uniforms.uMaxPx.value = (t.leafPx || (t.si ? TILE_MAX_PX : TILE_PX)) * renderer.getPixelRatio();
       t.points.visible = t.fade > 0;
       if (!t.shownNow && t.fade === 0) live.delete(t);
     }
@@ -878,6 +910,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     if (!enabled) return;
     frameNo++;
     morphT.value = TPX * refine * renderer.getPixelRatio();
+    morphNear.value = nearD;
     // builds: as many as fit in ~6 ms of this frame (at least one); a tile whose parent is still on its way waits for it
     // Budget: BUILD_MS at 60 fps; when frames are slow anyway (a loaded machine, software GL), up to 12 % of the last
     // frame interval (at most 16 ms; round 3: a quarter / 30 ms made slow frames slower still), so decoded tiles do not wait several slow frames each in the queue (measured
@@ -937,6 +970,12 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     for (const t of shownSI) t.shownNow = false;
     for (const t of show) { t.shownNow = true; t.used = frameNo; live.add(t); tlog(t, 'shown'); }
     for (const t of siShow) { t.shownNow = true; t.used = frameNo; live.add(t); }
+    // b58 (Benn: square low-detail patches while zooming out): the loaded ancestors of what is drawn (2 levels up on a phone,
+    // 3 on desktop) count as used, so the LRU keeps the zoom-out path. They were evicted first (never shown while their
+    // children were), so zooming out had to wait for them over sparse coarse stand-ins. Costs ≤ ~1/3 of the drawn count.
+    for (const t of show) for (let k = 1, x = t.x, y = t.y; k <= (lite ? 2 : 3) && t.z - k >= 0; k++) {
+      x >>= 1; y >>= 1; const a = cache.get(`${t.z - k}/${x}/${y}`); if (a) a.used = frameNo;
+    }
     shown = show; shownSI = siShow; measured = ms;
     noteLevels(show, siShow);
     edgeRamp(siShow.length ? [...show, ...siShow] : show);
@@ -983,7 +1022,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
       x = ((x % n) + n) % n;
       // only a held step: the coarser tile wanted finer dots (spacing over the split threshold) but stayed coarse (capped or
       // nearCap). A plain distance step is already blended by the spacing geomorph.
-      for (let k = 1; k <= z - MIN_Z; k++) if (keys.has(`${z - k}/${x >> k}/${y >> k}`)) return spacingPx(desc(z - k, x >> k, y >> k)) > TPX * refine && onScreen(z, x0, y0, x1, y1) ? 1 : 0;
+      for (let k = 1; k <= z - MIN_Z; k++) if (keys.has(`${z - k}/${x >> k}/${y >> k}`)) { const q = desc(z - k, x >> k, y >> k); return spacingPx(q) > thr(q) && onScreen(z, x0, y0, x1, y1) ? 1 : 0; }
       return 0;
     };
     for (const t of show) {
@@ -1177,6 +1216,6 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   function setAlpha(a) { alpha = a; group.visible = enabled && a > 0.001; }
   function recolour() { for (const t of cache.values()) if (t.state === 'ready') colourTile(t); for (const t of sic.values()) if (t.state === 'ready') { t.cFrom = t.cTo = t.pFrom = t.pTo = null; colourTile(t); } }
 
-  return { group, update, setEnabled, setAlpha, status, finestM, recolour, elevationAt, get refine() { return refine; }, get enabled() { return enabled; }, get pending() { return pending; }, get holes() { return lastHoles; }, coverTex, get coverFull() { return covFull; }, get health() { return { ok: loadedOk, fails: loadFails, lastErr, inflight }; }, cache,
+  return { group, update, setEnabled, setAlpha, status, finestM, recolour, elevationAt, get refine() { return refine; }, get nearD() { return nearD; }, get budget() { return BUDGET; }, get enabled() { return enabled; }, get pending() { return pending; }, get holes() { return lastHoles; }, coverTex, get coverFull() { return covFull; }, get health() { return { ok: loadedOk, fails: loadFails, lastErr, inflight }; }, cache,
     prefetch, zoomAhead, get pfCancelled() { return pfCancelled; }, get packStats() { return pack && pack.stats ? pack.stats() : null; }, get workers() { return workOk(); }, get standIns() { return shownSI.length; }, get fading() { let n = 0; for (const t of live) if (t.fade > 0 && t.fade < 1) n++; return n; }, get heldN() { return heldKeys.size; }, get frameEma() { return frameEma; }, get siDebug() { return { msPerBuild: +(siMs / Math.max(1, siCount)).toFixed(2), builds: siCount, built: sic.size, queued: siQueue.size, shown: shownSI.length, morphing: morphing.size, colourMorphs: [...morphing].filter(t => t.cFrom).length, pf: pf.size }; }, get format() { return pack ? 'v2' : 'png'; } };
 }

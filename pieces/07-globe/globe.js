@@ -14,9 +14,9 @@
 //     .setDim(k) 0..1: the globe dims the other layers to 0.25 while the 'tornado-live' layer is on,
 //     .setShowPaths(bool): adds a "show all paths" checkbox under the layer, default off.
 import * as THREE from 'three';
-import { makeDotMaterial, palette, setPalette, PALETTES, updateDotScale, dotScale, dotExag, seaExag, applyCssPalette, landTone, oceanTone, LAND_DOT_D, HUE_MAX, ICE_LAT } from './dots.js';
-import { createTerrain } from './terrain.js?v=b57';
-import { USE_AWS as TERRAIN_AWS } from './terrain-source.js?v=t7';
+import { makeDotMaterial, palette, setPalette, PALETTES, updateDotScale, dotScale, dotExag, seaExag, applyCssPalette, landTone, oceanTone, LAND_DOT_D, HUE_MAX, ICE_LAT, hazeStart } from './dots.js';
+import { createTerrain } from './terrain.js?v=b58';
+import { USE_AWS as TERRAIN_AWS } from './terrain-source.js?v=t8';
 
 const RADIUS = 1.0;
 const D2R = Math.PI / 180;
@@ -64,10 +64,16 @@ const starCam = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.5, 100);
 // n directly (flights, follow) is carried by the shortest rotation from where n was (rigFrame). view.heading (compass,
 // rad, 0 = north, + = east) is derived from f for the hand-off link and the N button, and setting it sets f.
 let detailFloor = 0;   // zoom floor where our terrain tiles stop (radii; 0 = none), see updateDetailFloor
-const view = { n: latLonToVector3(25, -30, 1).normalize(), f: new THREE.Vector3(0, 1, 0), alt: 2.6, pitch: 0, manual: null, look: 0 };
+// 2026-11-25: view.groundM, the true land height (m) under the looked-at point, eased; the rig orbits that point on the DRAWN
+// ground (groundM × exaggeration, faded out above ~0.1 radii), so view.alt is the distance to the ground there, not to sea level,
+// and a low camera can tilt over high ground instead of being pinned straight down by the floor.
+const view = { n: latLonToVector3(25, -30, 1).normalize(), f: new THREE.Vector3(0, 1, 0), alt: 2.6, pitch: 0, manual: null, look: 0, groundM: 0 };
 // Start looking at the Atlantic (HOME below): Europe, Africa and the Americas in view, Portugal and France near the middle.
 const WHOLE_ALT = 0.6;           // radii: from here out the view counts as whole-globe and keeps north up (northFrame)
 const HOME = { lat: 25, lon: -30, alt: 2.6 };   // Home view: Atlantic-centred, Europe, Africa and the Americas in view
+// b58 (Benn's phone: the globe sat small, with empty space round it): on a portrait phone the whole-globe view starts closer,
+// so the globe spans ~95 % of the width (was ~80 %), still whole and centred between the top bar and the notice.
+if (innerWidth <= 600 && innerHeight > innerWidth) { HOME.alt = 2.05; view.alt = HOME.alt; }
 const PITCH_AUTO = 72 * D2R;     // auto tilt at the closest zoom
 const PITCH_MAX = 92 * D2R;      // manual tilt limit: a touch past level, so a low camera can look up at a storm column
 const north = new THREE.Vector3(), east = new THREE.Vector3(), fwd = new THREE.Vector3(), right = new THREE.Vector3();
@@ -96,12 +102,63 @@ const smooth = t => { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t
 const autoPitch = a => PITCH_AUTO * smooth((sliderFrac(a) - 0.4) / 0.6);   // straight down for the outer 40% of the slider
 const pitchLimit = a => PITCH_MAX - (PITCH_MAX - 45 * D2R) * Math.max(0, Math.min(1, Math.log(a) / Math.log(ALT_MAX)));  // far: ≤45°
 const camLL = { lat: 0, lon: 0 };
+// Ground collision (2026-11-25): the drawn (exaggerated) ground under the camera AND round it (a ring of 6 points at about half
+// the camera's height above the ground, 150 m to 3 km out) plus a clearance that scales with the zoom (12 % of view.alt,
+// 150 m to 2.2 km), so a low tilted camera never passes into a ridge beside it. camClear: the camera's height above the
+// highest of those (radii), for the near plane.
+const ringP = new THREE.Vector3(), ringE = new THREE.Vector3(), ringN = new THREE.Vector3();
+let camClear = 1;
+const llOf = v => { const r = v.length(); return [Math.asin(Math.max(-1, Math.min(1, v.y / r))) / D2R, Math.atan2(-v.z, v.x) / D2R]; };
+function groundTop(p) {                                // highest true land height (m) under and round camera point p, or 0
+  const [la, lo] = llOf(p);
+  let h = Math.max(0, terrain.elevationAt(la, lo) || 0);
+  const r = p.length(), hg = Math.max(150, Math.min(3000, ((r - RADIUS) * 6371000 - h * dotExag.value) * 0.5)) / 6371000;
+  ringN.copy(p).normalize(); ringE.set(0, 1, 0).cross(ringN); if (ringE.lengthSq() < 1e-8) ringE.set(1, 0, 0); ringE.normalize();
+  const ringF = ringP.copy(ringN).cross(ringE).clone();
+  for (let k = 0; k < 6; k++) {
+    const a = k * Math.PI / 3, q = ringN.clone().addScaledVector(ringE, Math.cos(a) * hg).addScaledVector(ringF, Math.sin(a) * hg);
+    const [qa, qo] = llOf(q); h = Math.max(h, terrain.elevationAt(qa, qo) || 0);
+  }
+  return h;
+}
+// b58 (Benn: the view shook close in): the collision top is eased (rises over ~0.2 s, falls over ~1 s) and only moves
+// with dt > 0, so a ring point stepping onto a ridge, or a tile swapping level under it, no longer kicks the camera in one
+// frame. camClear (the near plane) still reads the raw top, so nothing is clipped while the eased one catches up.
+let floorTopM = -1, floorDt = 0;
 function cameraFloor() {                               // lowest camera distance from the globe centre, radii
   if (!terrain.enabled) return RADIUS + 0.0004;
-  const p = camera.position, r = p.length();
-  const h = terrain.elevationAt(Math.asin(p.y / r) / D2R, Math.atan2(-p.z, p.x) / D2R);
-  return RADIUS + Math.max(0, h || 0) * dotExag.value / 6371000 + 0.00035;
+  const p = camera.position, gt = groundTop(p);
+  camClear = Math.max(1e-7, p.length() - RADIUS - gt * dotExag.value / 6371000);
+  if (floorTopM < 0) floorTopM = gt;
+  else if (floorDt > 0) floorTopM += (gt - floorTopM) * Math.min(1, floorDt * (gt > floorTopM ? 5 : 1));
+  const top = RADIUS + floorTopM * dotExag.value / 6371000;
+  return top + Math.max(150, Math.min(2200, 0.12 * view.alt * 6371000)) / 6371000;
 }
+// eased drawn-ground lift of the looked-at point (radii): faded out above 0.05-0.2 radii, where relief is a far-off texture
+// b58 (Benn: the view shook close in): the look point's ground is the MEAN land height over a disc (centre + 8 points at
+// 0.35 × view.alt, at least 1.5 km, out), eased over ~0.7 s, and it changes only on a real frame (dt > 0). It was the raw
+// height at one point, snapped (dt = 0) on every wheel event and every zoom-to-cursor step: over a ridge field the look
+// point jumped by the ridge-to-valley height × exaggeration (km) from frame to frame, and the camera with it.
+const gsP = new THREE.Vector3(), gsE = new THREE.Vector3(), gsN = new THREE.Vector3();
+function groundMean() {
+  const [la0, lo0] = llOf(view.n), h0 = terrain.elevationAt(la0, lo0);
+  if (h0 == null) return null;
+  const rr = Math.max(1500, 0.35 * view.alt * 6371000) / 6371000;
+  gsE.set(0, 1, 0).cross(view.n); if (gsE.lengthSq() < 1e-8) gsE.set(1, 0, 0); gsE.normalize(); gsN.copy(view.n).cross(gsE);
+  let s = Math.max(0, h0), c = 1;
+  for (let k = 0; k < 8; k++) {
+    const a = k * Math.PI / 4; gsP.copy(view.n).addScaledVector(gsE, Math.cos(a) * rr).addScaledVector(gsN, Math.sin(a) * rr);
+    const [la, lo] = llOf(gsP), h = terrain.elevationAt(la, lo); if (h != null) { s += Math.max(0, h); c++; }
+  }
+  return s / c;
+}
+function groundFrame(dt) {
+  if (!(dt > 0)) return;
+  if (!terrain.enabled) { view.groundM += (0 - view.groundM) * Math.min(1, dt * 4); return; }
+  const h = groundMean();
+  if (h != null) view.groundM += (h - view.groundM) * Math.min(1, dt * 1.5);
+}
+const groundLiftR = () => view.groundM * dotExag.value / 6371000 * (1 - smooth((view.alt - 0.05) / 0.15));
 // Place the camera from the rig. dt > 0 eases pitch, look-up and field of view; dt = 0 places it as is.
 const lookPt = new THREE.Vector3();
 function applyView(dt) {
@@ -113,7 +170,9 @@ function applyView(dt) {
   if (Math.abs(camera.fov - fovT) > 0.01 && dt > 0) {
     camera.fov += (fovT - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); updateDotScale(renderer, camera);
   }
-  const a = RADIUS + view.look, d = view.alt;
+  groundFrame(dt); floorDt = dt;
+  const a = RADIUS + view.look + groundLiftR();
+  let d = view.alt;
   const place = p => {
     rigFrame();
     lookPt.copy(view.n).multiplyScalar(a);
@@ -123,8 +182,16 @@ function applyView(dt) {
   };
   place(view.pitch);
   // floor: |P|² = (a + d cos p)² + (d sin p)² ≥ R²  ⇒  cos p ≥ (R² − a² − d²) / 2ad
-  const R = cameraFloor(), c = (R * R - a * a - d * d) / (2 * a * d);
+  let R = cameraFloor(), c = (R * R - a * a - d * d) / (2 * a * d);
   if (c > -1) { const pMax = Math.acos(Math.min(1, c)); if (view.pitch > pMax) { view.pitch = pMax; place(pMax); } }
+  // still under the floor straight down (a ridge beside the looked-at point is higher than the camera): lift the camera,
+  // eased over ~0.15 s (never more than half the clearance late), and hold the zoom there so it does not push back in
+  if (c > 1 && !flight) {
+    const need = R - a, k2 = dt > 0 ? Math.min(1, dt * 7) : 1;
+    d = Math.max(d + (need - d) * k2, need - Math.max(150, 0.06 * view.alt * 6371000) / 6371000);
+    view.alt = d; zoom.target = Math.max(zoom.target, d); place(view.pitch);
+    R = cameraFloor();
+  }
   starCam.quaternion.copy(camera.quaternion);          // starCam stays at the centre: stars at infinity
   if (starCam.fov !== camera.fov || starCam.aspect !== camera.aspect) { starCam.fov = camera.fov; starCam.aspect = camera.aspect; starCam.updateProjectionMatrix(); }
 }
@@ -287,14 +354,40 @@ function baseElev(lat, lon) {
 // ---------- terrain detail (prototype, terrain.js): switchable, off = the plain dot globe above ----------
 const terrain = createTerrain({ scene, camera, renderer, baseElev, lite: LITE });
 earth.material.uniforms.uCover.value = terrain.coverTex;
-const MIN_ALT = 0.0015;                  // closest camera with terrain on: 0.0015 radii ≈ 9.6 km above sea level
-// Vertical exaggeration eases off as you zoom in: ×20 seen from a whole-globe distance (altitude ≥ 1 radius),
-// down to ×1.2 at altitude ≤ 0.002 radii (≈ 13 km), log-linear in between.
-const EXAG_FAR = 20, EXAG_NEAR = 1.2, ALT_FAR = 1.0, ALT_NEAR = 0.002;
+// 2026-11-25 (close relief): the camera comes much lower, to look ACROSS mountains. MIN_ALT (the slider's closest end, and
+// the closest anywhere): 0.0003 radii ≈ 1.9 km from the looked-at point on the drawn ground (desktop; phone 0.00055 ≈ 3.5 km,
+// MIN_ALT_FINE), only where the finest data is built (dots FINE_M m apart or closer: the spot boxes). Elsewhere the data
+// floor (detailFloor, DETAIL_PX) holds as before, so dots never thin out. Tilted at the auto 72°, 1.9 km puts the camera
+// ~0.6 km above the ground. Was 0.0015 (9.6 km above sea level), always looking down.
+const MIN_ALT = 0.0003, MIN_ALT_FINE = LITE ? 0.00055 : MIN_ALT, FINE_M = 65;
+// Vertical exaggeration by the camera's height above the true ground under the looked-at point (radii): ×20 from a
+// whole-globe distance, easing to ×1.8 at the lowest camera. 2026-11-25: was ×20 → ×1.2 log-linear from 1 to 0.002 radii,
+// which left close views dead flat (×1.2 from 13 km); now more stretch survives the middle zooms and it flattens only in
+// the last few km, never below ×1.8 (near-true, still readable). Piecewise log-linear through these [radii, ×] points:
+// 6,371 km ×20, 640 km ×15, 190 km ×10.5, 64 km ×6.5, 25 km ×3.6, 13 km ×2.6, 6.4 km ×2.0, 2.5 km and under ×1.8.
+// b58 (Benn's correction: the tall, bright, glittering close-up mountains of last night's build are the look he wants; only
+// the shake was a fault): last night's curve is back. It is now read off a steadier height (exagNow, below: the rig's own
+// height over the drawn look point, eased). That reading came out ~20 % lower over the Alps (×2.4 where the filmed build
+// drew ×3.0), so the close and middle points are raised ~20 %: 2.5 km ×2.0, 6.4 km ×2.4, 13 km ×3.2, 25 km ×4.4, 64 km ×7.5, 190 km ×11.5.
+const EXAG_PTS = [[0.0004, 2.0], [0.001, 2.4], [0.002, 3.2], [0.004, 4.4], [0.01, 7.5], [0.03, 11.5], [0.1, 15], [1, 20]];
 function exagFor(alt) {
-  const t = Math.min(1, Math.max(0, (Math.log10(alt) - Math.log10(ALT_NEAR)) / (Math.log10(ALT_FAR) - Math.log10(ALT_NEAR))));
-  return EXAG_NEAR + (EXAG_FAR - EXAG_NEAR) * t;
+  const P = EXAG_PTS, la = Math.log10(Math.max(1e-7, alt));
+  if (alt <= P[0][0]) return P[0][1];
+  for (let i = 1; i < P.length; i++) if (alt <= P[i][0]) {
+    const t = (la - Math.log10(P[i - 1][0])) / (Math.log10(P[i][0]) - Math.log10(P[i - 1][0]));
+    return P[i - 1][1] + (P[i][1] - P[i - 1][1]) * t;
+  }
+  return P[P.length - 1][1];
 }
+// the camera's height above the true ground under the looked-at point (radii)
+const camHAboveGround = () => Math.max(1e-6, camera.position.length() - RADIUS - view.groundM / 6371000);
+// b58: what exagFor reads: the camera's height over the drawn look point from the rig alone (view.alt × cos pitch), eased over
+// ~0.3 s. It was the camera's real height over the true ground, which itself contains the ground lifted × exaggeration: a
+// loop (more relief → camera higher → more relief) that pumped the mountains up and down as the ground under the view changed.
+let exagS = 0, lastFrameDt = 0;
+const exagNow = dt => { const t = exagFor(Math.max(1e-6, view.alt * Math.max(0.2, Math.cos(view.pitch))));
+  exagS = exagS > 0 && dt > 0 ? exagS + (t - exagS) * Math.min(1, dt * 3) : exagS > 0 ? exagS : t; return exagS; };
+hazeStart.value = LITE ? 0.6 : 0.8;   // horizon haze starts later on desktop (dots.js farW)
 // The hint at the bottom says what the dots on screen are: the base globe, the terrain tiles, the storm layers.
 const hint = document.getElementById('hint');
 let hintExag = '1', terrainNote = '';   // terrainNote: loading / failure, said in the hint too
@@ -341,7 +434,7 @@ terrainBox.onchange = () => { followTerrain = false; terrainOff = !terrainBox.ch
 // terrain never moves the camera or the thumb.
 const ALT_MAX = 5, ALT_MIN_PLAIN = 0.3;
 // While following a storm the plain globe may come as close as the follow view (FOLLOW_D), below its usual limit.
-const altMin = () => (terrain.enabled ? Math.max(MIN_ALT, detailFloor) : follow ? Math.min(ALT_MIN_PLAIN, FOLLOW_D) : ALT_MIN_PLAIN);
+const altMin = () => (terrain.enabled ? Math.max(MIN_ALT_FINE, detailFloor) : follow ? Math.min(ALT_MIN_PLAIN, FOLLOW_D) : ALT_MIN_PLAIN);
 const clampAlt = a => Math.min(ALT_MAX, Math.max(altMin(), a));
 const zoom = { target: view.alt, cursor: null, held: false, give: 0, spot: null, c0: null, fine: false };
 const slider = document.getElementById('zoom-slider');
@@ -360,7 +453,7 @@ let detailFloorAt = 0, detailFloorC = 0;   // detailFloorC: the floor at the scr
 // the wheel or pinch, or the spot it was aimed at), whichever has finer tiles. Taken at the centre alone, a wheel aimed
 // at Peniche stopped ~200 km up because the centre was out at sea. The anchor then glides to the centre (zoomHold), so
 // by the time the camera is below the outside-box limit the centre is over the fine tiles too.
-const floorOf = m => m / 6371000 * (innerHeight / (2 * Math.tan(camera.fov * D2R / 2))) / DETAIL_PX;
+const floorOf = m => (m <= FINE_M ? MIN_ALT_FINE : m / 6371000 * (innerHeight / (2 * Math.tan(camera.fov * D2R / 2))) / DETAIL_PX);   // 2026-11-25: finest data: the low camera floor
 const finestAt = v => terrain.finestM(Math.asin(Math.max(-1, Math.min(1, v.y))) / D2R, Math.atan2(-v.z, v.x) / D2R);
 function updateDetailFloor(now) {
   if (now - detailFloorAt < 200) return; detailFloorAt = now;
@@ -369,7 +462,7 @@ function updateDetailFloor(now) {
   const fa = zoom.cursor && zoom.anchor ? floorOf(finestAt(zoom.anchor)) : Infinity;
   zoom.fine = fa < detailFloorC * 0.7;                // the anchor sits on finer tiles than the centre: glide it in
   const f = Math.min(detailFloorC, fa);
-  if (f > MIN_ALT && f > detailFloor * 1.05 && view.alt < f * 0.95 && !flight && !arrival) showDetailEnds(true);   // a pan lifted the floor
+  if (f > MIN_ALT_FINE * 1.05 && f > detailFloor * 1.05 && view.alt < f * 0.95 && !flight && !arrival) showDetailEnds(true);   // a pan lifted the floor
   detailFloor = f;
 }
 function showDetailEnds(on) {
@@ -385,11 +478,11 @@ function askAlt(a) {
   // only at the plain globe's limit (0.3): the tiles then load while the base globe still reads, so a cold zoom no longer
   // passes through a second of sparse dots on black and a patchwork of tiles arriving at once
   if ((a < altMin() * 0.98 || (a < 0.9 && a < view.alt)) && !terrain.enabled && !follow && !terrainOff && !arrival) { terrainBox.checked = true; setTerrain(true); }
-  if (a < altMin() * 0.98 && terrain.enabled && detailFloor > MIN_ALT && !follow && !flight) {
+  if (a < altMin() * 0.98 && terrain.enabled && detailFloor > MIN_ALT_FINE * 1.05 && !follow && !flight) {
     showDetailEnds(true);
     // a soft limit: asking past it squeezes in a little further (up to ~10%), then eases back (zoomFrame), so the
     // input never just dies
-    zoom.give = Math.min(0.1, zoom.give + 0.03);
+    zoom.give = Math.min(0.1, zoom.give + 0.03); zoom.giveT = performance.now();
     return Math.min(ALT_MAX, Math.max(altMin() * Math.exp(-zoom.give), a));
   }
   if (a < altMin() * 0.98 && !terrain.enabled && !follow) {
@@ -431,7 +524,7 @@ function zoomAnchor(x, y, keep) {
   const c = new THREE.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1);
   if (keep && zoom.cursor && zoom.anchor) { zoom.cursor = c; return; }
   if (!zoom.cursor || !zoom.anchor || zoom.cursor.distanceTo(c) > 0.004) {   // a new place under the cursor: anchor that ground point
-    zoom.cursor = c; zoom.c0 = c.clone(); zoom.spot = null; applyView(0); zRay.setFromCamera(c, camera);
+    zoom.cursor = c; zoom.c0 = c.clone(); zoom.spot = null; applyView(0); zRay.setFromCamera(c, camera); zSphere.radius = RADIUS + groundLiftR();
     zoom.anchor = zRay.ray.intersectSphere(zSphere, new THREE.Vector3()) ? zRay.ray.intersectSphere(zSphere, new THREE.Vector3()).normalize() : null;
   }
 }
@@ -482,6 +575,7 @@ function zoomHold() {
     if (g < 1 && zoom.c0.lengthSq() * g * g < zoom.cursor.lengthSq()) zoom.cursor.copy(zoom.c0).multiplyScalar(g);
   }
   zRay.setFromCamera(zoom.cursor, camera);
+  zSphere.radius = RADIUS + groundLiftR();            // b58: the drawn ground's height, the same as zoomAnchor's
   if (!zRay.ray.intersectSphere(zSphere, zHit1)) return;
   zQ.setFromUnitVectors(zHit1.normalize(), zoom.anchor);
   rotateRig(zQ);
@@ -491,7 +585,9 @@ function zoomFrame(dt) {
   const alt = view.alt;
   if (flight) zoom.target = alt;                      // a fly-in drives the camera; the slider follows it
   else {
-    zoom.give = Math.max(0, zoom.give - dt * 0.12);   // the soft limit's give eases back (askAlt)
+    // the soft limit's give eases back (askAlt). b58: only once the asking has stopped for 0.35 s: easing back between the
+    // events of a continuous trackpad scroll made the view bob in and out at the limit (part of the shake Benn filmed)
+    if (!(performance.now() - (zoom.giveT || 0) < 350)) zoom.give = Math.max(0, zoom.give - dt * 0.12);
     zoom.target = Math.min(ALT_MAX, Math.max(altMin() * Math.exp(-zoom.give), zoom.target));
     const d = Math.log(zoom.target / alt);
     if (Math.abs(d) > 1e-4) {
@@ -515,7 +611,7 @@ const TILE_IN = 5, TILE_FULL = 9;   // css px between base dots: tiles start to 
 function terrainFrame(now) {
   // relief from the camera's real height, so a low tilted camera sees near-true relief (straight down: as before)
   const alt = camera.position.length() - RADIUS;
-  dotExag.value = exagFor(alt);
+  dotExag.value = exagNow(lastFrameDt);
   seaExag.value = 1 + (dotExag.value - 1) * SEA_EXAG_F;
   occluder.scale.setScalar((1 - 8000 * dotExag.value / 6371000 - 0.002) / 0.995);   // keep it under the sunken sea floor
   updateDetailFloor(now);
@@ -1420,7 +1516,7 @@ function followAim() {
   if (bar) T = bar.getBoundingClientRect().bottom;
   if (pr && pr.width) { if (pr.width < innerWidth * 0.6) L = pr.right; else T = Math.max(T, pr.bottom); }   // phone: the panel spans the width
   const cx = (L + innerWidth) / 2, cy = (T + innerHeight) / 2;
-  aimS.radius = RADIUS + view.look;
+  aimS.radius = RADIUS + view.look + groundLiftR();
   aimRay.setFromCamera(new THREE.Vector2(cx / innerWidth * 2 - 1, -(cy / innerHeight) * 2 + 1), camera);
   if (!aimRay.ray.intersectSphere(aimS, aimH)) return;
   aimP.copy(follow.dir).normalize(); aimH.normalize();
@@ -1600,6 +1696,15 @@ function layerExtras(obj, item, box) {
 // While the live tornado layer is on, the other layers that can dim are dimmed to 0.25; restored when it goes off.
 // "Not an official product…" under the standing line whenever a live or model layer is on (round-2 #1)
 function syncLiveNotice() {
+  // b58 (phone): the panel's one safety line at the top of the layer list (the per-layer copies are hidden on a phone by CSS)
+  const grp = document.getElementById('layers-safety');
+  if (grp) {
+    const any = layers.some(l => NOTICE.liveIds.has(l.userData.layerId) && l.visible);
+    const tw = layers.some(l => l.userData.layerId === 'tornado-live' && l.visible);
+    const txt = NOTICE.liveLayer + (tw ? ' ' + NOTICE.liveExtra['tornado-live'] : '');
+    if (grp.textContent !== txt) grp.textContent = txt;
+    if (grp.hidden === any) grp.hidden = !any;
+  }
   const el = document.getElementById('notice-live'); if (!el) return;
   const on = layers.some(l => NOTICE.globeIds.has(l.userData.layerId) && l.visible);
   if (el.hidden === on) el.hidden = !on;
@@ -1698,6 +1803,7 @@ async function loadLayers() {
   try { const r = await fetch('./layers.json', { cache: 'no-cache' }); if (r.ok) entries = await r.json(); } catch (e) { /* no layers.json: nothing to load */ }
   if (!entries.length) return;
   layerBox.textContent = '';
+  layerBox.appendChild(Object.assign(document.createElement('div'), { id: 'layers-safety', className: 'layer-notice layers-safety', hidden: true }));
   await Promise.all(entries.map(ent => {
     const item = document.createElement('div'); item.className = 'layer-item';
     const row = document.createElement('label'); row.className = 'layer';
@@ -1705,7 +1811,13 @@ async function loadLayers() {
     const txt = document.createElement('span'); txt.textContent = ent.label;
     const state = Object.assign(document.createElement('span'), { className: 'state', textContent: 'loading' });
     row.append(box, txt, state); item.appendChild(row); layerBox.appendChild(item);
-    return loadOne(ent, item, row, box, txt).finally(() => state.remove());
+    // b58 (phone): one line per layer; its status, modes, details and extras open under a small (i) button (CSS shows the
+    // button and collapses the rest on a phone only; desktop keeps the full panel)
+    const ab = Object.assign(document.createElement('button'), { type: 'button', className: 'layer-about', textContent: 'i', hidden: true });
+    ab.setAttribute('aria-label', `About ${ent.label}`); ab.setAttribute('aria-expanded', 'false');
+    ab.onclick = () => { const o = item.classList.toggle('open'); ab.setAttribute('aria-expanded', String(o)); };
+    item.appendChild(ab);
+    return loadOne(ent, item, row, box, txt).finally(() => { state.remove(); ab.hidden = !item.querySelector('.layer-info, .layer-extras'); });
   }));
 }
 loadLayers();
@@ -1962,6 +2074,7 @@ function zoomCluster(cl) {
 }
 function frame(now) {
   const t = now / 1000, dt = Math.max(0, Math.min(0.1, (now - (lastFrame || now)) / 1000)); lastFrame = Math.max(lastFrame, now);
+  lastFrameDt = dt;
   if (arrival) arrivalFrame(now);
   if (flight) stepFlight(now); else { panFrame(); spinFrame(now, dt); }
   followFrame(dt);
@@ -1974,11 +2087,15 @@ function frame(now) {
   followAim();
   if (now - lastTiltSync > 100) { lastTiltSync = now; syncTilt(); }
   const h = camera.position.length() - RADIUS;      // the camera's real height (low when tilted)
-  const near = Math.min(0.005, Math.max(2e-6, h * 0.05)), far = h < 0.2 ? 4 : 100;
+  // 2026-11-25: with terrain on, from the height above the highest drawn ground under and round the camera (camClear,
+  // cameraFloor): over a mountain the sea-level height was several km more than the gap to the nearest ground
+  // Far (low views): past the horizon (plus 0.3 radii for storm columns standing above it) nothing is seen, and dropping the
+  // far side keeps a very close near plane from letting far-side dots through the occluder's depth test.
+  const near = Math.min(0.005, Math.max(2e-6, terrain.enabled ? Math.min(camClear * 0.3, h * 0.1) : h * 0.05)), far = h < 0.2 ? Math.min(4, 2 * Math.sqrt(h * (2 + h)) + 0.3) : 100;
   if (camera.near !== near || camera.far !== far) { camera.near = near; camera.far = far; camera.updateProjectionMatrix(); }
   followGroundFrame();
   if (terrain.enabled) terrainFrame(now);
-  else dotExag.value = exagFor(camera.position.length() - RADIUS);   // base-globe mountains: same eased exaggeration
+  else dotExag.value = exagNow(lastFrameDt);   // base-globe mountains: same eased exaggeration
   if (exagLabel(dotExag.value) !== hintExag) updateHint();
   // following a storm: the Earth's dots dim to 70% so the sea does not swamp the storm's dots (storms session ask)
   const fd0 = followDim; followDim += ((follow ? followDimFor() : 1) - followDim) * Math.min(1, dt * 3);

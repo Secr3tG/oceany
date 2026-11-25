@@ -16,7 +16,7 @@
   { "imports": {
       "three": "../01-seafloor/viewer/vendor/three.module.js",
       "three/addons/": "../01-seafloor/viewer/vendor/addons/",
-      "./dots.js": "./dots.js?v=b43", "./terrain.js": "./terrain.js?v=b43" } }
+      "./dots.js": "./dots.js?v=b58", "./terrain.js": "./terrain.js?v=b58" } }
   </script>
   <style>
     :root { --panel: #060e16; --bg: #04060a; --ink: #cfe6f2; --dim: #6b8696; --open: #5ff2ff; --accent: #5ff2ff; --fc: #8fc2d1; --lock: #4a5a66; --hz: #8ca3b8; }
@@ -279,6 +279,39 @@
     #bar, #panel { margin-top: env(safe-area-inset-top, 0px); margin-left: env(safe-area-inset-left, 0px); }
     #compass { margin-top: env(safe-area-inset-top, 0px); margin-right: env(safe-area-inset-right, 0px); }
     #notice-standing, #card { margin-bottom: env(safe-area-inset-bottom, 0px); }
+    /* b58 (Benn's phone recording): the panel's one safety line for live and model layers (phone); the (i) per layer (phone) */
+    .layers-safety { display: none; }
+    .layer-item { position: relative; }
+    .layer-about { display: none; }
+    @media (max-width: 600px) {
+      /* the panel is a bottom sheet, at most ~45 % of the screen: the globe stays in view above it while choosing */
+      #panel { top: auto; bottom: calc(46px + env(safe-area-inset-bottom, 0px)); max-height: 40vh; max-height: 40dvh; margin-top: 0;
+        border-radius: 14px; padding: 10px 14px; font-size: 14px; z-index: 6; }
+      #panel h2 { font-size: 12px; margin-top: 4px; color: color-mix(in srgb, var(--ink) 70%, var(--dim)); }
+      .layers-safety:not([hidden]) { display: block; font-size: 13px; line-height: 1.35; margin: 0 0 6px; padding: 6px 8px; border-radius: 8px;
+        background: color-mix(in srgb, var(--open) 8%, transparent); color: var(--ink); }
+      .layer-info .layer-notice { display: none; }
+      label.layer { min-height: 40px; padding-right: 48px; font-size: 14px; }
+      .layer-about { display: inline-flex; align-items: center; justify-content: center; position: absolute; right: 0; top: 0; width: 44px; height: 40px;
+        background: none; border: none; color: color-mix(in srgb, var(--ink) 75%, var(--dim)); font: italic 600 14px Georgia, serif; cursor: pointer; padding: 0; }
+      .layer-about::before { content: ''; position: absolute; width: 22px; height: 22px; left: 11px; top: 9px; border-radius: 50%; border: 1px solid currentColor; }
+      .layer-about[hidden] { display: none; }
+      .layer-item.open .layer-about { color: var(--open); }
+      .layer-item:not(.open) > .layer-info, .layer-item:not(.open) > .layer-extras, .layer-item:not(.open) > .live-note { display: none !important; }
+      /* phone text: larger and lighter (grey on black was hard to read) */
+      .layer-info, .layer-details, .live-note, .line, .state, #terrain-readout, #wanted-count, .sub, .layer-more, .layer-extras { font-size: 13px;
+        color: color-mix(in srgb, var(--ink) 78%, var(--dim)); }
+      .layer-details { max-height: none; }
+      .layer-modes button { min-height: 32px; padding: 0 10px; }
+      #notice-standing { font-size: 13px; opacity: 1; color: color-mix(in srgb, var(--ink) 88%, var(--dim)); }
+      #notice-live { opacity: 1; }
+      .lbl { font-size: 13px; }
+      .geo-name { font-size: 12px; color: color-mix(in srgb, var(--ink) 65%, var(--dim)); }
+      #credits, #terrain-credits { font-size: 12px; }
+      /* while the sheet is open the wave forecast bar steps aside (it sat over the sheet's lower half); the sheet carries the
+         safety line and the standing line stays at the bottom */
+      body:has(#panel:not([hidden])) #wavebar { display: none !important; }
+    }
     @media (max-width: 600px) { #zoom { margin-bottom: env(safe-area-inset-bottom, 0px); } }
   </style>
 </head>
@@ -326,7 +359,7 @@
       <details id="terrain-credits" style="display:none"><summary>Terrain credits</summary>
         <span id="tc-own">Terrain: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa);
         produced using Copernicus WorldDEM-30 and WorldDEM-90 &copy; DLR e.V. 2010-2014 and &copy; Airbus Defence and Space GmbH
-        2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. European seas, Morocco, the Canaries, Madeira and the Azores (closer zooms): EMODnet Bathymetry Consortium (2024) EMODnet Digital Bathymetry (DTM 2024), doi:10.12770/cf51df64-56f9-4a99-b1aa-36b8d7b743a1, CC BY 4.0. Hawaii and central California sea floor (closer zooms): NOAA National Centers for Environmental Information, Continuously Updated Digital Elevation Model (CUDEM), doi:10.25921/ds9v-ky35, public domain. Modified by Oceany
+        2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. European seas, Morocco, the Canaries, Madeira and the Azores (closer zooms): EMODnet Bathymetry Consortium (2024) EMODnet Digital Bathymetry (DTM 2024), doi:10.12770/cf51df64-56f9-4a99-b1aa-36b8d7b743a1, CC BY 4.0. Hawaii and central California sea floor (closer zooms): NOAA National Centers for Environmental Information, Continuously Updated Digital Elevation Model (CUDEM), doi:10.25921/ds9v-ky35, public domain. Southern and central California (closer zooms): U.S. Geological Survey, Coastal National Elevation Database (CoNED) topobathymetric models, public domain. Oregon, Washington and Puerto Rico: NOAA NCEI CUDEM (doi:10.25921/ds9v-ky35), public domain. Modified by Oceany
         (resampled, merged, rounded to 1 m). Not for navigation. The organisations in charge of the Copernicus programme by law or by
         delegation do not incur any liability for any use of the Copernicus WorldDEM-30 or WorldDEM-90. Not endorsed by GEBCO, the IHO or the IOC.</span>
         <span id="tc-aws" hidden>Terrain Tiles on AWS Open Data (Mapzen / Tilezen). Global ETOPO1 terrain data U.S. National Oceanic and Atmospheric Administration;
@@ -377,7 +410,7 @@
         <p>Stars: HYG v4.4 (Hipparcos-Yale-Gliese) by astronexus, <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>, <a href="https://codeberg.org/astronexus/hyg" target="_blank" rel="noopener noreferrer">codeberg.org/astronexus/hyg</a>. Filtered to magnitude 6.5; the filtered file is shared under CC BY-SA 4.0.</p>
         <h3>Land and sea floor</h3>
         <p>ETOPO1: NOAA NGDC. EMODnet Bathymetry (CC BY 4.0), DDM50, DGT/APA lidar, Litto3D.</p>
-        <p>Terrain detail: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa); produced using Copernicus WorldDEM-30 and WorldDEM-90 &copy; DLR e.V. 2010-2014 and &copy; Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. European seas, Morocco, the Canaries, Madeira and the Azores (closer zooms): EMODnet Bathymetry Consortium (2024) EMODnet Digital Bathymetry (DTM 2024), doi:10.12770/cf51df64-56f9-4a99-b1aa-36b8d7b743a1, CC BY 4.0. Hawaii and central California sea floor (closer zooms): NOAA National Centers for Environmental Information, Continuously Updated Digital Elevation Model (CUDEM), doi:10.25921/ds9v-ky35, public domain. Modified by Oceany (resampled, merged, rounded to 1 m). Not for navigation. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30 or WorldDEM-90. Not endorsed by GEBCO, the IHO or the IOC.</p>
+        <p>Terrain detail: GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa); produced using Copernicus WorldDEM-30 and WorldDEM-90 &copy; DLR e.V. 2010-2014 and &copy; Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights reserved. European seas, Morocco, the Canaries, Madeira and the Azores (closer zooms): EMODnet Bathymetry Consortium (2024) EMODnet Digital Bathymetry (DTM 2024), doi:10.12770/cf51df64-56f9-4a99-b1aa-36b8d7b743a1, CC BY 4.0. Hawaii and central California sea floor (closer zooms): NOAA National Centers for Environmental Information, Continuously Updated Digital Elevation Model (CUDEM), doi:10.25921/ds9v-ky35, public domain. Southern and central California (closer zooms): U.S. Geological Survey, Coastal National Elevation Database (CoNED) topobathymetric models, public domain. Oregon, Washington and Puerto Rico: NOAA NCEI CUDEM (doi:10.25921/ds9v-ky35), public domain. Modified by Oceany (resampled, merged, rounded to 1 m). Not for navigation. The organisations in charge of the Copernicus programme by law or by delegation do not incur any liability for any use of the Copernicus WorldDEM-30 or WorldDEM-90. Not endorsed by GEBCO, the IHO or the IOC.</p>
         <p>Pipeline: Office for Coastal Management, 2026: 2013 USACE NCMP Topobathy Lidar DEM (LMSL): Oahu, HI, <a href="https://www.fisheries.noaa.gov/inport/item/65476" target="_blank" rel="noopener noreferrer">fisheries.noaa.gov/inport/item/65476</a>. Resampled.</p>
         <h3>Software</h3>
         <p>three.js, MIT, Copyright (c) 2010-2026 three.js authors.</p>
@@ -406,6 +439,6 @@
   </div>
   <div id="hint">Drag to move; right-drag or shift-drag to tilt and turn; scroll, pinch or use the slider to zoom. Each dot is one point of ETOPO1 global relief (NOAA): ocean blue by depth; land coloured by height (olive low ground, brown uplands, grey-brown high plateaus, paler only on the highest peaks; the Antarctic and Greenland ice sheets blue-grey). Colour shows height, not vegetation or snow.</div>
   <script type="module" src="./fullscreen.js?v=f1"></script>
-  <script type="module" src="./globe.js?v=b57"></script>
+  <script type="module" src="./globe.js?v=b58"></script>
 </body>
 </html>

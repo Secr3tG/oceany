@@ -17,12 +17,12 @@
 //  - everything else same-origin the viewer fetches (big lookup T*.bin files, 14 MB slice .bin files) is kept the first
 //    time it is fetched online, so a spot works offline for the parts that were used.
 //  - same-origin: network first (a normal reload is fresh), cached copy when the network is gone.
-const SHELL = 'reefviewer-shell-15', META = 'reefviewer-meta-1';   // b57: reefviewer-tiles-3 (v1 PNGs) is deleted on activate
+const SHELL = 'reefviewer-shell-16', META = 'reefviewer-meta-1';   // b57: reefviewer-tiles-3 (v1 PNGs) is deleted on activate
 const LIVE = ['porto_batel', 'pipeline', 'supertubos', 'guethary', 'hossegor'];
-const SHELL_FILES = ['./', './index.html', './style.css?v=z10', './main.js?v=z17', './play.js?v=c5c', './live.js?v=n2', './tutorial.js?v=c3n',
-  './offline.js?v=o2', './live_core.js?v=n2', './live_lookup.js?v=l4', './swell_model.js?v=c3', './surround.js?v=s6',
+const SHELL_FILES = ['./', './index.html', './style.css?v=z10', './main.js?v=z18', './play.js?v=c5c', './live.js?v=n2', './tutorial.js?v=c3n',
+  './offline.js?v=o3', './live_core.js?v=n2', './live_lookup.js?v=l4', './swell_model.js?v=c3', './surround.js?v=s7',
   './vendor/three.module.js', './vendor/three.core.js', './vendor/addons/controls/OrbitControls.js',
-  '../../07-globe/terrarium.js?v=2', '../../07-globe/tour.js?v=b51', '../../07-globe/terrain-source.js?v=t7', '../../07-globe/tilepack.js?v=p2', './data/slices.json',
+  '../../07-globe/terrarium.js?v=3', '../../07-globe/tour.js?v=b51', '../../07-globe/terrain-source.js?v=t8', '../../07-globe/tilepack.js?v=p2', './data/slices.json',
   '../../06-live-wave/lookup/index.json', '../../06-live-wave/lookup/shore.json',
   '../../06-live-wave/lookup_pipeline/index.json', '../../06-live-wave/lookup_pipeline/shore.json'];
 const LIVE_FILES = LIVE.map(k => `../../../live/${k}.json`);

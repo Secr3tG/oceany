@@ -11,7 +11,7 @@
   "module": "../08-storms/hurricanes_live.js",
   "label": "Hurricanes live (NHC)",
   "on": false,
-  "v": "l1"
+  "v": "l2"
  },
  {
   "id": "tornadoes",
@@ -46,7 +46,7 @@
   "module": "../11-ocean/wind.js",
   "label": "Wind at 10 m (GFS model)",
   "on": false,
-  "v": "g2"
+  "v": "g3"
  },
  {
   "id": "waves",

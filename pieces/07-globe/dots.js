@@ -141,6 +141,16 @@ export const seaExag = { value: 1 };
 // Geomorph threshold for the terrain tiles (see `morph` below), in device pixels: a tile splits into its children when
 // its dots are this far apart on screen. Shared, set by terrain.js every frame (TARGET_PX × refine × pixel ratio).
 export const morphT = { value: 8 };
+// 2026-11-25 (near-first tile budget, terrain.js): the split threshold grows with distance past morphNear (world units),
+// T × clamp(distance / morphNear, 1, morphFarMax), so over budget the far ground coarsens first and the ground near the
+// camera keeps full detail. The geomorph reads the same, per dot. morphNear 1e9: off (one threshold for the whole view).
+export const morphNear = { value: 1e9 }, morphFarMax = { value: 1 };
+// Grazing squash exponent of the split test (terrain.js spacingPx): a tile seen at incidence cos i counts as cos(i)^p
+// denser. 0.5 = the geometric mean of both screen axes (phone); desktop 0.42 keeps tilted ground a little finer closer in.
+export const grazeP = { value: 0.5 };
+// Low-view horizon haze (see farW below): relief eases to true scale and dots fade from hazeStart to 1.05 × the horizon
+// distance. 0.6 phone; desktop 0.8 (set by globe.js), so long low views keep their relief further out.
+export const hazeStart = { value: 0.6 };
 
 // Optional, used by the terrain tiles: displace: true reads a per-dot 'aElev' attribute (metres) and lifts each dot
 // along the local vertical by aElev × dotExag / 6,371,000. Positions may be relative to a tile origin: pass that
@@ -171,12 +181,12 @@ export function makeDotMaterial({ size = 0.006, color = 0xffffff, vertexColors =
   return new THREE.ShaderMaterial({
     uniforms: { uSize: { value: size }, uMaxPx: { value: maxPx }, uCapComp: { value: capComp }, uGrazeMin: { value: grazeMin }, uFarK: { value: farK }, uHueMax: hueMax === HUE_MAX ? hueMaxU : { value: hueMax }, uScale: dotScale, uColor: { value: c }, uOpacity: { value: opacity },
       uExag: dotExag, uSeaExag: seaExag, uCenter: { value: center ? center.clone() : new THREE.Vector3() },
-      uMorphT: morphT, uSpacing: { value: morph ? morph.spacing : 0 }, uGraze: { value: morph && morph.graze ? 1 : 0 }, uEdge: { value: new THREE.Vector4(0, 0, 0, 0) },
+      uMorphT: morphT, uMorphNear: morphNear, uMorphFarMax: morphFarMax, uGrazeP: grazeP, uHazeStart: hazeStart, uSpacing: { value: morph ? morph.spacing : 0 }, uGraze: { value: morph && morph.graze ? 1 : 0 }, uEdge: { value: new THREE.Vector4(0, 0, 0, 0) },
       uCover: { value: cover ? cover.texture : coverIn }, uCoverK: cover ? cover.k : { value: 0 } },
     defines,
     vertexColors, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     vertexShader: /* glsl */`
-      uniform float uSize, uScale, uExag, uSeaExag, uMaxPx, uCapComp, uGrazeMin, uFarK, uHueMax; uniform vec3 uColor, uCenter;
+      uniform float uSize, uScale, uExag, uSeaExag, uMaxPx, uCapComp, uGrazeMin, uFarK, uHueMax, uHazeStart; uniform vec3 uColor, uCenter;
       varying vec3 vColor; varying float vFade;
       #ifdef DISPLACE
         attribute float aElev;
@@ -221,7 +231,7 @@ export function makeDotMaterial({ size = 0.006, color = 0xffffff, vertexColors =
       #endif
       #ifdef MORPH
         attribute vec4 aPar; attribute float aParElev; attribute vec3 aParCol;
-        uniform float uMorphT, uSpacing, uGraze;
+        uniform float uMorphT, uSpacing, uGraze, uMorphNear, uMorphFarMax, uGrazeP;
         uniform vec4 uEdge;   // b38: west, east, north, south edge borders a coarser drawn tile (1) or not (0); set by terrain.js
       #endif
       void main() {
@@ -234,9 +244,10 @@ export function makeDotMaterial({ size = 0.006, color = 0xffffff, vertexColors =
           vec4 mv0 = modelViewMatrix * vec4(position, 1.0);
           float dist = length(mv0.xyz);
           vec3 nrm = normalize(position + uCenter);
-          float g = uGraze > 0.5 ? sqrt(max(0.0625, abs(dot(normalize(-mv0.xyz), normalize(normalMatrix * nrm))))) : 1.0;
+          float g = uGraze > 0.5 ? pow(max(0.0625, abs(dot(normalize(-mv0.xyz), normalize(normalMatrix * nrm)))), uGrazeP) : 1.0;
           float sPx = uSpacing * aSize * uScale / max(1e-9, dist) * g;
-          float m = 1.0 - smoothstep(0.5 * uMorphT, uMorphT, sPx);
+          float mT = uMorphT * clamp(dist / uMorphNear, 1.0, uMorphFarMax);   // near-first budget: far dots split later
+          float m = 1.0 - smoothstep(0.5 * mT, mT, sPx);
           #ifdef MORPH_N
             // b38 (Egmond seam): where the drawn detail steps down a level (a spot box edge, terrain.js nearCap) the finer tile's
             // dots stood at full grain against the coarser tile's: a straight ×2 step in dot size and spacing, worst close and
@@ -249,7 +260,7 @@ export function makeDotMaterial({ size = 0.006, color = 0xffffff, vertexColors =
             // 2026-11-23: 40 → 96 × T. TARGET_PX went 4 → 2.5 (terrain.js), which had shortened this ramp from ~160 to ~100
             // device px, and the EMODnet / spot box edges showed a step (measured: ~100 px wide at 60 km, ×2 dot size). Now
             // ~240 px at T = 2.5: the grain changes over about a fifth of the screen.
-            float eK = max(1.0, float(MORPH_N) * sPx / (96.0 * uMorphT));   // tile widths per ramp length
+            float eK = max(1.0, float(MORPH_N) * sPx / (96.0 * mT));   // tile widths per ramp length
             #define EDGE_R(d) (1.0 - smoothstep(0.0, 1.0, (d) * eK))
             float mE = max(max(uEdge.x * EDGE_R(eu), uEdge.y * EDGE_R(1.0 - eu)), max(uEdge.z * EDGE_R(ev), uEdge.w * EDGE_R(1.0 - ev)));
             m = max(m, mE);
@@ -266,9 +277,10 @@ export function makeDotMaterial({ size = 0.006, color = 0xffffff, vertexColors =
           // (Greenland and Iceland seen from Norway) was lifted ×7 and drawn at full brightness: a pale slab floating over the
           // horizon with a hard lower edge. From 0.6 to 1.05 × the distance to the horizon, a dot's relief eases back to true
           // scale and the dot fades out (90 %), like the base globe's horizon fade. Low views only (full under 0.12 radii, none above 0.3).
+          // 2026-11-25: the start is uHazeStart (0.6 phone, 0.8 desktop, set by globe.js): long low desktop views keep relief further out.
           float camH = max(1e-5, length(cameraPosition) - 1.0), dHz = sqrt(camH * (2.0 + camH));
           float d0 = length((modelViewMatrix * vec4(position, 1.0)).xyz);
-          farW = smoothstep(0.6 * dHz, 1.05 * dHz, d0) * (1.0 - smoothstep(0.12, 0.3, camH));
+          farW = smoothstep(uHazeStart * dHz, 1.05 * dHz, d0) * (1.0 - smoothstep(0.12, 0.3, camH));
         #endif
         #ifdef DISPLACE
           float ex = h < 0.0 ? uSeaExag : uExag;
@@ -306,7 +318,10 @@ export function makeDotMaterial({ size = 0.006, color = 0xffffff, vertexColors =
           // the brightness per screen area about what it is seen from above.
           float cIs = dot(normalize(-mv.xyz), normalize(normalMatrix * normalize(position + uCenter)));
           float cI = abs(cIs);
-          float gFloor = 0.1;
+          // 2026-11-25: no floor in the low-view horizon haze (farW): from a camera a few hundred metres up, dots at about sea
+          // level (coast, shallow water, sea-level land) pile up edge-on at the horizon and summed to a thin bright cyan line
+          // across the screen (Hawaii). Faded out there instead; relief standing up out of the haze (cI not grazing) is unchanged.
+          float gFloor = 0.1 * (1.0 - farW);
           #ifdef DOT_K
             // deep-water dots are ~2.2× wider, so they overlap more toward the horizon: they fade further (bright blue
             // streaks of exaggerated sea floor summed at the horizon in low, tilted views). Round 3 (#6): from cos 0.6, squared,
@@ -316,7 +331,11 @@ export function makeDotMaterial({ size = 0.006, color = 0xffffff, vertexColors =
             // showed above the true horizon as a second, ghost limb. Dropped, like the base globe's far-side dots.
             if (cIs < 0.0 && aDotK > 1.62) vFade = 0.0;
           #endif
-          vFade *= clamp(cI / 0.45, gFloor, 1.0);
+          // 2026-11-25: the floor itself eases out below cos 0.05. From a camera a few hundred metres up, flat ground near sea level
+          // 30-60 km out is seen at cos 0.005-0.02 and all of it lands on two or three screen rows at the horizon, so even the
+          // 0.1 floor summed to a thin bright cyan line across the screen (Hawaii, Peniche). From 9 km and higher the horizon is
+          // seen at cos >= 0.05, so normal views are unchanged.
+          vFade *= max(cI / 0.45, gFloor * smoothstep(0.0, 0.05, cI));
         #endif
         #ifdef GRAZE_FADE
           // the same toward the limb for the base globe (its wide overlapping dots summed to a white ring); floor uGrazeMin

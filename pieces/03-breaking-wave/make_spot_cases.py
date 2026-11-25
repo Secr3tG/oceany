@@ -1,6 +1,6 @@
 import re, sys
 from pathlib import Path
-D = Path("/Users/bennhvid/Mothership/products/Oceany/pieces/03-breaking-wave")
+D = Path(__file__).resolve().parent
 src = (D / "case_porto_batel.py").read_text()
 i0 = src.index("CFG = dict(")
 i1 = src.index("_prof = None")
@@ -12,17 +12,17 @@ SPOTS = {
      sat=105.0, sat_c="published Pipeline position (approx.), 45 m from the shoreline", t_end=85.0,
      src_c="NOAA NDBC 51201 Waimea, Nov-Mar 2024-25, NW long-period median (2.11 m, 14.3 s, 320 deg)"),
  "supertubos": dict(title="Supertubos, Peniche", datum="LAT", tide=1.7, tide_c="m above LAT (~ Peniche mean level)",
-     H=2.2, T=13.5, sp=280.0, sp_c="wavemaker 220 m seaward of the shoreline (s = 60 + 220); 8.9 m of water at this tide",
+     H=1.82, T=12.2, sp=280.0, sp_c="wavemaker 220 m seaward of the shoreline (s = 60 + 220); 8.9 m of water at this tide",
      sat=99.0, sat_c="model break onset (simulate_swell_spot.py), 39 m from the shoreline; approx.", t_end=85.0,
-     src_c="Open-Meteo Marine hindcast, Nov-Mar 2024-26 median swell (2.22 m, 13.5 s, 304 deg)"),
+     src_c="NOAA NCEP GFS-Wave (WAVEWATCH III) 0.25 deg analysis (f000), 39.375 N 9.458 W, Nov-Mar 2024-25 + 2025-26, 193 samples, median primary swell (1.82 m, 12.2 s, 295 deg; pieces/11-ocean/data/typical_swell.json). Rerun 2026-11-25 as s2 (out/supertubos_s2); the s1 run used the earlier Open-Meteo median (2.22 m, 13.5 s)"),
  "guethary": dict(title="Guethary / Parlementia, France", datum="IGN69", tide=0.0, tide_c="m above IGN69 (~ mean sea level on this coast, within ~0.2 m)",
-     H=1.6, T=13.5, sp=340.0, sp_c="wavemaker 280 m seaward of the shoreline (s = 60 + 280); ~5.4 m of water (9 m water is ~420 m out, beyond the s 60-340 tool window)",
+     H=1.31, T=12.4, sp=340.0, sp_c="wavemaker 280 m seaward of the shoreline (s = 60 + 280); ~5.4 m of water (9 m water is ~420 m out, beyond the s 60-340 tool window)",
      sat=235.0, sat_c="published Parlementia position (approx.), 175 m from the shoreline", t_end=85.0,
-     src_c="Open-Meteo Marine hindcast, 43.45 N 1.70 W, Nov-Mar 2024-26 median swell (1.58 m, 13.5 s, 305 deg)"),
+     src_c="NOAA NCEP GFS-Wave (WAVEWATCH III) 0.25 deg analysis (f000), 43.45 N 1.70 W, Nov-Mar 2024-25 + 2025-26, 189 samples, median primary swell (1.31 m, 12.4 s, 303 deg; pieces/11-ocean/data/typical_swell.json). Rerun 2026-11-25 as s2 (out/guethary_s2); the s1 run used the earlier Open-Meteo median (1.58 m, 13.5 s)"),
  "hossegor": dict(title="Hossegor / La Graviere, France", datum="IGN69", tide=0.0, tide_c="m above IGN69 (~ mean sea level on this coast, within ~0.2 m)",
-     H=1.6, T=13.5, sp=535.0, sp_c="wavemaker 475 m seaward of the shoreline (s = 60 + 475); 8.1 m of water, seaward of the outer bar (crest ~6.0 m at 350-360 m out). Long domain: spot_run.py widens the tool window to s 60-515",
+     H=1.31, T=12.4, sp=535.0, sp_c="wavemaker 475 m seaward of the shoreline (s = 60 + 475); 8.1 m of water, seaward of the outer bar (crest ~6.0 m at 350-360 m out). Long domain: spot_run.py widens the tool window to s 60-515",
      sat=159.0, sat_c="published La Graviere position (approx.), 99 m from the shoreline", t_end=100.0,
-     src_c="Open-Meteo Marine hindcast, 43.45 N 1.70 W, Nov-Mar 2024-26 median swell (1.58 m, 13.5 s, 305 deg)"),
+     src_c="NOAA NCEP GFS-Wave (WAVEWATCH III) 0.25 deg analysis (f000), 43.45 N 1.70 W, Nov-Mar 2024-25 + 2025-26, 189 samples, median primary swell (1.31 m, 12.4 s, 303 deg; pieces/11-ocean/data/typical_swell.json). Rerun 2026-11-25 as s2 (out/hossegor_s2); the s1 run used the earlier Open-Meteo median (1.58 m, 13.5 s)"),
 }
 def make(spot, S, factor=1.0):
     doc = f'''"""case_{spot}: regular swell breaking on the {S["title"]} profile (2D slice). ILLUSTRATIVE, NOT A FORECAST.
