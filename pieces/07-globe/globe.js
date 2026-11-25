@@ -2290,7 +2290,7 @@ function tourResume() {
 }
 addEventListener('pageshow', e => { if (e.persisted) tourResume(); });
 function tourEnd() { if (TOUR.g && TOUR.g.on) TOUR.g.end(); else TOUR.on = false; }
-window.__globe = { LITE, sky, frame, spin, setSpeed, THREE, renderer, terrain, scene, camera, view, zoom, setTerrain, perf, flyToStorm, get follow() { return follow; }, get flight() { return flight; }, regions, layers, latLonToVector3, pickRegion, earth, dotCount: N, POP, popOpen, popClose, tapSpot, TOUR, tourStart, PROFILE };
+window.__globe = { LITE, sky, frame, spin, setSpeed, THREE, renderer, terrain, scene, camera, view, zoom, setTerrain, perf, flyToStorm, get follow() { return follow; }, get flight() { return flight; }, regions, layers, latLonToVector3, pickRegion, earth, dotCount: N, POP, popOpen, popClose, tapSpot, TOUR, tourStart, PROFILE, releaseFollow };   // releaseFollow: the Wonders tour (wonders.js) lets go of a followed storm before it flies
 // ---------- offline (opt-in): ?offline=1 registers sw.js (app shell and terrain tiles kept for offline use); ?offline=0
 // unregisters it and deletes its caches. Without the parameter nothing changes (an earlier opt-in stays until ?offline=0).
 {
