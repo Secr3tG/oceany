@@ -111,7 +111,8 @@ class R2:
                         AWS_REQUEST_CHECKSUM_CALCULATION="when_required", AWS_RESPONSE_CHECKSUM_VALIDATION="when_required")
         self.endpoint = f"https://{os.environ['R2_ACCOUNT_ID']}.r2.cloudflarestorage.com"
     def aws(self, *args, check=True):
-        return subprocess.run(["aws", "s3", *args, "--endpoint-url", self.endpoint, "--only-show-errors"],
+        quiet = ["--only-show-errors"] if args and args[0] in ("cp", "rm", "mv", "sync") else []  # `ls` rejects it
+        return subprocess.run(["aws", "s3", *args, "--endpoint-url", self.endpoint, *quiet],
                               env=self.env, check=check, capture_output=True)
     def read(self, key):
         r = self.aws("cp", f"s3://{self.bucket}/{key}", "-", check=False)
