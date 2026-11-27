@@ -27,7 +27,7 @@ from spots import SPOTS  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "snapshots")
-MSL_MINUS_LAT, DATUM_UNC = 1.66, [0.1, 0.3]
+MSL_MINUS_LAT, DATUM_UNC = SPOTS["porto_batel"]["msl_to_map_m"], [0.1, 0.3]   # LAT = MSL - 1.66 m (spots.json)
 LOOKUP_RANGE = dict(hs=(0.5, 5.0), tp=(6, 20), dir=(250, 360), tide_lat=(0.0, 4.0))   # pieces/06-live-wave/lookup/
 # Per reef-model site (spots.py stage_a_site): offset from the tide feed's MSL to the site's map datum, table range, wording.
 # Porto Batel keeps the original constants. Pipeline: the lidar is on LMSL and the CO-OPS station MSL is taken as LMSL (offset 0, not checked).
@@ -36,7 +36,7 @@ STAGE_A_SITES = {
                         datum=f"tide_lat = msl + {MSL_MINUS_LAT} m", unc=DATUM_UNC,
                         hs_note="forecast Hs is used as the lookup's H0 (height at the reef domain edge, ~14 m deep)",
                         geometry="offsets -600..600 m every 25 m, line 236 deg, along 326 deg from the house"),
-    "pipeline": dict(site="pipeline", msl_to_map=0.0, range=dict(hs=(0.5, 8.0), tp=(8, 22), dir=(270, 390), tide_lat=(-0.3, 0.9)),
+    "pipeline": dict(site="pipeline", msl_to_map=SPOTS["pipeline"]["msl_to_map_m"], range=dict(hs=(0.5, 8.0), tp=(8, 22), dir=(270, 390), tide_lat=(-0.3, 0.9)),
                      lookup="pieces/06-live-wave/lookup_pipeline/index.json",
                      datum="tide_lat = CO-OPS Honolulu MSL prediction, taken as height above LMSL at Pipeline (the lidar datum; offset and timing not checked)", unc=None,
                      hs_note="forecast Hs is used as H0 at the seaward edge of the lidar (~1.2 km out, 14-35 m deep, ~17 m off Pipeline)",

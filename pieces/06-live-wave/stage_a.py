@@ -30,22 +30,32 @@ import numpy as np
 import xarray as xr
 from scipy import ndimage as ndi
 
+try:                                   # numba compiles fast_march's loop to machine code (same maths, same numbers, ~80x faster)
+    from numba import njit
+except ImportError:                    # without numba the same functions run as plain Python, just slower
+    def njit(*args, **kwargs):
+        return args[0] if args and callable(args[0]) else (lambda f: f)
+
 HERE = Path(__file__).resolve().parent
 NC = HERE.parent / "02-reefs" / "data" / "raw" / "590_HR_Lidar_Centro.nc"
-HOUSE_LAT, HOUSE_LON = 39.319506, -9.355772
-M_PER_DEG = 111195.0
-G = 9.81
-HALF, DX = 1200.0, 10.0          # crest_lines.py defaults
-GAMMA = 0.78                     # height_break_peel.py default (not tuned)
-SMOOTH = 2.0                     # height_break_peel.py default
-LINE_DEG, ALONG_DEG = 236.0, 326.0   # house line toward the sea, and alongshore offset direction
-PROFILE_OFFSETS = np.arange(-600.0, 600.0 + 1, 25.0)   # alongshore offsets of the break-line profiles, m (49)
 import sys as _sys
 _sys.path.insert(0, str(HERE))
 import sites as _sites  # noqa: E402
-PB = _sites.PORTO_BATEL   # its values are the constants above (checked in __main__)
+PB = _sites.PORTO_BATEL   # Porto Batel's geometry, from spots.json via sites.py
+HOUSE_LAT, HOUSE_LON = PB["origin_lat"], PB["origin_lon"]
+M_PER_DEG = 111195.0
+G = 9.81
+HALF, DX = PB["half"], PB["dx"]   # crest_lines.py defaults
+GAMMA = 0.78                     # height_break_peel.py default (not tuned)
+SMOOTH = 2.0                     # height_break_peel.py default
+LINE_DEG, ALONG_DEG = PB["line_deg"], PB["along_deg"]   # house line toward the sea, and alongshore offset direction
+PROFILE_OFFSETS = PB["profile_offsets"]   # alongshore offsets of the break-line profiles, m (49)
 
 # ---------------------------------------------------------------- moved from crest_lines.py (unchanged)
+# wavenumber stays plain numpy on purpose (2026-11-27). Tried: numba, and stopping Newton on a tolerance. Both change k
+# in the last binary digit for 15-20% of cells (numba's scalar tanh is not numpy's vectorised tanh, and some cells flip
+# between two neighbouring floats forever, so no tolerance stop is exact). That moves breaker heights and peel numbers
+# by ~1e-13: harmless, but no longer "bit-for-bit the same". It is ~3% of phase_part's time, so it is not worth it.
 def wavenumber(T, h):
     """Solve omega^2 = g k tanh(k h) for k, any h > 0 (array). Newton on k, started from the shallow/deep blend."""
     w2 = (2 * np.pi / T) ** 2
@@ -83,20 +93,35 @@ def load_bed(half=HALF, dx=DX):
 
 
 def fast_march(k, wet, seeds, seed_phi, dx):
-    """First-order fast marching for |grad phi| = k on wet cells. seeds: boolean array; seed_phi: phi there."""
+    """First-order fast marching for |grad phi| = k on wet cells. seeds: boolean array; seed_phi: phi there.
+    (A thin wrapper: it hands clean float/bool arrays to the compiled loop below.)"""
+    f8 = lambda a: np.ascontiguousarray(a, dtype=np.float64)
+    b1 = lambda a: np.ascontiguousarray(a, dtype=np.bool_)
+    return _fast_march(f8(k), b1(wet), b1(seeds), f8(seed_phi), float(dx))
+
+
+@njit(cache=True)
+def _fm_update(phi, k, j, i, ny, nx, dx):
+    """The new phi at cell (j, i) from its known neighbours: 2-D eikonal update, 1-D when only one axis helps."""
+    ax = min(phi[j, i - 1] if i > 0 else np.inf, phi[j, i + 1] if i < nx - 1 else np.inf)
+    ay = min(phi[j - 1, i] if j > 0 else np.inf, phi[j + 1, i] if j < ny - 1 else np.inf)
+    s = k[j, i] * dx
+    if np.isfinite(ax) and np.isfinite(ay) and abs(ax - ay) < s:
+        return 0.5 * (ax + ay + np.sqrt(2 * s * s - (ax - ay) ** 2))
+    return min(ax, ay) + s
+
+
+@njit(cache=True)
+def _fast_march(k, wet, seeds, seed_phi, dx):
     ny, nx = k.shape
     phi = np.full(k.shape, np.inf)
-    done = np.zeros(k.shape, bool)
-    heap = []
-    for j, i in zip(*np.nonzero(seeds & wet)):
+    done = np.zeros(k.shape, np.bool_)
+    heap = [(0.0, 0, 0)]                         # one dummy entry tells numba what the heap holds; removed next line
+    heap.pop()
+    js, iis = np.nonzero(seeds & wet)
+    for n in range(js.size):
+        j, i = js[n], iis[n]
         phi[j, i] = seed_phi[j, i]; heapq.heappush(heap, (phi[j, i], j, i))
-    def update(j, i):
-        ax = min(phi[j, i - 1] if i > 0 else np.inf, phi[j, i + 1] if i < nx - 1 else np.inf)
-        ay = min(phi[j - 1, i] if j > 0 else np.inf, phi[j + 1, i] if j < ny - 1 else np.inf)
-        s = k[j, i] * dx
-        if np.isfinite(ax) and np.isfinite(ay) and abs(ax - ay) < s:
-            return 0.5 * (ax + ay + np.sqrt(2 * s * s - (ax - ay) ** 2))
-        return min(ax, ay) + s
     while heap:
         p, j, i = heapq.heappop(heap)
         if done[j, i]:
@@ -104,7 +129,7 @@ def fast_march(k, wet, seeds, seed_phi, dx):
         done[j, i] = True
         for jj, ii in ((j - 1, i), (j + 1, i), (j, i - 1), (j, i + 1)):
             if 0 <= jj < ny and 0 <= ii < nx and wet[jj, ii] and not done[jj, ii]:
-                v = update(jj, ii)
+                v = _fm_update(phi, k, jj, ii, ny, nx, dx)
                 if v < phi[jj, ii]:
                     phi[jj, ii] = v; heapq.heappush(heap, (v, jj, ii))
     return phi

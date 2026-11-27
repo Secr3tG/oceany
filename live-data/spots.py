@@ -11,14 +11,26 @@ public: feed names that go into the slim public snapshot live/<spot>.json (build
 excluded_public: feed -> why it stays out of the public file (terms unclear, or too slow for a scheduled job).
 map_datum / msl_to_map_m: the datum of the spot's sea-floor map and the offset added to the forecast sea level (MSL)
         to get "tide above the map datum". Only Peniche has a measured offset (LAT = MSL - 1.66 m, notes/forecast-fields.md).
-The viewer mirrors this table in pieces/01-seafloor/viewer/live_core.js (LIVE_SPOTS); change both together.
+Name, lat/lon, map_datum and msl_to_map_m come from the spot registry ../spots.json (one place for every script);
+this file adds the feeds. The viewer mirrors the table in pieces/01-seafloor/viewer/live_core.js (LIVE_SPOTS); change both together.
 """
+import json
+from pathlib import Path
+
+REGISTRY = json.loads((Path(__file__).resolve().parent.parent / "spots.json").read_text())
+
+
+def where(key):
+    """name, lat, lon, map_datum, msl_to_map_m of one spot, from spots.json."""
+    r = REGISTRY[key]
+    return dict(name=r["name"], lat=r["lat"], lon=r["lon"], map_datum=r["datum"], msl_to_map_m=r["msl_to_datum_m"])
+
 
 KYST_TERMS = "kystatlas.kyst.dk states no licence or terms of use (checked 2026-11-16); same buoy reaches the public file via Copernicus in-situ"
 
 SPOTS = {
     "porto_batel": dict(
-        name="Porto Batel (Peniche)", lat=39.319506, lon=-9.355772,   # the house; Stage A domain centre
+        **where("porto_batel"),   # the house; Stage A domain centre
         stage_a=True,                                                 # lookup table exists: pieces/06-live-wave/lookup/
         feeds=[
             ("gfs_wave", {}),
@@ -28,9 +40,9 @@ SPOTS = {
         ],
         public=["gfs_wave", "cmems_wave", "cmems_sea_level"],
         excluded_public=dict(cmems_insitu="wave sensor NaN since 14 Nov 2026"),
-        map_datum="LAT", msl_to_map_m=1.66),
+    ),
     "klitmoller": dict(
-        name="Klitmoller", lat=57.04, lon=8.49, stage_a=False,
+        **where("klitmoller"), stage_a=False,
         feeds=[
             ("gfs_wave", {}),
             ("cmems_wave", dict(dataset="cmems_mod_nws_wav_anfc_1.5km_PT1H-i", label="Copernicus NWS wave 1.5 km")),
@@ -42,9 +54,9 @@ SPOTS = {
         ],
         public=["gfs_wave", "cmems_wave", "dmi_wam", "cmems_sea_level", "cmems_insitu", "dmi_water_level"],
         excluded_public=dict(kyst_buoy=KYST_TERMS),
-        map_datum=None, msl_to_map_m=None),   # the North Sea maps carry no swell model, so no tide is applied to them
+    ),   # datum: the North Sea maps carry no swell model, so no tide is applied to them
     "hvide_sande": dict(
-        name="Hvide Sande", lat=56.00, lon=8.10, stage_a=False,
+        **where("hvide_sande"), stage_a=False,
         feeds=[
             ("gfs_wave", {}),
             ("cmems_wave", dict(dataset="cmems_mod_nws_wav_anfc_1.5km_PT1H-i", label="Copernicus NWS wave 1.5 km")),
@@ -56,18 +68,18 @@ SPOTS = {
         ],
         public=["gfs_wave", "cmems_wave", "dmi_wam", "cmems_sea_level", "cmems_insitu", "dmi_water_level"],
         excluded_public=dict(kyst_buoy=KYST_TERMS),
-        map_datum=None, msl_to_map_m=None),   # no sea-floor map of Hvide Sande in the viewer
+    ),   # datum: no sea-floor map of Hvide Sande in the viewer
     "tel_aviv": dict(
-        name="Tel Aviv", lat=32.08, lon=34.76, stage_a=False,
+        **where("tel_aviv"), stage_a=False,
         feeds=[
             ("gfs_wave", {}),
             ("cmems_wave", dict(dataset="cmems_mod_med_wav_anfc_4.2km_PT1H-i", label="Copernicus MED wave 4.2 km")),
             ("cmems_sea_level", dict(dataset="cmems_mod_med_phy-ssh_anfc_4.2km_PT15M-i", label="Copernicus MED sea level")),
         ],
         public=["gfs_wave", "cmems_wave", "cmems_sea_level"], excluded_public={},
-        map_datum=None, msl_to_map_m=None),   # no sea-floor map of Tel Aviv in the viewer   # no open buoy (live-feeds.md: IMS needs a key, IOLR did not respond)
+    ),   # no sea-floor map of Tel Aviv in the viewer; no open buoy (live-feeds.md: IMS needs a key, IOLR did not respond)
     "pipeline": dict(
-        name="Pipeline (Oahu)", lat=21.665, lon=-158.053,
+        **where("pipeline"),
         stage_a=True, stage_a_site="pipeline",                        # sites.PIPELINE; table pieces/06-live-wave/lookup_pipeline/
         feeds=[
             ("gfs_wave", {}),
@@ -79,24 +91,24 @@ SPOTS = {
         excluded_public=dict(ndbc="51201 is owned by PacIOOS and its data provided by Scripps (CDIP, NDBC station page); "
                                   "CDIP terms: free public use 'provided that they are not altered in any way'. A model-minus-buoy "
                                   "bias is a derived value, so it stays out until Benn decides (checked 2026-11-16)"),
-        map_datum="LMSL", msl_to_map_m=0.0),   # lidar on local MSL; CO-OPS station MSL taken as the same level (not checked)
+    ),   # datum: lidar on local MSL; CO-OPS station MSL taken as the same level (not checked)
     # Reef maps without a reef model: forecast numbers and the browser swell model.
     "supertubos": dict(
-        name="Supertubos (Peniche)", lat=39.3398, lon=-9.3619, stage_a=False,
+        **where("supertubos"), stage_a=False,
         feeds=[("gfs_wave", {}), ("cmems_wave", dict(dataset="cmems_mod_ibi_wav_anfc_0.027deg_PT1H-i", label="Copernicus IBI wave 0.027 deg")),
                ("cmems_sea_level", dict(dataset="cmems_mod_ibi_phy_anfc_0.027deg-2D_PT15M-i", label="Copernicus IBI sea level"))],
         public=["gfs_wave", "cmems_wave", "cmems_sea_level"], excluded_public={},
-        map_datum="LAT", msl_to_map_m=1.66),   # same Peniche LAT offset as Porto Batel (same 2011 lidar)
+    ),   # datum: same Peniche LAT offset as Porto Batel (same 2011 lidar)
     "guethary": dict(
-        name="Guethary / Parlementia", lat=43.427718, lon=-1.611053, stage_a=False,
+        **where("guethary"), stage_a=False,
         feeds=[("gfs_wave", {}), ("cmems_wave", dict(dataset="cmems_mod_ibi_wav_anfc_0.027deg_PT1H-i", label="Copernicus IBI wave 0.027 deg")),
                ("cmems_sea_level", dict(dataset="cmems_mod_ibi_phy_anfc_0.027deg-2D_PT15M-i", label="Copernicus IBI sea level"))],
         public=["gfs_wave", "cmems_wave", "cmems_sea_level"], excluded_public={},
-        map_datum="IGN69", msl_to_map_m=0.0),   # IGN69 zero within ~0.2 m of mean level (simulate_swell_spot.py tide_note)
+    ),   # datum: IGN69 zero within ~0.2 m of mean level (simulate_swell_spot.py tide_note)
     "hossegor": dict(
-        name="Hossegor / La Graviere", lat=43.67562, lon=-1.443375, stage_a=False,
+        **where("hossegor"), stage_a=False,
         feeds=[("gfs_wave", {}), ("cmems_wave", dict(dataset="cmems_mod_ibi_wav_anfc_0.027deg_PT1H-i", label="Copernicus IBI wave 0.027 deg")),
                ("cmems_sea_level", dict(dataset="cmems_mod_ibi_phy_anfc_0.027deg-2D_PT15M-i", label="Copernicus IBI sea level"))],
         public=["gfs_wave", "cmems_wave", "cmems_sea_level"], excluded_public={},
-        map_datum="IGN69", msl_to_map_m=0.0),
+    ),
 }

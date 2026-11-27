@@ -287,8 +287,9 @@ def build_wind(fh, entry):
         st = 0.25 * every
         sp = np.hypot(a[0].astype(float), a[1].astype(float)) * 0.5
         k = int(np.argmax(sp))
-        entry["wpeak"] = {"s": round(float(sp.flat[k]), 1), "lat": round(-90 + st * (k // a.shape[2]), 1),
-                          "lon": round(((st * (k % a.shape[2])) + 180) % 360 - 180, 1)}
+        if "wpeak" not in entry:   # keep the finer whi peak; wlo only fills steps past HI_MAX
+            entry["wpeak"] = {"s": round(float(sp.flat[k]), 1), "lat": round(-90 + st * (k // a.shape[2]), 1),
+                              "lon": round(((st * (k % a.shape[2])) + 180) % 360 - 180, 1)}
     entry["windSource"] = url
 
 

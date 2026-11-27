@@ -1,0 +1,76 @@
+{
+  "_about": [
+    "One registry of the spots: where each spot is, which vertical datum its sea-floor map uses, and the Stage A grid.",
+    "Read by live-data/spots.py, live-data/build_snapshot.py, pieces/06-live-wave/sites.py and stage_a.py,",
+    "pieces/02-reefs/simulate_swell_spot.py and pieces/03-breaking-wave/make_spot_cases.py and spot_run.py.",
+    "Change a value here and every Python script picks it up. The browser viewer keeps its own copy",
+    "(pieces/01-seafloor/viewer/live_core.js LIVE_SPOTS and others): change those by hand until it reads this file.",
+    "Fields: name = short name (live panel); title = long name (renders, case files);",
+    "lat/lon = the point the live forecast cells are picked around (decimal degrees, lon negative west);",
+    "datum = vertical datum of the spot's sea-floor map (null: no map with a swell model);",
+    "msl_to_datum_m = added to a forecast sea level (MSL) to get the tide above that datum (Peniche: LAT = MSL - 1.66 m);",
+    "takeoff = the surf spot's take-off point and where the coordinate comes from;",
+    "viewer_points = the spot's point-cloud file in pieces/01-seafloor/viewer/data/;",
+    "typical_swell = the 'typical winter swell' the illustrative runs use (H0 m, T s, direction FROM deg, tide m above datum);",
+    "stage_a = the Stage A reef-model grid (pieces/06-live-wave/sites.py explains each field)."
+  ],
+  "porto_batel": {
+    "name": "Porto Batel (Peniche)",
+    "lat": 39.319506, "lon": -9.355772,
+    "datum": "LAT", "msl_to_datum_m": 1.66,
+    "stage_a": {
+      "origin_lat": 39.319506, "origin_lon": -9.355772, "origin_name": "the house (filming position)",
+      "half": 1200.0, "dx": 10.0, "grid_deg": 0.0, "line_deg": 236.0, "along_deg": 326.0, "s_max": 700.0,
+      "profile_offsets_m": {"from": -600.0, "to": 600.0, "step": 25.0}
+    }
+  },
+  "klitmoller": {
+    "name": "Klitmoller", "lat": 57.04, "lon": 8.49, "datum": null, "msl_to_datum_m": null
+  },
+  "hvide_sande": {
+    "name": "Hvide Sande", "lat": 56.0, "lon": 8.1, "datum": null, "msl_to_datum_m": null
+  },
+  "tel_aviv": {
+    "name": "Tel Aviv", "lat": 32.08, "lon": 34.76, "datum": null, "msl_to_datum_m": null
+  },
+  "pipeline": {
+    "name": "Pipeline (Oahu)", "title": "Pipeline, Oahu",
+    "lat": 21.665, "lon": -158.053,
+    "datum": "LMSL", "msl_to_datum_m": 0.0,
+    "takeoff": {"lat": 21.66389, "lon": -158.05389, "how": "published spot position (Wikipedia, Banzai Pipeline), approximate"},
+    "viewer_points": "pipeline.json",
+    "typical_swell": {"H0": 2.1, "T": 14.3, "direction_from": 320, "tide": 0.0},
+    "stage_a": {
+      "shore_normal_deg": 314.0, "line_back_m": 100.0,
+      "x_range": [-1200.0, 1200.0], "y_range": [-100.0, 1290.0], "dx": 10.0, "s_max": 1290.0,
+      "profile_offsets_m": {"from": -600.0, "to": 600.0, "step": 25.0}
+    }
+  },
+  "supertubos": {
+    "name": "Supertubos (Peniche)", "title": "Supertubos, Peniche",
+    "lat": 39.3398, "lon": -9.3619,
+    "datum": "LAT", "msl_to_datum_m": 1.66,
+    "takeoff": {"lat": 39.34, "lon": -9.36, "how": "model break onset nearest the cited Supertubos coordinate (39.34, -9.36, which is on land); approximate", "from_model": true},
+    "viewer_points": "reefs_wide.json",
+    "typical_swell": {"H0": 1.82, "T": 12.2, "direction_from": 295, "tide": 1.7}
+  },
+  "guethary": {
+    "name": "Guethary / Parlementia", "title": "Guethary / Parlementia, France",
+    "lat": 43.427718, "lon": -1.611053,
+    "datum": "IGN69", "msl_to_datum_m": 0.0,
+    "takeoff": {"lat": 43.427718, "lon": -1.611053, "how": "published Parlementia position (surf-guide source), approximate"},
+    "viewer_points": "guethary.json",
+    "typical_swell": {"H0": 1.31, "T": 12.4, "direction_from": 303, "tide": 0.0}
+  },
+  "hossegor": {
+    "name": "Hossegor / La Graviere", "title": "Hossegor / La Graviere, France",
+    "lat": 43.67562, "lon": -1.443375,
+    "datum": "IGN69", "msl_to_datum_m": 0.0,
+    "takeoff": {"lat": 43.67562, "lon": -1.443375, "how": "published La Graviere position (surf-guide source), approximate"},
+    "viewer_points": "hossegor.json",
+    "typical_swell": {"H0": 1.31, "T": 12.4, "direction_from": 303, "tide": 0.0}
+  },
+  "basque": {
+    "name": "Basque coast", "title": "Basque coast", "datum": "IGN69", "viewer_points": "basque.json"
+  }
+}

@@ -112,7 +112,8 @@ see `DATA.md` for what to download and where to put it.
 `pieces/01-seafloor/viewer/data/` to show it in the viewer. See
 `pieces/03-breaking-wave/README.md` for the method and its limits.
 
-Other spots: `python make_spot_cases.py` writes `case_<spot>.py`; run one with `python spot_run.py <spot>`
+Other spots: their case settings are in `spot_case.py` (positions, datums and swell in the top-level `spots.json`);
+run one with `python spot_run.py <spot>`
 (see the docstrings). Swell layers for other spots: `python simulate_swell_spot.py --spot <spot>` in `pieces/02-reefs/`.
 
 **04 Basque** (`pieces/04-basque/`, needs the Litto3D tiles, see `DATA.md`)

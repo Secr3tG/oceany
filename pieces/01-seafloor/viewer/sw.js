@@ -8,7 +8,7 @@
 //    use that prefix. All names here start 'reefviewer-'; this worker deletes only 'reefviewer-*' caches.
 //  - ?offline=0 here unregisters only the registration whose scope ends '/01-seafloor/viewer/' (the globe's likewise).
 // What is kept:
-//  - shell, the five spots' data files, their slices (json), swell files, lookup index files, live/<spot>.json snapshots.
+//  - at install: shell, Porto Batel (the default spot) data, lookup index files, live/<spot>.json snapshots; every other spot's data is kept the first time it is opened.
 //  - the terrain for each spot's surroundings (b57: terrain2 packs on tiles.hvid.studio, no longer the v1 PNGs on R2 terrain/):
 //    this worker only works out which tiles surround.js asks for (zoom 12 over the lidar box plus RANGE_M, zoom 10 parents,
 //    same maths) and stores that list as ./surround-tiles in its META cache; offline.js then loads them through terrarium.js,
@@ -17,18 +17,23 @@
 //  - everything else same-origin the viewer fetches (big lookup T*.bin files, 14 MB slice .bin files) is kept the first
 //    time it is fetched online, so a spot works offline for the parts that were used.
 //  - same-origin: network first (a normal reload is fresh), cached copy when the network is gone.
-const SHELL = 'reefviewer-shell-16', META = 'reefviewer-meta-1';   // b57: reefviewer-tiles-3 (v1 PNGs) is deleted on activate
+const SHELL = 'reefviewer-shell-18', META = 'reefviewer-meta-1';   // 17: packed .bin.gz data, minified three.js, swell worker   // b57: reefviewer-tiles-3 (v1 PNGs) is deleted on activate
 const LIVE = ['porto_batel', 'pipeline', 'supertubos', 'guethary', 'hossegor'];
-const SHELL_FILES = ['./', './index.html', './style.css?v=z10', './main.js?v=z18', './play.js?v=c5c', './live.js?v=n2', './tutorial.js?v=c3n',
-  './offline.js?v=o3', './live_core.js?v=n2', './live_lookup.js?v=l4', './swell_model.js?v=c3', './surround.js?v=s7',
-  './vendor/three.module.js', './vendor/three.core.js', './vendor/addons/controls/OrbitControls.js',
+const SHELL_FILES = ['./', './index.html', './style.css?v=z10', './main.js?v=z20', './play.js?v=c5e', './live.js?v=n4', './tutorial.js?v=c3o',
+  './offline.js?v=o3', './live_core.js?v=n2', './live_lookup.js?v=l4', './swell_model.js?v=c4', './swell_client.js?v=w2', './swell_worker.js?v=w2',
+  './packed.js?v=p1', './surround.js?v=s7',
+  './vendor/three.module.min.js', './vendor/three.core.min.js', './vendor/addons/controls/OrbitControls.js',
   '../../07-globe/terrarium.js?v=3', '../../07-globe/tour.js?v=b51', '../../07-globe/terrain-source.js?v=t8', '../../07-globe/tilepack.js?v=p2', './data/slices.json',
   '../../06-live-wave/lookup/index.json', '../../06-live-wave/lookup/shore.json',
   '../../06-live-wave/lookup_pipeline/index.json', '../../06-live-wave/lookup_pipeline/shore.json'];
 const LIVE_FILES = LIVE.map(k => `../../../live/${k}.json`);
-const SMALL_DATA = ['swell_sim', 'pipeline_swell', 'supertubos_swell', 'guethary_swell', 'hossegor_swell', 'porto_batel_slice', 'porto_batel_slice_s8',
-  'porto_batel_funwave', 'pipeline_slice', 'supertubos_slice', 'guethary_slice', 'hossegor_slice', 'porto_batel_slice_v2'].map(n => `./data/${n}.json`);
-const MAP_DATA = ['reefs', 'reefs_wide', 'pipeline', 'guethary', 'hossegor'].map(n => `./data/${n}.json`);
+// Data URLs carry main.js's DATA_VERSION tag (?v=s13), exactly as the viewer asks for them, so the cached copies match.
+const DV = '?v=s13';
+// Install precaches only the shell and the default spot (Porto Batel, the layer the viewer opens on): about 24 MB for all five spots is too much
+// for a phone's first visit and again on every shell bump. Every other spot's files are kept the first time it is opened (fetch handler below).
+const SMALL_DATA = [...['swell_sim'].map(n => `./data/${n}.json${DV}`),
+  ...['porto_batel_slice', 'porto_batel_slice_s8', 'porto_batel_funwave'].map(n => `./data/${n}.bin.gz${DV}`)];
+const MAP_DATA = ['reefs'].map(n => `./data/${n}.bin.gz${DV}`);
 const M_PER_DEG = 111195.0, EARTH_C = 40075016.7, RANGE_M = 5000;
 
 self.addEventListener('install', e => { e.waitUntil(precache().then(() => self.skipWaiting())); });
@@ -46,12 +51,20 @@ async function precache() {
     try {
       const res = await fetch(u); if (!res.ok) continue;
       await c.put(u, res.clone());
-      const d = await res.json(); tilesFor(d, tiles);
+      const d = await unpack(res); tilesFor(d, tiles);
     } catch (err) { /* that spot's map stays online-only */ }
   }
   const m = await caches.open(META);
   await m.put('./surround-tiles', new Response(JSON.stringify([...tiles.values()]), { headers: { 'content-type': 'application/json' } }));
   await stamp();
+}
+// The packed points files (tools/pack_data.py, read in the page by packed.js): only x_m and y_m are needed here.
+async function unpack(res) {
+  const buf = await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer(), dv = new DataView(buf);
+  const hlen = dv.getUint32(4, true), head = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 8, hlen))), base = (8 + hlen + 7) & ~7;
+  const T = { i1: Int8Array, i2: Int16Array, i4: Int32Array, f8: Float64Array };
+  const arr = r => { const a = head.arrays[r.$a], raw = new T[a.t](buf, base + a.o, a.n), f = 10 ** a.s; return Float64Array.from(raw, q => q / f); };
+  const root = head.root; return { meta: root.meta, x_m: arr(root.x_m), y_m: arr(root.y_m) };
 }
 // same tile maths as surround.js: z12 tiles over the lidar box plus RANGE_M, z10 parents of those
 function tilesFor(d, out) {

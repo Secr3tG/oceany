@@ -18,7 +18,8 @@ import * as THREE from 'three';
 import { createLookup, breakLinePoints } from './live_lookup.js?v=l4';
 import { DATUM_UNC, LIVE_SPOTS, spotsForLayer, snapshotPath, loadModels, exactResult, readout, forecastLines, windLine, buoyLines,
   swellHandoff, swellStateText, sameInputs, outsideRange, runLine, DISCLAIMER } from './live_core.js?v=n2';
-import { makeModel, SPOT_GRIDS } from './swell_model.js?v=c3';
+import { SPOT_GRIDS } from './swell_model.js?v=c4';
+import { makeModelAsync } from './swell_client.js?v=w2';   // run() happens in a worker (swell_worker.js)
 
 const SITE_ROOT = '../../../';                         // pieces/01-seafloor/viewer -> site root (live/<spot>.json)
 const M = 111195.0;
@@ -284,12 +285,16 @@ async function ensureSwellOn(v) {
 }
 const models = {};                                    // spot key -> Promise of makeModel() on that map's points (float64 JSON)
 function mapModel(sp, v) {
-  // The points are re-read from the JSON (same URL as main.js, so the browser cache serves it): main.js keeps them as
-  // Float32, which flips wet/dry ties and would not reproduce the shipped file (validate_spot_swell.mjs --f32).
-  if (!models[sp.key]) models[sp.key] = fetch(sp.swell.file + '?v=' + v.DATA_VERSION).then(r => { if (!r.ok) throw new Error(sp.swell.file + ' ' + r.status); return r.json(); })
-    .then(pts => makeModel(pts, SPOT_GRIDS[sp.swell.grid]));
+  // The points come from main.js's loader as float64 (the same doubles as the JSON): its Float32 drawing copy would flip
+  // wet/dry ties and not reproduce the shipped file (validate_spot_swell.mjs --f32). No second download.
+  // One model at a time here (the worker keeps at most two): a Guéthary model with its cached normals is ~100 MB.
+  for (const k of Object.keys(models)) if (k !== sp.key) delete models[k];
+  if (!models[sp.key]) models[sp.key] = v.loadPoints(sp.swell.file, sp.name + ' points')
+    .then(pts => makeModelAsync(pts, SPOT_GRIDS[sp.swell.grid], sp.key))
+    .catch(err => { delete models[sp.key]; throw err; });
   return models[sp.key];
 }
+let handSeq = 0;
 async function handOff() {
   const v = V(), sp = spot(), m = cur(), t = m.t[S.i];
   const fileTide = v.SWELL.file_data ? (v.SWELL.file_data.meta.config.tide_above_datum_m ?? v.SWELL.file_data.meta.config.tide_above_lat_m ?? 0) : 0;
@@ -306,10 +311,14 @@ async function handOff() {
     return;
   }
   el['play-note'].textContent = 'Running the swell model in your browser...';
+  const mine = ++handSeq, layer0 = v.SWELL.layer;
+  const stale = () => mine !== handSeq || spot() !== sp || v.SWELL.layer !== layer0 || !sp.layers.includes(v.SWELL.layer);   // another hand-off, a new spot or a new map since this one started
   if (!(await ensureSwellOn(v))) throw new Error('swell layer did not load');
+  if (stale()) return;
   const model = await mapModel(sp, v);
-  if (!sp.layers.includes(v.SWELL.layer)) return;   // the map changed while loading
-  const t0 = performance.now(), res = model.run(q), ms = performance.now() - t0;
+  if (stale()) return;
+  const t0 = performance.now(), res = await model.run(q), ms = performance.now() - t0;   // ms: wall time in the worker round trip; the page stays responsive
+  if (stale()) return;                               // a result for the spot or hour that is no longer on screen is dropped
   const base = v.SWELL.file_data.meta, c = base.config;
   const meta = { ...base, mode: 'STRICT', label: '', live_forecast: h.label,
     config: { ...c, H0_m: q.H0, T_s: q.T, direction_from_deg: q.dir, tide_above_datum_m: q.tide, omega_rad_s: 2 * Math.PI / q.T },

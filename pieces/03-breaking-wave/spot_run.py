@@ -7,14 +7,14 @@
     python spot_run.py <spot> render out/<spot>_s1 --out out/<spot>_s1 --slice-v1-surface
     python spot_run.py <spot> slice  out/<spot>_s1      (copies + relabels to viewer/data/<spot>_slice.json)
 
-How: case_<spot>.py is registered under the module name `case_porto_batel` before the Porto Batel script is
-loaded, so run_porto_batel.py / calib_wavemaker.py / diagnostics_porto_batel.py / render_porto_batel.py run
-UNCHANGED on the new profile. Porto Batel literals in the render script (house position, 236 deg bearing,
-labels, datum) are replaced in memory with the spot's values; the files on disk are not touched.
+How: case_<spot>.py (built by spot_case.py from spots.json) is registered under the module name `case_porto_batel`
+before a Porto Batel tool is loaded, so run_porto_batel.py / calib_wavemaker.py / diagnostics_porto_batel.py run
+unchanged on the new profile. render_porto_batel.py takes the spot's labels, datum, house position, bearing and s
+window as a PLACE dict (place() below); until 2026-11-27 it was text-patched in memory instead.
 Calibration: the tank is lengthened from 85 m to 130 m (sponge 45-130 m) because these swells are ~2x longer.
 Long domains (2026-11-14, Hossegor): the render/slice tools window s 60-340 m. When a spot's wavemaker sits beyond
-s 360 the window is widened in memory to s 60 to (s_piston - 20) (camera clamps, slice bins, slot count, overhang
-search scaled with it), and the slice time cap (78 s = t_end - 7 for the 85 s runs) follows t_end. For spots with
+s 360 the window is widened to s 60 to (s_piston - 20) (camera clamps, slice bins, slot count, overhang search
+scaled with it), and the slice time cap (78 s = t_end - 7 for the 85 s runs) follows t_end. For spots with
 s_piston <= 360 and t_end 85 (Porto Batel tools' own case, Pipeline, Supertubos, Guethary) nothing changes.
 """
 import csv
@@ -27,19 +27,18 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import spot_case  # noqa: E402
 VIEW = HERE.parent / "01-seafloor" / "viewer" / "data"
 M_PER_DEG = 111195.0
-POINTS = {"pipeline": "pipeline.json", "supertubos": "reefs_wide.json", "basque": "basque.json", "guethary": "guethary.json",
-          "hossegor": "hossegor.json"}
-TITLE = {"pipeline": "Pipeline, Oahu", "supertubos": "Supertubos, Peniche", "basque": "Basque coast", "guethary": "Guethary / Parlementia, France",
-         "hossegor": "Hossegor / La Graviere, France"}
-IGN69 = ("basque", "guethary", "hossegor")
+REGISTRY = json.loads((HERE.parent.parent / "spots.json").read_text())     # the spot registry
+POINTS = {k: r["viewer_points"] for k, r in REGISTRY.items() if "viewer_points" in r}
+TITLE = {k: r["title"] for k, r in REGISTRY.items() if "title" in r}
 
 
 def window(spot):
     """s window of the render/slice tools for this spot: (s_hi, t_end). s_hi = 340 (the Porto Batel window)
     unless the wavemaker sits beyond s 360, then s_piston - 20."""
-    cfg = importlib.import_module(f"case_{spot}").CFG
+    cfg = spot_case.cfg_for(spot)
     sp = float(cfg["s_piston"])
     return (340.0 if sp <= 360.0 else float(round(sp - 20.0))), float(cfg["t_end"])
 
@@ -62,52 +61,30 @@ def geometry(spot):
     hx = (hlon - olon) * M_PER_DEG * math.cos(math.radians(olat))
     hy = (hlat - olat) * M_PER_DEG
     bearing = math.degrees(math.atan2(ex, ny)) % 360
-    datum = "LMSL" if spot == "pipeline" else ("IGN69" if spot in IGN69 else "LAT")
+    datum = REGISTRY[spot]["datum"]
     return dict(hlat=hlat, hlon=hlon, hx=hx, hy=hy, bearing=bearing, olat=olat, olon=olon, datum=datum,
                 ux=ex, uy=ny)
 
 
-def patched_render_source(spot):
+def place(spot):
+    """The spot's PLACE for render_porto_batel.py: labels, datum, viewer frame, bearing and the s window.
+    House position and bearings are rounded as the slice files have always stored them (6 / 1 / 3 decimals)."""
     G = geometry(spot)
-    src = (HERE / "render_porto_batel.py").read_text()
     b = f"{G['bearing']:.0f}"
-    reps = [
-        ("Porto Batel reef, regular swell on the 236 deg line (illustrative 2D slice)",
-         f"{TITLE[spot]}, regular swell on the {b} deg line (illustrative, not a forecast; 2D slice)"),
-        ("Porto Batel reef, 236 deg line", f"{TITLE[spot]}, {b} deg line (illustrative, not a forecast)"),
-        ("from the house along 236 deg", f"from the profile origin (60 m behind the shoreline) along {b} deg"),
-        ("sat here (user)", "take-off (approx.)"),
-        ("above LAT", f"above {G['datum']}"),
-        ("39.322, -9.3625, 111195.0", f"{G['olat']}, {G['olon']}, 111195.0"),
-        ("-9.355772", f"{G['hlon']:.6f}"), ("39.319506", f"{G['hlat']:.6f}"),
-        ("math.radians(236)", f"math.radians({G['bearing']:.3f})"),
-        ("bearing_deg=236.0", f"bearing_deg={G['bearing']:.1f}"),
-        ("39.322 N, -9.3625 E (M_PER_DEG 111195), as reefs.json",
-         f"{G['olat']} N, {G['olon']} E (M_PER_DEG 111195), as {POINTS[spot]}"),
-        ('vertical_datum="LAT"', f'vertical_datum="{G["datum"]}"'),
-        ('"porto_batel.mp4"', f'"{spot}.mp4"'),
-    ]
     s_hi, t_end = window(spot)
-    if s_hi != 340.0:                     # long domain: widen the s 60-340 window (only literals that set it)
-        hi = f"{s_hi:.1f}"
-        reps += [
-            ("(s0 > 60) & (s0 < 340)", f"(s0 > 60) & (s0 < {hi})"),
-            ("np.arange(60.0, 340.0 + 1e-9, 1.0)", f"np.arange(60.0, {hi} + 1e-9, 1.0)"),
-            ("surface_s_m=dict(start=60, stop=340, step=1)", f"surface_s_m=dict(start=60, stop={int(s_hi)}, step=1)"),
-            ("s_lo=100.0, s_hi=320.0", f"s_lo=100.0, s_hi={s_hi - 20.0:.1f}"),
-            ("c = min(300.0, track_s[k] - 12.0)", f"c = min({s_hi - 40.0:.1f}, track_s[k] - 12.0)"),
-            ("min(300.0, s_b + 80)", f"min({s_hi - 40.0:.1f}, s_b + 80)"),
-            ("s_lo=60.0, s_hi=340.0):", f"s_lo=60.0, s_hi={hi}):"),
-            ("n_part=2400,", f"n_part={int(round(2400 * (s_hi - 60.0) / 280.0))},"),   # same slots per 1 m bin
-        ]
-    if t_end != 85.0:
-        reps.append(("t1 = min(78.0, kt", f"t1 = min({t_end - 7.0:.1f}, kt"))
-    for a, c in reps:
-        n = src.count(a)
-        if n == 0:
-            raise SystemExit(f"render patch: literal not found: {a!r}")
-        src = src.replace(a, c)
-    return src
+    return dict(
+        case_text=f"{TITLE[spot]}, regular swell on the {b} deg line (illustrative, not a forecast; 2D slice)",
+        video_title=f"{TITLE[spot]}, {b} deg line (illustrative, not a forecast)",
+        along=f"from the profile origin (60 m behind the shoreline) along {b} deg",
+        marker="take-off (approx.)",
+        datum=G["datum"],
+        origin_lat=G["olat"], origin_lon=G["olon"], points_file=POINTS[spot],
+        house_lat=round(G["hlat"], 6), house_lon=round(G["hlon"], 6),
+        bearing_deg=round(G["bearing"], 1), direction_deg=round(G["bearing"], 3),
+        mp4=f"{spot}.mp4",
+        s_hi=s_hi,
+        slice_t_cap=78.0 if t_end == 85.0 else t_end - 7.0,   # 78 s = t_end - 7 for the 85 s runs
+    )
 
 
 def main():
@@ -128,10 +105,8 @@ def main():
         sys.argv = ["diagnostics_porto_batel.py"] + rest
         runpy.run_path(str(HERE / "diagnostics_porto_batel.py"), run_name="__main__")
     elif tool == "render":
-        sys.argv = ["render_porto_batel.py"] + rest
-        code = compile(patched_render_source(spot), str(HERE / "render_porto_batel.py"), "exec")
-        g = {"__name__": "__main__", "__file__": str(HERE / "render_porto_batel.py")}
-        exec(code, g)
+        import render_porto_batel as R          # imported after the case swap above, so it renders this spot
+        R.cli(rest, place=place(spot))
     elif tool == "slice":
         run = Path(rest[0])
         src = run / "porto_batel_slice_surface.json"

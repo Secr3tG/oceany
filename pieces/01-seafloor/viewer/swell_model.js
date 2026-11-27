@@ -1,5 +1,5 @@
 // swell_model.js: the swell model of pieces/02-reefs/simulate_swell.py, line for line in JavaScript.
-// Used by play.js to redraw the swell layer in the browser for any height, period, direction and tide.
+// Used by play.js and live.js (through swell_client.js and swell_worker.js) to redraw the swell layer in the browser for any height, period, direction and tide.
 // Shoaling + refraction (Snell's law on straight local contours) + breaking at gamma x depth, marched shoreward.
 // Illustrative, not a forecast. See simulate_swell.py for the full explanation and its limits.
 // Pure functions, no DOM: it also runs in node (that is how it is checked against the Python output).
@@ -22,13 +22,17 @@ export const KNOBS = { gamma: 0.78, normalSmooth: 100, regionalSmooth: 600, edge
 // Python's round(): halves go to the even number.
 const pyRound = x => { const r = Math.round(x); return (Math.abs(x % 1) === 0.5) ? 2 * Math.round(x / 2) : r; };
 
-// Dispersion relation omega^2 = g k tanh(k d), solved for k by Newton's method (same first guess and 20 steps).
+// Dispersion relation omega^2 = g k tanh(k d), solved for k by Newton's method (same first guess as the Python).
+// The Python takes 20 fixed steps; Newton converges in 3-5 from this guess, so we stop once a step changes k by less
+// than 1e-14 of k (the answer is then the same to the last digit or two of a double).
 export function wavenumber(T, d) {
   const w2 = (2 * Math.PI / T) ** 2;
   let k = w2 / G / Math.sqrt(Math.tanh(w2 * d / G));
   for (let i = 0; i < 20; i++) {
     const th = Math.tanh(k * d);
-    k -= (G * k * th - w2) / (G * th + G * k * d * (1 - th * th));
+    const step = (G * k * th - w2) / (G * th + G * k * d * (1 - th * th));
+    k -= step;
+    if (Math.abs(step) <= 1e-14 * k) break;
   }
   return k;
 }
@@ -67,8 +71,62 @@ function edt(isZero, R, C, dy, dx) {   // distance from each cell to the nearest
   }
   return D;
 }
+// In-place radix-2 complex FFT (re, im of length n = power of two); inv = true for the inverse (unscaled).
+function fft(re, im, inv) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit;
+    if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = (inv ? 2 : -2) * Math.PI / len, half = len >> 1;
+    for (let k = 0; k < half; k++) {
+      const wr = Math.cos(ang * k), wi = Math.sin(ang * k);
+      for (let i = k; i < n; i += len) {
+        const j = i + half, xr = re[j] * wr - im[j] * wi, xi = re[j] * wi + im[j] * wr;
+        re[j] = re[i] - xr; im[j] = im[i] - xi; re[i] += xr; im[i] += xi;
+      }
+    }
+  }
+}
 // scipy.ndimage.gaussian_filter: mode 'reflect' (d c b a | a b c d | d c b a), truncate 4.
+// Same sums as the direct loop below, done as one FFT multiply per pair of lines when the kernel is long (the 600 m
+// regional smoothing on a 4 m grid is a 601-tap kernel). Exact up to float rounding (~1e-12 of the values).
 function gauss1d(src, R, C, sigma, axis) {
+  const rad0 = Math.floor(4 * sigma + 0.5);
+  if (rad0 > 24) return gauss1dFFT(src, R, C, sigma, axis);
+  return gauss1dDirect(src, R, C, sigma, axis);
+}
+function gaussWeights(sigma) {
+  const rad = Math.floor(4 * sigma + 0.5), w = new Float64Array(2 * rad + 1); let sum = 0;
+  for (let i = -rad; i <= rad; i++) { w[i + rad] = Math.exp(-0.5 * i * i / (sigma * sigma)); sum += w[i + rad]; }
+  for (let i = 0; i < w.length; i++) w[i] /= sum;
+  return { rad, w };
+}
+function gauss1dFFT(src, R, C, sigma, axis) {
+  const { rad, w } = gaussWeights(sigma);
+  const n = axis === 0 ? R : C, lines = axis === 0 ? C : R, m = n + 2 * rad;   // reflected line length
+  let F = 1; while (F < m) F <<= 1;                                                 // circular wrap only hits the padding
+  const refl = i => { const p = 2 * n; i = ((i % p) + p) % p; return i < n ? i : p - 1 - i; };
+  const idx = new Int32Array(m); for (let i = 0; i < m; i++) idx[i] = refl(i - rad);
+  // kernel centred at 0 (wrapped), so out[i] = sum_j w[j] ext[i + j - rad] for every i of the extended line
+  const kr = new Float64Array(F), ki = new Float64Array(F);
+  for (let j = -rad; j <= rad; j++) kr[(j + F) % F] = w[j + rad];
+  fft(kr, ki, false);
+  const out = new Float64Array(R * C), re = new Float64Array(F), im = new Float64Array(F);
+  const at = axis === 0 ? (line, i) => i * C + line : (line, i) => line * C + i;
+  for (let L = 0; L < lines; L += 2) {
+    const two = L + 1 < lines;
+    re.fill(0); im.fill(0);
+    for (let i = 0; i < m; i++) { re[i] = src[at(L, idx[i])]; if (two) im[i] = src[at(L + 1, idx[i])]; }
+    fft(re, im, false);
+    for (let i = 0; i < F; i++) { const a = re[i], b = im[i], c = kr[i], d = ki[i]; re[i] = a * c - b * d; im[i] = a * d + b * c; }
+    fft(re, im, true);
+    for (let i = 0; i < n; i++) { out[at(L, i)] = re[i + rad] / F; if (two) out[at(L + 1, i)] = im[i + rad] / F; }
+  }
+  return out;
+}
+function gauss1dDirect(src, R, C, sigma, axis) {
   const rad = Math.floor(4 * sigma + 0.5), w = new Float64Array(2 * rad + 1); let sum = 0;
   for (let i = -rad; i <= rad; i++) { w[i + rad] = Math.exp(-0.5 * i * i / (sigma * sigma)); sum += w[i + rad]; }
   for (let i = 0; i < w.length; i++) w[i] /= sum;
@@ -83,18 +141,43 @@ function gauss1d(src, R, C, sigma, axis) {
   return out;
 }
 
+// Model cell of each reef point (same rounding as the Python), and the line helpers below: cheap, no model needed,
+// so swell_client.js keeps them on the main thread while run() happens in the worker.
+export function cellIndex(reefs, grid = GRID) {
+  const { ncol: C, x0, y0, dx, dy } = grid, N = reefs.depth_m.length, cellOf = new Int32Array(N);
+  for (let i = 0; i < N; i++) cellOf[i] = pyRound((reefs.y_m[i] - y0) / dy) * C + pyRound((reefs.x_m[i] - x0) / dx);
+  return cellOf;
+}
+export function gridTools(grid = GRID) {
+  const { nrow: R, ncol: C, x0, y0, dx, dy } = grid;
+  // Model cell nearest to a point (metres east, north).
+  const cellAt = (x, y) => { const r = pyRound((y - y0) / dy), c = pyRound((x - x0) / dx);
+    return r >= 0 && r < R && c >= 0 && c < C ? r * C + c : -1; };
+  // Outermost break onset along the line from (ax, ay) through (bx, by), walking in from `maxM` metres.
+  // Returns the distance (m) from (ax, ay), or null when nothing on the line breaks.
+  function outerBreak(res, ax, ay, bx, by, maxM = 450, ds = 2) {
+    const L = Math.hypot(bx - ax, by - ay), ux = (bx - ax) / L, uy = (by - ay) / L;
+    for (let s = maxM; s >= 0; s -= ds) {
+      const c = cellAt(ax + ux * s, ay + uy * s);
+      if (c >= 0 && Number.isFinite(res.grid.H[c]) && res.grid.broken[c]) return s;
+    }
+    return null;
+  }
+  return { cellAt, outerBreak };
+}
+
 // Build the model for one grid. reefs = reefs.json (x_m, y_m, depth_m in the same order as swell_sim.json).
 // grid: GRID (Porto Batel, the default) or one of SPOT_GRIDS for the other reef maps.
 export function makeModel(reefs, grid = GRID) {
   const { nrow: R, ncol: C, x0, y0, dx, dy } = grid, NC = R * C, N = reefs.depth_m.length;
-  const lidar = new Float64Array(NC).fill(NaN), valid = new Uint8Array(NC), cellOf = new Int32Array(N);
-  for (let i = 0; i < N; i++) {
-    const c = pyRound((reefs.y_m[i] - y0) / dy) * C + pyRound((reefs.x_m[i] - x0) / dx);
-    cellOf[i] = c; lidar[c] = reefs.depth_m[i]; valid[c] = 1;
-  }
-  const normals = new Map();   // the shore direction depends on the tide only: cache it
+  const lidar = new Float64Array(NC).fill(NaN), valid = new Uint8Array(NC), cellOf = cellIndex(reefs, grid);
+  for (let i = 0; i < N; i++) { const c = cellOf[i]; lidar[c] = reefs.depth_m[i]; valid[c] = 1; }
+  // The shore direction depends on the tide only: cache it. Bounded (least recently used out): one entry is four
+  // full-grid Float64 arrays, ~24 MB on the 4 m French grids.
+  const normals = new Map(), NORMALS_MAX = 4;
   function shoreNormal(tide, smooth) {
-    const key = tide.toFixed(3) + '/' + smooth; if (normals.has(key)) return normals.get(key);
+    const key = tide.toFixed(3) + '/' + smooth;
+    if (normals.has(key)) { const hit = normals.get(key); normals.delete(key); normals.set(key, hit); return hit; }
     const dry = new Uint8Array(NC);
     for (let c = 0; c < NC; c++) dry[c] = valid[c] && lidar[c] + tide <= KNOBS.wetMin ? 1 : 0;
     const dist = edt(dry, R, C, dy, dx);
@@ -108,7 +191,7 @@ export function makeModel(reefs, grid = GRID) {
       nx[i] = -gx / nrm; ny[i] = -gy / nrm; slope[i] = nrm;
     }
     const res = { nx, ny, sm, slope };
-    if (normals.size > 40) normals.clear();
+    while (normals.size >= NORMALS_MAX) normals.delete(normals.keys().next().value);
     normals.set(key, res); return res;
   }
 
@@ -122,11 +205,12 @@ export function makeModel(reefs, grid = GRID) {
     if (wrapped) { const rg = shoreNormal(tide, KNOBS.regionalSmooth); ux0 = rg.nx; uy0 = rg.ny; cRef = waveSpeeds(T, KNOBS.edgeDepth).c; }
     const k = new Float64Array(NC), KsKr = new Float64Array(NC), Hlin = new Float64Array(NC);
     const reach = new Uint8Array(NC), Cg0 = c0 / 2;
+    const dryWs = waveSpeeds(T, 1.0);   // dry and missing cells: the Python evaluates every cell at 1 m; one value serves them all
     for (let i = 0; i < NC; i++) {
       const ax = wrapped ? ux0[i] : uxS, ay = wrapped ? uy0[i] : uyS;
       const th0 = Math.acos(Math.min(1, Math.max(-1, ax * nx[i] + ay * ny[i])));
       reach[i] = wet[i] && th0 * 180 / Math.PI < KNOBS.maxTheta0 ? 1 : 0;
-      const ws = waveSpeeds(T, wet[i] ? d[i] : 1.0);
+      const ws = wet[i] ? waveSpeeds(T, d[i]) : dryWs;
       k[i] = ws.k;
       const Ks = Math.sqrt(Cg0 / ws.Cg);
       const th = Math.asin(Math.min(1, Math.max(-1, Math.sin(th0) * ws.c / cRef)));
@@ -169,19 +253,8 @@ export function makeModel(reefs, grid = GRID) {
     return { grid: { H, broken, first, d, wet, reach, nx, ny }, points: P };
   }
 
-  // Helpers for challenges: model cell nearest to a point (metres east, north), and a walk along a line.
-  const cellAt = (x, y) => { const r = pyRound((y - y0) / dy), c = pyRound((x - x0) / dx);
-    return r >= 0 && r < R && c >= 0 && c < C ? r * C + c : -1; };
-  // Outermost break onset along the line from (ax, ay) through (bx, by), walking in from `maxM` metres.
-  // Returns the distance (m) from (ax, ay), or null when nothing on the line breaks.
-  function outerBreak(res, ax, ay, bx, by, maxM = 450, ds = 2) {
-    const L = Math.hypot(bx - ax, by - ay), ux = (bx - ax) / L, uy = (by - ay) / L;
-    for (let s = maxM; s >= 0; s -= ds) {
-      const c = cellAt(ax + ux * s, ay + uy * s);
-      if (c >= 0 && Number.isFinite(res.grid.H[c]) && res.grid.broken[c]) return s;
-    }
-    return null;
-  }
+  // Helpers for challenges (play.js): see gridTools().
+  const { cellAt, outerBreak } = gridTools(grid);
   return { run, cellAt, outerBreak, valid, lidar, N, cellOf };
 }
 

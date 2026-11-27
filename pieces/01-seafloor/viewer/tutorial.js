@@ -292,10 +292,11 @@ async function gestureTour(at = 0) {
       onStep: i => { const m = TK.get(); TK.set({ ...(m && m.page === 'viewer' ? m : {}), page: 'viewer', step: i }); },   // round 4: a reload carries on here
       onEnd: () => { if (rot) { O.autoRotate = true; rot = false; } V.FLY.vel.set(0, 0, 0); if (V.ZB.active) V.ZB.target = V.ZB.d; },
     });
+    // The tick loop runs only while the tour is on (it used to run every frame forever after the first tour).
+    let looping = false;
+    const loop = now => { GT.tick(now); if (GT.on) requestAnimationFrame(loop); else looping = false; };
     const st = GT.start;
-    GT.start = i => { if (O.autoRotate) { O.autoRotate = false; rot = true; } st(i); };   // auto-rotate waits while the tour runs
-    const loop = now => { GT.tick(now); requestAnimationFrame(loop); };
-    requestAnimationFrame(loop);
+    GT.start = i => { if (O.autoRotate) { O.autoRotate = false; rot = true; } st(i); if (!looping) { looping = true; requestAnimationFrame(loop); } };   // auto-rotate waits while the tour runs
   }
   GT.start(at);
 }

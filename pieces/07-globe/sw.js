@@ -7,8 +7,9 @@
 //   at most TILE_MAX kept (oldest dropped).
 // Scope is this folder: the spot viewers (pieces/01-seafloor/viewer/) are other pages and are NOT made offline by this.
 const R2_HOST = 'pub-fd042e4c938f43dfacc412e6f073d5ff.r2.dev';
-const SHELL = 'oceany-shell-b60', TILES = 'oceany-tiles-1', TILE_MAX = 600;
-const PRECACHE = ['./', './index.html', './globe.js?v=b60', './tour.js?v=b51', './wonders.js?v=w2', './wonders.json', './dots.js?v=b58', './terrain.js?v=b58', './terrarium.js?v=3', './terrain-source.js?v=t8', './tilepack.js?v=p2', './terrain-worker.js?v=w1', './data-source.js',
+const LAYER_BUILD = 'L1';   // same value as window.__OCEANY_LAYER_BUILD in index.html: the ?v= every layer module and import carries
+const SHELL = 'oceany-shell-b61', TILES = 'oceany-tiles-1', TILE_MAX = 600;
+const PRECACHE = ['./', './index.html', './globe.js?v=b61', './fullscreen.js?v=f1', './research/wanted-spots.json', './tour.js?v=b51', './wonders.js?v=w2', './wonders.json', './dots.js?v=b58', './terrain.js?v=b59', './terrarium.js?v=3', './terrain-source.js?v=t8', './tilepack.js?v=p2', './terrain-worker.js?v=w1', './data-source.js',
   './layers.json', './regions.json', './manifest.webmanifest', './assets/earth_dots.json', './assets/earth_dots.bin',
   './assets/stars.bin', './assets/icons/icon-192.png', './assets/icons/icon-512.png',
   '../01-seafloor/viewer/vendor/three.module.js', '../01-seafloor/viewer/vendor/three.core.js'];
@@ -26,10 +27,10 @@ async function layerUrls() {
     const base = new URL('./layers.json', self.registration.scope);
     await Promise.all(ents.filter(e => e && e.module).map(async e => {
       const u = new URL(e.module, base).href;
-      out.add(u); if (e.v) out.add(u + '?v=' + encodeURIComponent(e.v));
+      out.add(u + '?v=' + LAYER_BUILD);
       try {
         const txt = await (await fetch(u, { cache: 'no-cache' })).text();
-        for (const m of txt.matchAll(/(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+\.js)['"]/g)) out.add(new URL(m[1], u).href);
+        for (const m of txt.matchAll(/(?:from|import)\s*\(?\s*['"](\.{1,2}\/[^'"]+\.js)['"]/g)) out.add(new URL(m[1], u).href + '?v=' + LAYER_BUILD);
       } catch (err) { /* module not reachable: skipped */ }
     }));
   } catch (err) { /* no layers.json */ }
@@ -46,6 +47,7 @@ self.addEventListener('activate', e => {
   // tilepack) outlive a release; until b54 every new shell wiped them, so each release re-downloaded the 6.7 MB world base.
   const KEEP = k => k === SHELL || k === TILES || /^oceany-(terrain2|bathy2)-/.test(k);
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('oceany-') && !KEEP(k)).map(k => caches.delete(k))))
+    .then(dedupeShell)
     .then(() => self.clients.claim()));
 });
 // b38: network state. A failed network fetch marks the network down for NET_HOLD ms; meanwhile same-origin GETs are served
@@ -66,7 +68,22 @@ function netUp() { downUntil = 0; lastDown = false; tell(false); }
 self.addEventListener('message', e => {
   if (e.data && e.data.type === 'oceany-net?' && e.source) e.source.postMessage({ type: 'oceany-net', offline: lastDown });
 });
-const fromCache = async req => (await caches.match(req)) || (await caches.match(req, { ignoreSearch: true }));
+// Offline: the exact URL, else the NEWEST copy of the same path (Cache.match with ignoreSearch returns the oldest entry).
+const fromCache = async req => {
+  const hit = await caches.match(req); if (hit) return hit;
+  const c = await caches.open(SHELL), all = await c.matchAll(req, { ignoreSearch: true });
+  return all.length ? all[all.length - 1] : undefined;
+};
+// One copy per path in the shell cache: a new ?v= version replaces the older ones instead of piling up beside them.
+async function putShell(req, res) {
+  const c = await caches.open(SHELL);
+  for (const k of await c.keys(req, { ignoreSearch: true })) if (k.url !== req.url) await c.delete(k);
+  await c.put(req, res);
+}
+async function dedupeShell() {
+  const c = await caches.open(SHELL), seen = new Map();
+  for (const k of await c.keys()) { const u = new URL(k.url); u.search = ''; const p = u.href; if (seen.has(p)) await c.delete(seen.get(p)); seen.set(p, k); }
+}
 self.addEventListener('fetch', e => {
   const req = e.request;
   const url = new URL(req.url);
@@ -80,7 +97,7 @@ self.addEventListener('fetch', e => {
     try {
       const res = await fetch(req);
       netUp();
-      if (res.ok && res.type === 'basic') { const copy = res.clone(); caches.open(SHELL).then(c => c.put(req, copy)); }
+      if (res.ok && res.type === 'basic') e.waitUntil(putShell(req, res.clone()).catch(() => {}));
       return res;
     } catch (err) {
       netDown();

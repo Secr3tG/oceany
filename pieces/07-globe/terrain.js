@@ -212,6 +212,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   const TILE_PX = lite ? 12 : 16;   // b58: back to last night's 12 / 16 (Benn: the bright, sharp close-up look is the one he wants)
   const liteTpx = () => TARGET_PX * Math.max(0.45, Math.min(1, Math.min(innerWidth, innerHeight) / 900));
   const group = new THREE.Group(); group.visible = false; scene.add(group);
+  const readyNum = new Map();             // (z << 26 | x << 13 | y) -> ready real tile with heights: elevationAt's lookup
   const cache = new Map();                // key -> tile { ...desc, state, points, elev, sources, hasOcean, used }
   const queue = [];                       // decoded tiles waiting to be built (a few per frame)
   const sic = new Map();                  // stand-ins: key -> tile (si: true, srcZ: level of the tile it was resampled from)
@@ -246,9 +247,12 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   function elevationAt(lat, lon) {
     if (Math.abs(lat) > POLE_EDGE && baseElev) return baseElev(lat, lon);
     const la = Math.max(-85, Math.min(85, lat)) * D2R;
+    // fx, fy once at MAX_Z; each coarser level is the same value times a power of two (exact), so the tile and the dot
+    // are the ones the per-level formula gave. Ready real tiles are looked up by a number (readyNum), not a string key.
+    const n0 = 2 ** MAX_Z, fx0 = (lon + 180) / 360 * n0, fy0 = (1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2 * n0;
     for (let z = MAX_Z; z >= MIN_Z; z--) {
-      const n = 2 ** z, fx = (lon + 180) / 360 * n, fy = (1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2 * n;
-      const x = Math.floor(fx), y = Math.floor(fy), t = cache.get(`${z}/${x}/${y}`);
+      const sc = 2 ** (z - MAX_Z), fx = fx0 * sc, fy = fy0 * sc;
+      const x = Math.floor(fx), y = Math.floor(fy), t = readyNum.get((z << 26) | (x << 13) | y);
       if (t && t.state === 'ready' && t.elev) {
         const i = Math.min(N - 1, Math.floor((fx - x) * N)), j = Math.min(N - 1, Math.floor((fy - y) * N));
         return t.elev[j * N + i];
@@ -866,6 +870,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     if (P) { P.total = (P.total || 0) + pt - pt0; P.n = (P.n || 0) + 1; if (t.si) P.si = (P.si || 0) + 1; }
     if (from) startMorph(t, from);
     t.state = 'ready'; t.builtAt = lastNow; tlog(t, 'built');
+    if (!t.si && t.elev && cache.get(t.key) === t) readyNum.set((t.z << 26) | (t.x << 13) | t.y, t);
   }
 
   function dispose(t) {
@@ -873,6 +878,7 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
     live.delete(t); morphing.delete(t);
     if (t.points) { group.remove(t.points); t.points.geometry.dispose(); t.points.material.dispose(); }
     cache.delete(t.key);
+    { const nk = (t.z << 26) | (t.x << 13) | t.y; if (readyNum.get(nk) === t) readyNum.delete(nk); }
   }
   // stand-ins count toward the cache: the ones not drawn go first, then real tiles least recently used
   function evict() {
@@ -1216,6 +1222,6 @@ export function createTerrain({ scene, camera, renderer, baseElev = null, lite =
   function setAlpha(a) { alpha = a; group.visible = enabled && a > 0.001; }
   function recolour() { for (const t of cache.values()) if (t.state === 'ready') colourTile(t); for (const t of sic.values()) if (t.state === 'ready') { t.cFrom = t.cTo = t.pFrom = t.pTo = null; colourTile(t); } }
 
-  return { group, update, setEnabled, setAlpha, status, finestM, recolour, elevationAt, get refine() { return refine; }, get nearD() { return nearD; }, get budget() { return BUDGET; }, get enabled() { return enabled; }, get pending() { return pending; }, get holes() { return lastHoles; }, coverTex, get coverFull() { return covFull; }, get health() { return { ok: loadedOk, fails: loadFails, lastErr, inflight }; }, cache,
+  return { group, get frameMs() { return frameEma; }, update, setEnabled, setAlpha, status, finestM, recolour, elevationAt, get refine() { return refine; }, get nearD() { return nearD; }, get budget() { return BUDGET; }, get enabled() { return enabled; }, get pending() { return pending; }, get holes() { return lastHoles; }, coverTex, get coverFull() { return covFull; }, get health() { return { ok: loadedOk, fails: loadFails, lastErr, inflight }; }, cache,
     prefetch, zoomAhead, get pfCancelled() { return pfCancelled; }, get packStats() { return pack && pack.stats ? pack.stats() : null; }, get workers() { return workOk(); }, get standIns() { return shownSI.length; }, get fading() { let n = 0; for (const t of live) if (t.fade > 0 && t.fade < 1) n++; return n; }, get heldN() { return heldKeys.size; }, get frameEma() { return frameEma; }, get siDebug() { return { msPerBuild: +(siMs / Math.max(1, siCount)).toFixed(2), builds: siCount, built: sic.size, queued: siQueue.size, shown: shownSI.length, morphing: morphing.size, colourMorphs: [...morphing].filter(t => t.cFrom).length, pf: pf.size }; }, get format() { return pack ? 'v2' : 'png'; } };
 }

@@ -12,7 +12,8 @@
 // WHAT YOU SHOULD UNDERSTAND: swell_model.js run() (the physics). PLUMBING: everything in this file.
 // Illustrative, not a forecast.
 
-import { makeModel, toMetres, waveSpeeds, G } from './swell_model.js?v=c3';
+import { toMetres, waveSpeeds, G } from './swell_model.js?v=c4';
+import { makeModelAsync } from './swell_client.js?v=w2';   // run() happens in a worker (swell_worker.js)
 
 // Observer marks (one surfer, 17 Sep 2026), as in simulate_swell.py USER_SKETCH. (lat, lon)
 const FILM = toMetres(39.319506, -9.355772), TAKEOFF = toMetres(39.318870, -9.356829);
@@ -37,8 +38,10 @@ let model = null, modelP = null, last = null, scheduled = false, busy = false;
 const viewer = () => window.__viewer;
 
 function loadModel() {
-  if (!modelP) modelP = fetch('data/reefs.json').then(r => { if (!r.ok) throw new Error('reefs.json ' + r.status); return r.json(); })
-    .then(reefs => { model = makeModel(reefs); model.cover = near(reefs, COVER_R, -99); model.approach = near(reefs, SIZE_R, SIZE_DEPTH); return model; });
+  // The points come from the viewer, which already loaded them (same doubles as reefs.json); no second download.
+  if (!modelP) modelP = viewer().loadPoints('data/reefs.json', 'Porto Batel points')
+    .then(reefs => makeModelAsync(reefs, undefined, 'porto_batel').then(m => { model = m; model.cover = near(reefs, COVER_R, -99); model.approach = near(reefs, SIZE_R, SIZE_DEPTH); return model; }))
+    .catch(err => { modelP = null; throw err; });
   return modelP;
 }
 function near(reefs, radius, minDepth) {   // reef points within radius of Porto Batel, lidar depth at least minDepth
@@ -70,7 +73,7 @@ function stats(res, p, ms) {
 // Run the model for params (no drawing). Used by the tutorial for its checks too.
 async function compute(p = params) {
   await loadModel();
-  const t0 = performance.now(), res = model.run(p);
+  const t0 = performance.now(), res = await model.run(p);
   return { res, stats: stats(res, p, performance.now() - t0) };
 }
 
@@ -181,7 +184,7 @@ async function validate() {
   await loadModel();
   const d = viewer().SWELL.file_data, c = d.meta.config;
   const t0 = performance.now();
-  const r = model.run({ H0: c.H0_m, T: c.T_s, dir: c.direction_from_deg, tide: c.tide_above_lat_m, wrapped: d.meta.mode === 'WRAPPED' });
+  const r = await model.run({ H0: c.H0_m, T: c.T_s, dir: c.direction_from_deg, tide: c.tide_above_lat_m, wrapped: d.meta.mode === 'WRAPPED' });
   const ms = performance.now() - t0;
   let max = 0, sum = 0, n = 0, state = 0, broken = 0;
   for (let j = 0; j < d.H.length; j++) {

@@ -87,12 +87,19 @@ LAYERS = {
                    times=lambda j: dict(dataTime=iso(j.get("lastEvent")), builtAt=iso(j.get("built")))),
 }
 
+class ReadError(Exception):
+    """A read failed for a reason other than 'the key does not exist' (network, auth, 5xx ...)."""
+
+MISSING_MARKERS = ("nosuchkey", "(404)", "404 ", "not found", "does not exist")
+
 class Folder:
     """Destination = a local folder (tests)."""
     def __init__(self, path): self.path = os.path.abspath(path)
     def read(self, key):
         p = os.path.join(self.path, key)
-        return open(p, "rb").read() if os.path.exists(p) else None
+        if not os.path.exists(p): return None
+        try: return open(p, "rb").read()
+        except OSError as e: raise ReadError(f"{key}: {e}")
     def put(self, key, src, cache):
         p = os.path.join(self.path, key); os.makedirs(os.path.dirname(p), exist_ok=True); shutil.copyfile(src, p)
     def stamps(self, layer):
@@ -115,8 +122,14 @@ class R2:
         return subprocess.run(["aws", "s3", *args, "--endpoint-url", self.endpoint, *quiet],
                               env=self.env, check=check, capture_output=True)
     def read(self, key):
-        r = self.aws("cp", f"s3://{self.bucket}/{key}", "-", check=False)
-        return r.stdout if r.returncode == 0 else None
+        """The object's bytes; None only when the key does not exist (NoSuchKey / 404 in aws's stderr);
+        any other failure raises ReadError, so a network blip is never mistaken for 'nothing published'."""
+        try: r = self.aws("cp", f"s3://{self.bucket}/{key}", "-", check=False)
+        except OSError as e: raise ReadError(f"{key}: could not run aws: {e}")
+        if r.returncode == 0: return r.stdout
+        err = r.stderr.decode(errors="replace")
+        if any(m in err.lower() for m in MISSING_MARKERS): return None
+        raise ReadError(f"{key}: aws exit {r.returncode}: {err.strip()[:300]}")
     def put(self, key, src, cache):
         ctype = "application/json" if key.endswith(".json") else "application/octet-stream"
         self.aws("cp", src, f"s3://{self.bucket}/{key}", "--cache-control", cache, "--content-type", ctype)
@@ -161,8 +174,12 @@ def main(argv):
         if have is None: sys.exit("could not measure the bucket; nothing uploaded")
         print(f"bucket: {have / 1e9:.2f} GB now, this upload {new / 1e6:.1f} MB, limit {max_gb} GB")
         if have + new > max_gb * 1e9: sys.exit("would pass the limit; nothing uploaded")
-    raw = dest.read("data/latest.json")
-    latest = json.loads(raw) if raw else {"schema": 1, "layers": {}}
+    try:
+        raw = dest.read("data/latest.json")
+        latest = {"schema": 1, "layers": {}} if raw is None else json.loads(raw)   # only a missing key starts a new index
+        if not isinstance(latest.get("layers"), dict): raise ValueError("no 'layers' object")
+    except (ReadError, ValueError) as e:     # never overwrite the index with only this run's layers
+        sys.exit(f"could not read data/latest.json ({e}); nothing uploaded")
     now = datetime.datetime.now(datetime.timezone.utc)
     changed, touched = [], []
     for name in names:

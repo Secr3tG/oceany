@@ -1,11 +1,20 @@
-numpy
-pandas
-xarray
-netCDF4
-matplotlib
-requests
-rasterio
-scipy
-pypdf
-numba
+# Python packages for the Oceany pipeline. Install into the project's venv:
+#   .venv/bin/pip install -r requirements.txt
+# The first four are pinned to exactly what the refresh-layers workflow installs
+# (scripts/repo-files/.github/workflows/refresh-layers.yml): change both together.
+numpy==2.0.2
+scipy==1.13.1
+pillow==11.3.0          # JPEG 2000 GRIB2 packing (grib2.py) and image output
+imagecodecs==2024.12.30 # CCSDS GRIB2 packing, ECMWF open data (grib2.py)
+# The rest: the versions in .venv on 2026-11-27.
+numba==0.60.0
+pandas==2.3.3
+xarray==2024.7.0
+netCDF4==1.7.2
+matplotlib==3.9.4
+requests==2.32.5
+rasterio==1.4.3
+pypdf==6.21.4
 copernicusmarine==2.3.0
+# tests (tests/, run with: .venv/bin/python -m pytest tests)
+pytest==8.3.4

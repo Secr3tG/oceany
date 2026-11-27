@@ -15,7 +15,7 @@
 //     .setShowPaths(bool): adds a "show all paths" checkbox under the layer, default off.
 import * as THREE from 'three';
 import { makeDotMaterial, palette, setPalette, PALETTES, updateDotScale, dotScale, dotExag, seaExag, applyCssPalette, landTone, oceanTone, LAND_DOT_D, HUE_MAX, ICE_LAT, hazeStart } from './dots.js';
-import { createTerrain } from './terrain.js?v=b58';
+import { createTerrain } from './terrain.js?v=b59';
 import { USE_AWS as TERRAIN_AWS } from './terrain-source.js?v=t8';
 
 const RADIUS = 1.0;
@@ -38,7 +38,28 @@ const LITE = (() => { const q = new URLSearchParams(location.search).get('lite')
 const PROFILE = LITE ? 'phone' : 'desktop';
 // phone 2026-11-23 late: the LITE cap 1.5 → 2 (same as desktop). At 1.5 a 3× iPhone stretched every frame 2×, which with
 // the later tile split below read as soft blobs at Peniche; 390×844 at 2× is still a quarter of a desktop's pixels.
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const DPR_MAX = Math.min(devicePixelRatio, 2);
+renderer.setPixelRatio(DPR_MAX);
+// WebGL context loss (iOS drops it under memory pressure or when another heavy page opens): stop drawing, let three.js
+// re-upload on restore, and if it does not come back within 4 s show a tap-to-reload notice instead of a black screen.
+let ctxLost = false;
+{
+  let lostTimer = 0, note = null;
+  const hideNote = () => { clearTimeout(lostTimer); if (note) note.hidden = true; };
+  canvas.addEventListener('webglcontextlost', e => {
+    e.preventDefault(); ctxLost = true;
+    lostTimer = setTimeout(() => {
+      if (!note) {
+        note = document.createElement('div'); note.setAttribute('role', 'alert');
+        note.textContent = 'The graphics were interrupted. Tap to reload.';
+        note.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:50;padding:14px 18px;border-radius:10px;background:#060e16;color:#cfe6f2;border:1px solid #5ff2ff;font:15px system-ui,sans-serif;text-align:center;cursor:pointer;max-width:80vw';
+        note.onclick = () => location.reload(); document.body.appendChild(note);
+      }
+      note.hidden = false;
+    }, 4000);
+  });
+  canvas.addEventListener('webglcontextrestored', () => { ctxLost = false; hideNote(); });
+}
 const scene = new THREE.Scene();
 // palette.bg and .night are CSS-style sRGB values (as the page's colours); the renderer converts its clear colour and
 // MeshBasicMaterial colours from linear, so they are read as sRGB here (read as linear they came out grey: #222b38)
@@ -109,15 +130,18 @@ const camLL = { lat: 0, lon: 0 };
 const ringP = new THREE.Vector3(), ringE = new THREE.Vector3(), ringN = new THREE.Vector3();
 let camClear = 1;
 const llOf = v => { const r = v.length(); return [Math.asin(Math.max(-1, Math.min(1, v.y / r))) / D2R, Math.atan2(-v.z, v.x) / D2R]; };
+const ringQ = new THREE.Vector3(), ringF = new THREE.Vector3(), llT = { la: 0, lo: 0 };   // scratch: no allocation per call
+function llInto(v) { const r = v.length(); llT.la = Math.asin(Math.max(-1, Math.min(1, v.y / r))) / D2R; llT.lo = Math.atan2(-v.z, v.x) / D2R; return llT; }
 function groundTop(p) {                                // highest true land height (m) under and round camera point p, or 0
-  const [la, lo] = llOf(p);
-  let h = Math.max(0, terrain.elevationAt(la, lo) || 0);
+  let l = llInto(p);
+  let h = Math.max(0, terrain.elevationAt(l.la, l.lo) || 0);
   const r = p.length(), hg = Math.max(150, Math.min(3000, ((r - RADIUS) * 6371000 - h * dotExag.value) * 0.5)) / 6371000;
   ringN.copy(p).normalize(); ringE.set(0, 1, 0).cross(ringN); if (ringE.lengthSq() < 1e-8) ringE.set(1, 0, 0); ringE.normalize();
-  const ringF = ringP.copy(ringN).cross(ringE).clone();
+  ringF.copy(ringN).cross(ringE);
   for (let k = 0; k < 6; k++) {
-    const a = k * Math.PI / 3, q = ringN.clone().addScaledVector(ringE, Math.cos(a) * hg).addScaledVector(ringF, Math.sin(a) * hg);
-    const [qa, qo] = llOf(q); h = Math.max(h, terrain.elevationAt(qa, qo) || 0);
+    const a = k * Math.PI / 3;
+    ringQ.copy(ringN).addScaledVector(ringE, Math.cos(a) * hg).addScaledVector(ringF, Math.sin(a) * hg);
+    l = llInto(ringQ); h = Math.max(h, terrain.elevationAt(l.la, l.lo) || 0);
   }
   return h;
 }
@@ -141,14 +165,14 @@ function cameraFloor() {                               // lowest camera distance
 // point jumped by the ridge-to-valley height × exaggeration (km) from frame to frame, and the camera with it.
 const gsP = new THREE.Vector3(), gsE = new THREE.Vector3(), gsN = new THREE.Vector3();
 function groundMean() {
-  const [la0, lo0] = llOf(view.n), h0 = terrain.elevationAt(la0, lo0);
+  let l = llInto(view.n); const h0 = terrain.elevationAt(l.la, l.lo);
   if (h0 == null) return null;
   const rr = Math.max(1500, 0.35 * view.alt * 6371000) / 6371000;
   gsE.set(0, 1, 0).cross(view.n); if (gsE.lengthSq() < 1e-8) gsE.set(1, 0, 0); gsE.normalize(); gsN.copy(view.n).cross(gsE);
   let s = Math.max(0, h0), c = 1;
   for (let k = 0; k < 8; k++) {
     const a = k * Math.PI / 4; gsP.copy(view.n).addScaledVector(gsE, Math.cos(a) * rr).addScaledVector(gsN, Math.sin(a) * rr);
-    const [la, lo] = llOf(gsP), h = terrain.elevationAt(la, lo); if (h != null) { s += Math.max(0, h); c++; }
+    l = llInto(gsP); const h = terrain.elevationAt(l.la, l.lo); if (h != null) { s += Math.max(0, h); c++; }
   }
   return s / c;
 }
@@ -207,7 +231,12 @@ function resize() {
 addEventListener('resize', resize); visualViewport?.addEventListener('resize', resize); resize();   // phones: the address bar shows and hides without a window resize
 
 // ---------- regions ----------
-const { regions, wantedSpots } = await (await fetch('./regions.json', { cache: 'no-cache' })).json();
+let regions = [], wantedSpots = null;
+try {
+  const rj = await fetch('./regions.json', { cache: 'no-cache' });
+  if (!rj.ok) throw new Error('HTTP ' + rj.status);
+  const j = await rj.json(); regions = Array.isArray(j.regions) ? j.regions : []; wantedSpots = j.wantedSpots || null;
+} catch (e) { console.info('Oceany globe: regions.json not loaded, the globe starts without spots:', e && (e.message || String(e))); }
 // Wanted spots from the research file named in regions.json (wantedSpots): added as wanted markers with a kind
 // (wave | research | hazard). The research file is read as is; the picks (skip, quick unlock) live in regions.json.
 const KINDS = ['wave', 'research', 'hazard'];
@@ -1527,11 +1556,11 @@ function followAim() {
 // Round 3 (#12): the followed storm's name under the top bar while following (the Fly button's text sits in the panel)
 const followCap = document.getElementById('follow-cap');
 setInterval(() => {
-  if (!followCap) return;
+  if (!followCap || document.hidden) return;
   const t = !follow ? '' : follow.ended ? `${follow.ended} ${follow.fading ? 'ending' : 'ended'}`
     : follow.handover ? `Flying to ${follow.name || 'the next storm'}` : `Following ${follow.name || 'storm'} · drag to let go`;
   if (followCap.textContent !== t) followCap.textContent = t;
-  followCap.hidden = !t;
+  if (followCap.hidden === !!t) followCap.hidden = !t;
 }, 300);
 let endedNote = null;   // { name, until }: "… ended" shown on the layer's fly button after a follow lets go
 // Click on the canvas: nearest visible marker within 18 px of the pointer.
@@ -1607,6 +1636,9 @@ const NOTICE = {
     const p2 = document.createElement('div'); p2.textContent = NOTICE.officialTail; box.appendChild(p2);
   }
 }
+// DOM writes only when the value changed (the pollers below run every 0.3 to 1 s)
+const setTxt = (el, t) => { if (el.textContent !== t) el.textContent = t; };
+const setDisp = (el, v) => { if (el.style.display !== v) el.style.display = v; };
 const layers = [];
 const layerBox = document.getElementById('layers');
 // A layer may expose plain strings .label (what is real and what is illustrative) and .status (what it shows now),
@@ -1643,14 +1675,14 @@ function layerInfo(obj, item, box) {
   }
   item.appendChild(info);
   function refresh() {
-    info.style.display = box.checked ? '' : 'none';
-    lab.textContent = typeof obj.label === 'string' ? obj.label : '';
+    setDisp(info, box.checked ? '' : 'none');
+    setTxt(lab, typeof obj.label === 'string' ? obj.label : '');
     let dt = typeof obj.details === 'string' ? obj.details : '';
     if (NOTICE.liveIds.has(lid) && dt.startsWith(NOTICE.liveLayer)) dt = dt.slice(NOTICE.liveLayer.length).trim();   // the layer's own copy of the safety line: shown once, above
     if (detText.textContent !== dt) detText.textContent = dt;
-    more.style.display = dt ? '' : 'none'; if (!dt) det.hidden = true;
-    st.textContent = typeof obj.status === 'string' ? obj.status : '';
-    lab.style.display = lab.textContent ? '' : 'none'; st.style.display = st.textContent ? '' : 'none';
+    setDisp(more, dt ? '' : 'none'); if (!dt && !det.hidden) det.hidden = true;
+    setTxt(st, typeof obj.status === 'string' ? obj.status : '');
+    setDisp(lab, lab.textContent ? '' : 'none'); setDisp(st, st.textContent ? '' : 'none');
     if (modeBox) {
       const cur = obj.userData && obj.userData.mode;
       for (const b of modeBox.children) b.classList.toggle('on', b.dataset.mode === cur);
@@ -1658,7 +1690,7 @@ function layerInfo(obj, item, box) {
   }
   const prev = obj.userData && obj.userData.onChange;
   if (obj.userData) obj.userData.onChange = l => { if (prev) prev(l); refresh(); };
-  setInterval(refresh, 1000);
+  setInterval(() => { if (!document.hidden) refresh(); }, 1000);
   refresh();
   return refresh;
 }
@@ -1678,7 +1710,7 @@ function layerExtras(obj, item, box) {
     fly = document.createElement('button'); fly.type = 'button'; fly.className = 'fly-storm';
     fly.onclick = () => { if (follow && follow.layer === obj) releaseFollow(); else flyToStorm(obj); refreshFly(); };
     wrap.appendChild(fly);
-    setInterval(refreshFly, 500);
+    setInterval(() => { if (!document.hidden) refreshFly(); }, 500);
   }
   function refreshFly() {
     if (!fly) return;
@@ -1686,7 +1718,7 @@ function layerExtras(obj, item, box) {
     fly.disabled = !mine && (!n || !!flight);
     fly.classList.toggle('on', !!mine);
     const ended = endedNote && endedNote.until > performance.now() ? `${endedNote.name} ended · ` : '';
-    fly.textContent = mine ? (follow.ended ? `${follow.ended} ${follow.fading ? 'ending' : 'ended'} · ${n > (follow.fading ? 1 : 0) ? 'moving on to the next' : 'none left, easing out'}` : `Following ${follow.name || 'storm'} · ${follow.handover ? (follow.prev ? follow.prev + ' ended, flying to the next' : 'next storm') : 'drag or click to release'}`) : ended + (n ? 'Fly to strongest storm' : 'Fly to strongest storm (none active now)');
+    setTxt(fly, mine ? (follow.ended ? `${follow.ended} ${follow.fading ? 'ending' : 'ended'} · ${n > (follow.fading ? 1 : 0) ? 'moving on to the next' : 'none left, easing out'}` : `Following ${follow.name || 'storm'} · ${follow.handover ? (follow.prev ? follow.prev + ' ended, flying to the next' : 'next storm') : 'drag or click to release'}`) : ended + (n ? 'Fly to strongest storm' : 'Fly to strongest storm (none active now)'));
   }
   if (wrap.children.length) item.appendChild(wrap);
   const sync = () => { wrap.style.display = box.checked ? '' : 'none'; refreshFly(); };
@@ -1709,7 +1741,7 @@ function syncLiveNotice() {
   const on = layers.some(l => NOTICE.globeIds.has(l.userData.layerId) && l.visible);
   if (el.hidden === on) el.hidden = !on;
 }
-setInterval(syncLiveNotice, 500);
+setInterval(() => { if (!document.hidden) syncLiveNotice(); }, 500);
 function syncDim() {
   syncLiveNotice();
   const live = layers.some(l => l.userData.layerId === 'tornado-live' && l.visible);
@@ -1731,15 +1763,15 @@ function liveCue() {
     row.classList.toggle('live', on);
     const cue = NOTICE.liveCue[l.userData.layerId];
     const note = on && cue ? cue : a && typeof a.note === 'string' ? a.note : '';
-    row.title = note;
+    if (row.title !== note) row.title = note;
     let sub = row.parentElement && row.parentElement.querySelector(':scope > .live-note');
     if (note && !sub && row.parentElement) { sub = Object.assign(document.createElement('div'), { className: 'live-note' }); row.after(sub); }
-    if (sub) { sub.textContent = note; sub.hidden = !note; }
+    if (sub) { setTxt(sub, note); if (sub.hidden === !!note) sub.hidden = !note; }
   }
   const lb = document.querySelector('#bar button[data-sec="layers"]');
   if (lb) lb.classList.toggle('live', any && lb.getAttribute('aria-expanded') !== 'true');
 }
-setInterval(liveCue, 1000);
+setInterval(() => { if (!document.hidden) liveCue(); }, 1000);
 // Arrival of a layer switched on: it fades in over about a second (setDim if it has one, else its materials' opacity),
 // and, seen from whole-globe zoom with nothing else going on, the camera eases 40% of the way toward its place
 // (checkActivity().where, else its first focus target) at the same zoom. The fly pauses auto-rotate, which resumes after.
@@ -1764,22 +1796,28 @@ function layerArrive(obj) {
   const q = new THREE.Quaternion().setFromUnitVectors(from, to), dir = from.applyQuaternion(new THREE.Quaternion().slerp(q, 0.4));
   flyTo({ pos: dir, status: 'nudge' }, null, RADIUS + view.alt);
 }
-async function loadOne(ent, item, row, box, txt) {
+// Phone: archive layers that start off are not built at boot (their data, 0.7 to 1.5 MB each, is fetched and turned into
+// geometry); the first tick of their checkbox loads them and switches them on.
+const LAZY_PHONE = new Set(['hurricanes', 'tornadoes', 'tornado-live', 'quakes-history']);
+async function loadOne(ent, item, row, box, txt, forceOn) {
+  const startOn = forceOn || (restored && restored.layers && ent.id in restored.layers ? restored.layers[ent.id] : ent.on === true && (PROFILE === 'desktop' || ent.id === 'hurricanes'));
+  if (!forceOn && PROFILE === 'phone' && !startOn && LAZY_PHONE.has(ent.id)) {
+    box.disabled = false; box.checked = false;
+    box.onchange = () => { if (!box.checked) return; box.onchange = null; box.disabled = true; txt.after(Object.assign(document.createElement('span'), { className: 'state', textContent: 'loading' })); loadOne(ent, item, row, box, txt, true).finally(() => { const st = row.querySelector('.state'); if (st) st.remove(); }); };
+    return;
+  }
   try {
-    // ent.v (optional, layers.json): a version tag added to the module URL, so a changed layer is not served from cache.
-    // The module file's Last-Modified (one no-cache HEAD) is added too, so an edited layer loads fresh on a normal reload even
-    // when nobody bumped its tag. (Its own imports, e.g. dots_common.js, are not tagged: bump the tag when only those change.)
+    // One build tag for the whole layer tree: index.html sets window.__OCEANY_LAYER_BUILD and builds an import map that tags
+    // every layer dependency (dots_common.js, ocean_data.js, ...) with the same ?v=, so a deploy never mixes new code with
+    // old cached imports and a shared module (hurricanes_live.js) is one URL, loaded once. Bump it there (and in sw.js).
     const base = new URL(ent.module, new URL('./layers.json', location.href)).href;
-    let lm = '';
-    try { const h = await fetch(base, { method: 'HEAD', cache: 'no-cache' }); const m = h.ok && h.headers.get('last-modified'); if (m) lm = String(Date.parse(m) / 1000 | 0); } catch (e) { /* offline or no HEAD: the tag alone */ }
-    const tag = [ent.v, lm].filter(Boolean).join('.');
-    const url = base + (tag ? '?v=' + encodeURIComponent(tag) : '');
+    const url = base + '?v=' + encodeURIComponent(window.__OCEANY_LAYER_BUILD || '0');
     const mod = await import(url);
     const obj = await mod.createLayer({ THREE, radius: RADIUS, makeDotMaterial, palette, latLonToVector3 });
     if (!(obj instanceof THREE.Object3D)) throw new Error('createLayer did not return an Object3D');
     obj.userData.layerId = ent.id;
     scene.add(obj); layers.push(obj);
-    box.disabled = false; box.checked = restored && restored.layers && ent.id in restored.layers ? restored.layers[ent.id] : ent.on === true && (PROFILE === 'desktop' || ent.id === 'hurricanes'); obj.visible = box.checked; txt.textContent = ent.label;   // layers.json 'on': starts shown (dad 2026-11-23 night: on phones only hurricanes starts on; the rest is one tap in Layers)
+    box.disabled = false; box.checked = startOn; obj.visible = box.checked; txt.textContent = ent.label;   // layers.json 'on': starts shown (dad 2026-11-23 night: on phones only hurricanes starts on; the rest is one tap in Layers)
     const refresh = (typeof obj.label === 'string' || typeof obj.status === 'string' || typeof obj.setMode === 'function')
       ? layerInfo(obj, item, box) : () => {};
     const extras = layerExtras(obj, item, box);
@@ -1787,11 +1825,14 @@ async function loadOne(ent, item, row, box, txt) {
     box.onchange = () => { obj.visible = box.checked; refresh(); extras(); syncDim(); updateHint(); if (box.checked) layerArrive(obj); };
     syncDim(); updateHint();
     if (typeof obj.checkActivity === 'function') {            // optional live cue (see liveCue)
+      let polledAt = 0;
       const poll = async () => {
+        polledAt = performance.now();
         try { const a = await obj.checkActivity(); obj.userData.activity = a && typeof a === 'object' ? a : null; } catch (e) { obj.userData.activity = null; }
         liveCue();
       };
-      poll(); setInterval(poll, 10 * 60 * 1000);
+      poll(); setInterval(() => { if (!document.hidden) poll(); }, 10 * 60 * 1000);
+      document.addEventListener('visibilitychange', () => { if (!document.hidden && performance.now() - polledAt > 10 * 60 * 1000) poll(); });
     }
   } catch (e) {
     row.classList.add('missing'); txt.textContent = ent.label; txt.after(Object.assign(document.createElement('span'), { className: 'state', textContent: 'not available' }));
@@ -1949,7 +1990,39 @@ function followGroundFrame() {
 }
 const perf = { frames: 0, worst: 0 };   // read from the console: __globe.perf
 const inFront = v => { tmp.copy(v).applyMatrix4(camera.matrixWorldInverse); return tmp.z < 0; };
-function animate(now) { requestAnimationFrame(animate); frame(now); }
+// Phone only: adaptive pixel ratio (steps of 2, 1.5, 1.25 from terrain's frameEma, or this loop's own average while terrain is
+// off) and a 30 fps cap while the globe is idle (no input, flight, tour, follow, spin or arrival). Desktop: unchanged.
+let lastInputAt = -1e9, lastDrawAt = 0, ownEma = 16, dprIdx = 0, dprCeil = 0, dprMark = 0, dprUpAt = 0;
+const DPR_STEPS = [2, 1.5, 1.25];
+for (const ev of ['pointerdown', 'pointermove', 'wheel', 'keydown', 'touchstart', 'touchmove']) addEventListener(ev, () => { lastInputAt = performance.now(); }, { passive: true, capture: true });
+const zoomBusy = () => Math.abs(Math.log(view.alt / zoom.target)) > 1e-3;
+const isIdle = now => now - lastInputAt > 1500 && !flight && !TOUR.on && !drag && !follow && !arrival && !(spin.on && spin.k > 1e-3) && !zoomBusy();
+function adaptDpr(now) {
+  if (now - dprMark < 500) return; dprMark = now;
+  const ms = terrain.enabled ? terrain.frameMs : ownEma;
+  let want = dprIdx;
+  if (ms > 30 && dprIdx < DPR_STEPS.length - 1) { want = dprIdx + 1; if (now - dprUpAt < 20000) dprCeil = Math.max(dprCeil, want); dprUpAt = 0; }
+  else if (ms < 18 && dprIdx > dprCeil) { if (!dprUpAt) dprUpAt = now; if (now - dprUpAt > 4000) { want = dprIdx - 1; dprUpAt = now; } }
+  else if (ms >= 18) dprUpAt = 0;
+  if (want === dprIdx) return;
+  dprIdx = want;
+  const r = Math.min(DPR_STEPS[dprIdx], DPR_MAX);
+  if (r === renderer.getPixelRatio()) return;
+  renderer.setPixelRatio(r); resize();
+  earth.material.uniforms.uMaxPx.value = BASE_MAX_PX * r;
+}
+function animate(now) {
+  requestAnimationFrame(animate);
+  if (ctxLost) return;
+  if (PROFILE === 'phone') {
+    const idle = isIdle(now);
+    if (idle && now - lastDrawAt < 30) return;   // idle: every other frame (30 fps)
+    if (lastDrawAt && !idle) { const d = Math.min(200, now - lastDrawAt); ownEma += (d - ownEma) * 0.1; }
+    lastDrawAt = now;
+    adaptDpr(now);
+  }
+  frame(now);
+}
 // Labels: shown little by default, more on interaction. Always named: unlocked spots, the hovered or focused marker and
 // the picked one (card open). Others are named only as you zoom in, a few at a time, nearest the screen centre first by
 // priority (quick-unlock wanted spots, then the rest): none at whole-globe zoom, up to LBL_MAX close in. A label that

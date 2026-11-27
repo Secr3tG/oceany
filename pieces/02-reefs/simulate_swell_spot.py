@@ -38,53 +38,51 @@ NORMAL_SMOOTH_M = 100
 REGIONAL_SMOOTH_M = 600
 
 # ------------------------------------------------------------------------------------------------------------
-# One block per spot. "typical swell" = median of the long-period winter swell at the source (Nov-Mar).
+REGISTRY = json.loads((HERE.parent.parent / "spots.json").read_text())
+
+
+def from_registry(key):
+    """title, points file, typical swell (H0, T, direction_from, tide), datum and take-off of one spot, from spots.json."""
+    r = REGISTRY[key]
+    t = r["typical_swell"]
+    return dict(title=r["title"], points=VIEW / r["viewer_points"], H0=t["H0"], T=t["T"], direction_from=t["direction_from"],
+                tide=t["tide"], datum=r["datum"], takeoff=dict(r["takeoff"]))
+
+
+# One block per spot; the numbers are in spots.json, the notes and sources stay here. "typical swell" = median of the long-period winter swell at the source (Nov-Mar).
 # ------------------------------------------------------------------------------------------------------------
 SPOTS = {
     "pipeline": dict(
-        title="Pipeline, Oahu",
-        points=VIEW / "pipeline.json",
-        H0=2.1, T=14.3, direction_from=320, tide=0.0, wrapped=False, edge_depth=None,
+        **from_registry("pipeline"),
+        wrapped=False, edge_depth=None,
         swell_source=("NOAA NDBC 51201 Waimea Bay buoy (public domain), historical stdmet 2024 + 2025, months Nov-Mar, "
                       "records with MWD 280-350 deg and DPD >= 12 s (n = 8,321): median WVHT 2.11 m, DPD 14.29 s, "
                       "MWD 320 deg (p75 WVHT 2.62 m). All winter records: median WVHT 2.01 m, DPD 13.3 s. "
                       "Files pieces/05-pipeline/data/raw/ndbc_51201/51201h2024.txt.gz, 51201h2025.txt.gz"),
         tide_note="0.0 m = LMSL (the datum of the lidar); Haleiwa spring range is only ~0.6 m",
-        datum="LMSL",
-        takeoff=dict(lat=21.66389, lon=-158.05389, how="published spot position (Wikipedia, Banzai Pipeline), approximate"),
         shore_side=0,          # profile shoreward end: walk from the take-off until the bed is above the water
     ),
     "supertubos": dict(
-        title="Supertubos, Peniche",
-        points=VIEW / "reefs_wide.json",
-        H0=1.82, T=12.2, direction_from=295, tide=1.7, wrapped=False, edge_depth=None,
+        **from_registry("supertubos"),
+        wrapped=False, edge_depth=None,
         swell_source=("NOAA NCEP GFS-Wave (WAVEWATCH III) analysis, 0.25 deg, public domain (model, not a buoy), nearest sea point to 39.375 N 9.458 W, 00 and 12 UTC on every 3rd day, Nov-Mar 2024-25 + 2025-26 (n = 193): median primary-swell height 1.82 m, period 12.2 s, direction 295 deg. No open buoy with direction was found. Built by pieces/11-ocean/build_typical_swell.py; numbers in pieces/11-ocean/data/typical_swell.json"),
         tide_note="1.7 m above LAT ~ Peniche mean level (IH: mean level 2.00 m above ZH, LAT 2026 ~ ZH + 0.34 m)",
-        datum="LAT",
         # The cited Supertubos coordinate (39.34, -9.36) is on land. The take-off is picked from the model: the outermost
-        # break onset (first broken cell) nearest to the cited point. Labelled approximate.
-        takeoff=dict(lat=39.34, lon=-9.36, how="model break onset nearest the cited Supertubos coordinate (39.34, -9.36, "
-                     "which is on land); approximate", from_model=True),
+        # break onset (first broken cell) nearest to the cited point. Labelled approximate (spots.json takeoff.from_model).
         caveat="Sand beach break: the 2011 lidar seabed; the bars have moved since. Illustrative.",
     ),
     "guethary": dict(
-        title="Guethary / Parlementia, France",
-        points=VIEW / "guethary.json",
-        H0=1.31, T=12.4, direction_from=303, tide=0.0, wrapped=False, edge_depth=None,
+        **from_registry("guethary"),
+        wrapped=False, edge_depth=None,
         swell_source=("NOAA NCEP GFS-Wave (WAVEWATCH III) analysis, 0.25 deg, public domain (model, not a buoy), nearest sea point to 43.45 N 1.70 W, 00 and 12 UTC on every 3rd day, Nov-Mar 2024-25 + 2025-26 (n = 189): median primary-swell height 1.31 m, period 12.4 s, direction 303 deg. No open buoy with direction was found. Built by pieces/11-ocean/build_typical_swell.py; numbers in pieces/11-ocean/data/typical_swell.json"),
         tide_note="0.0 m above IGN69 ~ mean sea level on this coast (IGN69 zero lies within ~0.2 m of mean level at Bayonne/Socoa); spring range ~4 m",
-        datum="IGN69",
-        takeoff=dict(lat=43.427718, lon=-1.611053, how="published Parlementia position (surf-guide source), approximate"),
         caveat="Litto3D lidar (Shom - IGN, 2025, NAQ 2020-2022) reaches only ~17-29 m depth near the spot; deeper refraction is not modelled. Spot position approximate. Illustrative.",
     ),
     "hossegor": dict(
-        title="Hossegor / La Graviere, France",
-        points=VIEW / "hossegor.json",
-        H0=1.31, T=12.4, direction_from=303, tide=0.0, wrapped=False, edge_depth=None,
+        **from_registry("hossegor"),
+        wrapped=False, edge_depth=None,
         swell_source=("NOAA NCEP GFS-Wave (WAVEWATCH III) analysis, 0.25 deg, public domain (model, not a buoy), nearest sea point to 43.45 N 1.70 W, 00 and 12 UTC on every 3rd day, Nov-Mar 2024-25 + 2025-26 (n = 189): median primary-swell height 1.31 m, period 12.4 s, direction 303 deg. No open buoy with direction was found. Built by pieces/11-ocean/build_typical_swell.py; numbers in pieces/11-ocean/data/typical_swell.json"),
         tide_note="0.0 m above IGN69 ~ mean sea level on this coast (IGN69 zero lies within ~0.2 m of mean level at Bayonne/Socoa); spring range ~4 m",
-        datum="IGN69",
-        takeoff=dict(lat=43.67562, lon=-1.443375, how="published La Graviere position (surf-guide source), approximate"),
         profile_bridge_m=25,   # the 2020-22 lidar has 1-cell holes along this line (305-324 m out); bridge them so the
                                # SPH profile reaches the outer bar and ~9 m of water (only the profile CSV changes)
         caveat="Litto3D lidar (Shom - IGN, 2025, NAQ 2020-2022) reaches only ~17-29 m depth near the spot; deeper refraction is not modelled. Spot position approximate. Illustrative.".replace("Spot position", "Sand beach break, seabed 2020-2022; the bars move. Spot position"),

@@ -37,6 +37,25 @@ OUT = HERE / "out"   # output folder (--out)
 SPLIT = False        # True with --out: mp4/frames/slices directly in OUT, not OUT/porto_batel/
 V2_SUFFIX = ""       # file name suffix of the v2 slice (--v2-suffix)
 
+# Where the slice is and how it is labelled. The defaults are Porto Batel; another spot passes its own (spot_run.py
+# place(), from spots.json and the spot's profile). Nothing else in this file is spot-specific.
+PORTO_BATEL = dict(
+    case_text="Porto Batel reef, regular swell on the 236 deg line (illustrative 2D slice)",   # slice meta "case"
+    video_title="Porto Batel reef, 236 deg line",           # start of the video title
+    along="from the house along 236 deg",                   # x axis: "distance <along> (m)"
+    marker="sat here (user)",                               # label of the cfg["sat_here_m"] line
+    datum="LAT",                                            # vertical datum of the heights
+    origin_lat=39.322, origin_lon=-9.3625,                  # viewer frame origin (as the points file)
+    points_file="reefs.json",
+    house_lat=39.319506, house_lon=-9.355772,               # s = 0 of the slice
+    bearing_deg=236.0,                                      # seaward bearing written to the slice meta
+    direction_deg=236.0,                                    # the same bearing for direction_unit_xy (spots: 3 decimals)
+    mp4="porto_batel.mp4",
+    s_hi=340.0,          # seaward end of the s window of the slices and camera (s 60 to s_hi)
+    slice_t_cap=78.0,    # v2 slice: last time exported is at most this (s)
+)
+PLACE = PORTO_BATEL
+
 
 def pick_wave(d):
     """The wave to follow: the broken wave with the largest H_b."""
@@ -98,7 +117,7 @@ def main(run):
 
     def cam(k):
         W = 50.0
-        c = min(300.0, track_s[k] - 12.0)
+        c = min(PLACE["s_hi"] - 40.0, track_s[k] - 12.0)
         return max(c, 85.0), W
 
     s_all, zl_all = case.profile()
@@ -116,19 +135,19 @@ def main(run):
         ax.plot(s_bed, z_bed, color="#4a3f30", lw=0.8, zorder=2)
         ax.axhline(tide, color="0.55", lw=0.6, ls="--", zorder=0)
         ax.axvline(cfg["sat_here_m"], color="tab:red", lw=0.8, ls=":", zorder=5)
-    ax0.text(cfg["sat_here_m"], 9.5, "sat here (user)", color="tab:red", fontsize=7, ha="center")
+    ax0.text(cfg["sat_here_m"], 9.5, PLACE["marker"], color="tab:red", fontsize=7, ha="center")
     for tid, sb in breaks:
         ax0.axvline(sb, color="k", lw=0.5, ls="--", zorder=5)
     ax0.set_xlim(sp_ + 2, cfg["s_shore"])
     ax0.set_ylim(z_bed.min() - 0.5, 10.5)
     ax0.set_aspect(VE)
     ax0.tick_params(labelsize=7)
-    ax0.set_ylabel("m above LAT", fontsize=7)
+    ax0.set_ylabel(f"m above {PLACE['datum']}", fontsize=7)
     ax0.set_title(f"whole slice, vertical exaggeration {VE:g}x; dashed lines = first break of each wave; "
                   f"wavemaker at {sp_:g} m", fontsize=8)
-    ax1.set_xlabel("distance from the house along 236 deg (m)")
-    ax1.set_ylabel("height above LAT (m)")
-    sat_txt = ax1.text(cfg["sat_here_m"], 0, "sat here (user)", color="tab:red", fontsize=8, ha="right",
+    ax1.set_xlabel(f"distance {PLACE['along']} (m)")
+    ax1.set_ylabel(f"height above {PLACE['datum']} (m)")
+    sat_txt = ax1.text(cfg["sat_here_m"], 0, PLACE["marker"], color="tab:red", fontsize=8, ha="right",
                        rotation=90, va="bottom")
     title = fig.suptitle("", fontsize=12, y=0.975)
     state = dict(art=[], cb=False)
@@ -156,7 +175,7 @@ def main(run):
         if not state["cb"]:
             fig.colorbar(sc, cax=cax).set_label("speed (m/s)")
             state["cb"] = True
-        title.set_text(f"Porto Batel reef, 236 deg line: H {cfg['H']} m, T {cfg['T']} s, tide {tide} m above LAT "
+        title.set_text(f"{PLACE['video_title']}: H {cfg['H']} m, T {cfg['T']} s, tide {tide} m above {PLACE['datum']} "
                        f"(illustrative, 2D slice)   t = {t:5.1f} s" + (f"   [{label}]" if label else ""))
         state["art"] = art
 
@@ -164,13 +183,13 @@ def main(run):
     sub = out if SPLIT else out / "porto_batel"
     (sub / "frames").mkdir(parents=True, exist_ok=True)
     writer = FFMpegWriter(fps=25, bitrate=8000, codec="libx264", extra_args=["-pix_fmt", "yuv420p"])
-    with writer.saving(fig, str(out / "porto_batel.mp4"), DPI):
+    with writer.saving(fig, str(out / PLACE["mp4"]), DPI):
         for k in range(len(files)):
             draw(k)
             writer.grab_frame()
     # key frames of the followed wave
     kt = {}
-    kt["approach"] = float(ts[int(np.argmin(np.abs(track_s - min(300.0, s_b + 80))))])
+    kt["approach"] = float(ts[int(np.argmin(np.abs(track_s - min(PLACE["s_hi"] - 40.0, s_b + 80))))])
     kt["shoaling"] = float(ts[int(np.argmin(np.abs(track_s - (s_b + 25))))])
     kt["vertical_front"] = tb
     if "overturn_seen" in fb:
@@ -194,7 +213,7 @@ def main(run):
     print("wrote video, frames, slice")
 
 
-def export_slice(run, meta, d, files, ts, track_s, kt, wave, n_part=2400, max_frames=150, mode="random",
+def export_slice(run, meta, d, files, ts, track_s, kt, wave, n_part=None, max_frames=150, mode="random",
                  fname="porto_batel_slice.json"):
     """v1 viewer slice. mode "random": a fixed random particle subset (sessions 4-6).
     mode "surface" (session 7, 2026-11-14): per frame, particles in a thin band at the free surface
@@ -203,6 +222,9 @@ def export_slice(run, meta, d, files, ts, track_s, kt, wave, n_part=2400, max_fr
     frame, filled in order of s. Slot j therefore stays inside the same 1 m bin from frame to frame, so the
     viewer's per-index blend between frames only moves a point within its bin. Identity is not kept.
     Bins with fewer band particles than slots repeat them; dry bins borrow the nearest wet bin's."""
+    s_hi = PLACE["s_hi"]
+    if n_part is None:
+        n_part = int(round(2400 * (s_hi - 60.0) / 280.0))      # 2400 for s 60-340: the same slots per 1 m bin
     cfg = meta["cfg"]
     dp = meta["dp"]
     tide = cfg["tide_above_lat"]
@@ -216,16 +238,16 @@ def export_slice(run, meta, d, files, ts, track_s, kt, wave, n_part=2400, max_fr
     _, x0, z0, _, _ = load_snap(files[ks[0]])
     s0 = sp_ - x0
     _, xl, _, _, _ = load_snap(files[ks[-1]])
-    cand = np.where((s0 > 60) & (s0 < 340) & (xl < 655.0))[0]     # never removed by the drain in the window
+    cand = np.where((s0 > 60) & (s0 < s_hi) & (xl < 655.0))[0]     # never removed by the drain in the window
     rng = np.random.default_rng(1)
     pick = np.sort(rng.choice(cand, size=min(n_part, cand.size), replace=False))
     if mode == "surface":
-        edges = np.arange(60.0, 340.0 + 1e-9, 1.0)
+        edges = np.arange(60.0, s_hi + 1e-9, 1.0)
         slots = np.array([a.size for a in np.array_split(np.arange(n_part), edges.size - 1)])
         wl = np.load(Path(run) / "walls.npz")
         walls = (wl["x"].astype(float), wl["z"].astype(float))
         overhangs = {}
-    s_grid = np.arange(60.0, 340.0 + 1e-9, 1.0)
+    s_grid = np.arange(60.0, s_hi + 1e-9, 1.0)
     frames = []
     prev = None
     for k in ks:
@@ -234,7 +256,7 @@ def export_slice(run, meta, d, files, ts, track_s, kt, wave, n_part=2400, max_fr
             pick = surface_pick(x, z, dp, sp_, tide, edges, slots, rng, walls=walls)
             # lip / air pocket: overhang columns in ALL particles (0.1 m columns, gap > 3 dp), then how many
             # exported particles sit on the water above that gap
-            ov = coherent_runs(overhang_columns(sp_ - x, z + tide, s_lo=100.0, s_hi=320.0, col=0.1, gap=0.3))
+            ov = coherent_runs(overhang_columns(sp_ - x, z + tide, s_lo=100.0, s_hi=s_hi - 20.0, col=0.1, gap=0.3))
             if ov:
                 sp_k, zp_k = sp_ - x[pick], z[pick] + tide
                 on_lip = sum(int(np.sum((sp_k >= c_) & (sp_k < c_ + 0.1) & (zp_k >= ztop_ - 0.01)))
@@ -260,29 +282,30 @@ def export_slice(run, meta, d, files, ts, track_s, kt, wave, n_part=2400, max_fr
     s_b, zl_b = case.profile()
     m = (s_b >= cfg["s_shore"]) & (s_b <= sp_)
     # local frame of the viewer (same flat-earth origin as simulate_swell.py / reefs.json)
-    O_LAT, O_LON, MPD = 39.322, -9.3625, 111195.0
-    hx = (-9.355772 - O_LON) * MPD * math.cos(math.radians(O_LAT))
-    hy = (39.319506 - O_LAT) * MPD
+    O_LAT, O_LON, MPD = PLACE["origin_lat"], PLACE["origin_lon"], 111195.0
+    hx = (PLACE["house_lon"] - O_LON) * MPD * math.cos(math.radians(O_LAT))
+    hy = (PLACE["house_lat"] - O_LAT) * MPD
     fb = wave["first_break"]
     out = dict(
         meta=dict(
-            case="Porto Batel reef, regular swell on the 236 deg line (illustrative 2D slice)",
+            case=PLACE["case_text"],
             label="illustrative 2D slice",
-            house_lat=39.319506, house_lon=-9.355772, bearing_deg=236.0,
+            house_lat=PLACE["house_lat"], house_lon=PLACE["house_lon"], bearing_deg=PLACE["bearing_deg"],
             house_x_m=round(hx, 2), house_y_m=round(hy, 2),
-            frame_origin="x_m east / y_m north of 39.322 N, -9.3625 E (M_PER_DEG 111195), as reefs.json",
-            direction_unit_xy=[round(math.sin(math.radians(236)), 5), round(math.cos(math.radians(236)), 5)],
-            vertical_datum="LAT", tide_above_lat_m=tide, H_m=cfg["H"], T_s=cfg["T"], dp_m=dp,
+            frame_origin=f"x_m east / y_m north of {O_LAT} N, {O_LON} E (M_PER_DEG 111195), as {PLACE['points_file']}",
+            direction_unit_xy=[round(math.sin(math.radians(PLACE["direction_deg"])), 5),
+                               round(math.cos(math.radians(PLACE["direction_deg"])), 5)],
+            vertical_datum=PLACE["datum"], tide_above_lat_m=tide, H_m=cfg["H"], T_s=cfg["T"], dp_m=dp,
             frame_dt_s=round(float(ts[ks[1]] - ts[ks[0]]), 3) if ks.size > 1 else None,
             n_frames=len(frames), n_particles=int(pick.size), followed_wave=wave["track"],
             first_break_s_m=fb["s_from_house_m"], sat_here_user_s_m=cfg["sat_here_m"],
             fields=dict(
                 s_cm="distance from the house along the bearing (cm); first frame absolute",
                 ds_cm="change of s_cm since the previous frame (cm); later frames",
-                z_cm="height above LAT (cm); first frame absolute", dz_cm="change of z_cm since previous frame",
+                z_cm=f"height above {PLACE['datum']} (cm); first frame absolute", dz_cm="change of z_cm since previous frame",
                 v_dms="particle speed (dm/s)",
-                surface_cm="free surface height above LAT (cm) every 1 m of surface_s_m; null where dry"),
-            surface_s_m=dict(start=60, stop=340, step=1),
+                surface_cm=f"free surface height above {PLACE['datum']} (cm) every 1 m of surface_s_m; null where dry"),
+            surface_s_m=dict(start=60, stop=int(s_hi), step=1),
             notes=["2D simulation (WCSPH) on one line through the 2011 lidar (11 x 14 m grid, interpolated "
                    "between cells); no refraction or alongshore variation; the paddle-out channel is missing",
                    ("particles are a fixed random subset; the same index is the same particle in every frame"
@@ -381,7 +404,7 @@ def overhang_columns(s, z, s_lo=150.0, s_hi=210.0, col=0.1, gap=0.3):
     return [(round(float(ic[i] * col), 2), round(float(zz[i]), 2), round(float(zz[i + 1]), 2)) for i in hit]
 
 
-def export_slice_surface(run, n_interior=6000, ring=0.12, s_lo=60.0, s_hi=340.0):
+def export_slice_surface(run, n_interior=6000, ring=0.12, s_lo=60.0, s_hi=None):
     """Slice export v2: every particle at or near the free surface plus a thin random interior sample.
 
     Free surface: fewer than 11 neighbours (self included) within 2 dp (a bulk particle has about 13),
@@ -391,6 +414,7 @@ def export_slice_surface(run, n_interior=6000, ring=0.12, s_lo=60.0, s_hi=340.0)
     for each frame n x uint16 (s cm - 6000), n x int16 (z cm above LAT), n x uint8 (speed dm/s), padded to
     an even byte count. The first n_surface of each frame are surface particles."""
     from scipy.spatial import cKDTree
+    s_hi = PLACE["s_hi"] if s_hi is None else s_hi
     run = Path(run)
     d = json.loads((run / "diagnostics.json").read_text())
     meta = json.loads((run / "meta.json").read_text())
@@ -403,7 +427,7 @@ def export_slice_surface(run, n_interior=6000, ring=0.12, s_lo=60.0, s_hi=340.0)
     wave = next(w for w in d["waves"] if w["track"] == track)
     fb = wave["first_break"]
     t0 = kt["approach"]
-    t1 = min(78.0, kt["bore_on_shelf"] + 4.0)
+    t1 = min(PLACE["slice_t_cap"], kt["bore_on_shelf"] + 4.0)
     tv, ttd = kt["vertical_front"], kt.get("jet_touchdown", kt["vertical_front"] + 0.7)
     fine0, fine1 = math.floor(tv - 2.7), math.ceil(ttd + 2.6)       # 40-46 s for this run
     times = sorted(set([round(t, 1) for t in np.arange(t0, t1 + 1e-6, 0.2)] +
@@ -451,23 +475,24 @@ def export_slice_surface(run, n_interior=6000, ring=0.12, s_lo=60.0, s_hi=340.0)
     mm = np.abs(sf - fb["s_from_house_m"]) < 3.0
     z_front = float(zf[mm].max() + tide) if mm.any() else None
     m = (s_all >= cfg["s_shore"]) & (s_all <= sp_)
-    O_LAT, O_LON, MPD = 39.322, -9.3625, 111195.0
-    hx = (-9.355772 - O_LON) * MPD * math.cos(math.radians(O_LAT))
-    hy = (39.319506 - O_LAT) * MPD
+    O_LAT, O_LON, MPD = PLACE["origin_lat"], PLACE["origin_lon"], 111195.0
+    hx = (PLACE["house_lon"] - O_LON) * MPD * math.cos(math.radians(O_LAT))
+    hy = (PLACE["house_lat"] - O_LAT) * MPD
     ns = [fr["n"] for fr in frames]
     out = dict(
         meta=dict(
-            case="Porto Batel reef, regular swell on the 236 deg line (illustrative 2D slice)",
+            case=PLACE["case_text"],
             label="illustrative 2D slice, true scale",
             version=2, binary=f"porto_batel_slice_v2{V2_SUFFIX}.bin",
-            binary_layout="per frame at byte off: n x uint16 (s cm - s0_cm), n x int16 (z cm above LAT), "
+            binary_layout=f"per frame at byte off: n x uint16 (s cm - s0_cm), n x int16 (z cm above {PLACE['datum']}), "
                           "n x uint8 (speed dm/s), padded to even; first n_surface are surface particles",
             s0_cm=int(s_lo * 100),
-            house_lat=39.319506, house_lon=-9.355772, bearing_deg=236.0,
+            house_lat=PLACE["house_lat"], house_lon=PLACE["house_lon"], bearing_deg=PLACE["bearing_deg"],
             house_x_m=round(hx, 2), house_y_m=round(hy, 2),
-            frame_origin="x_m east / y_m north of 39.322 N, -9.3625 E (M_PER_DEG 111195), as reefs.json",
-            direction_unit_xy=[round(math.sin(math.radians(236)), 5), round(math.cos(math.radians(236)), 5)],
-            vertical_datum="LAT", tide_above_lat_m=tide, H_m=cfg["H"], T_s=cfg["T"], dp_m=dp,
+            frame_origin=f"x_m east / y_m north of {O_LAT} N, {O_LON} E (M_PER_DEG 111195), as {PLACE['points_file']}",
+            direction_unit_xy=[round(math.sin(math.radians(PLACE["direction_deg"])), 5),
+                               round(math.cos(math.radians(PLACE["direction_deg"])), 5)],
+            vertical_datum=PLACE["datum"], tide_above_lat_m=tide, H_m=cfg["H"], T_s=cfg["T"], dp_m=dp,
             frame_dt_s=dict(coarse=0.2, fine=0.1, fine_from_s=fine0, fine_to_s=fine1),
             n_frames=len(frames), n_particles_min=min(ns), n_particles_max=max(ns),
             followed_wave=track, first_break_s_m=fb["s_from_house_m"],
@@ -492,8 +517,12 @@ def export_slice_surface(run, n_interior=6000, ring=0.12, s_lo=60.0, s_hi=340.0)
         print(f"  t {k:5.1f}: overhang columns {len(v[0])} {v[0][:3]}")
 
 
-if __name__ == "__main__":
-    argv = sys.argv[1:]
+def cli(argv, place=None):
+    """The command line below, callable: spot_run.py calls cli(args, place=<the spot's PLACE>)."""
+    global OUT, SPLIT, V2_SUFFIX, PLACE
+    argv = list(argv)
+    if place is not None:
+        PLACE = place
     if "--out" in argv:
         i = argv.index("--out")
         OUT = Path(argv[i + 1]).resolve()
@@ -521,3 +550,7 @@ if __name__ == "__main__":
                      fname=f"porto_batel_slice_{mode_}.json")
     else:
         main(argv[0])
+
+
+if __name__ == "__main__":
+    cli(sys.argv[1:])

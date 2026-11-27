@@ -5,6 +5,7 @@
 // WORTH READING: section 3 (palettes) and section 5 (what the buttons do).
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { fetchPacked } from './packed.js?v=p1';
 import { USE_AWS, SEABED } from '../../07-globe/terrain-source.js?v=t8';   // same module as terrarium.js: Oceany's terrain2 packs unless ?terrain_src=aws
 
 // ---------- 1. Setup: renderer, scene, camera ----------
@@ -108,14 +109,20 @@ cloud.frustumCulled = false;   // the shader moves points, so the stored bounds 
 scene.add(cloud);
 
 // Loading line: shows what is loading while the big JSON files download; an error stays on screen if a fetch fails.
-const DATA_VERSION = 's12';
+const DATA_VERSION = 's13';
+// Data files shipped packed as data/<name>.bin.gz (tools/pack_data.py; same numbers as the JSON, long number lists come
+// back as Float64Array). Code keeps asking for data/<name>.json; loadJSON fetches the packed file instead.
+const PACKED = new Set(['reefs', 'reefs_wide', 'pipeline', 'guethary', 'hossegor', 'seafloor', 'seafloor_ddm', 'seafloor_wide',
+  'porto_batel_slice', 'porto_batel_slice_s8', 'porto_batel_funwave', 'pipeline_slice', 'supertubos_slice', 'guethary_slice', 'hossegor_slice']);
 const loadingEl = document.getElementById('loading'), loadingNow = new Set();
 async function loadJSON(url, what) {
   loadingNow.add(what); loadingEl.className = ''; loadingEl.textContent = 'Loading data\u2026 ' + [...loadingNow].join(', '); loadingEl.style.display = 'block';
   try {
-    const r = await fetch(url + '?v=' + DATA_VERSION);   // cache tag: bump DATA_VERSION when a data file changes
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const j = await r.json(); loadingNow.delete(what);
+    const pk = url.match(/^data\/([\w-]+)\.json$/), packed = pk && PACKED.has(pk[1]);
+    let j;                                               // cache tag: bump DATA_VERSION when a data file changes
+    if (packed) j = await fetchPacked(`data/${pk[1]}.bin.gz?v=${DATA_VERSION}`);
+    else { const r = await fetch(url + '?v=' + DATA_VERSION); if (!r.ok) throw new Error('HTTP ' + r.status); j = await r.json(); }
+    loadingNow.delete(what);
     if (!loadingNow.size && loadingEl.className !== 'err') loadingEl.style.display = 'none';
     else if (loadingNow.size) loadingEl.textContent = 'Loading data\u2026 ' + [...loadingNow].join(', ');
     return j;
@@ -127,9 +134,40 @@ async function loadJSON(url, what) {
 }
 let cur = null;                // the layer on screen: { meta, N, pos, depth, shore, kilde, aar, colorAttr, shoreCells }
 const cache = {};
+// Points files as loaded (x_m, y_m, depth_m float64, the same doubles as the JSON): one download, shared with play.js and
+// live.js (their swell model needs float64; the drawing copy in cache[label] is Float32).
+const pointsP = {};
+function loadPoints(file, what) {
+  return pointsP[file] || (pointsP[file] = loadJSON(file, what || file).catch(err => { delete pointsP[file]; throw err; }));
+}
+// Layer cache: at most LAYER_CACHE_MAX layers stay built (least recently shown out, with their GPU buffers, labels, swell
+// stash and surroundings). Never the layer on screen, the swell's layer, or Porto Batel (small; the sketch pins read it).
+const LAYER_CACHE_MAX = 3, layerUse = [];
+function disposeLayer(label) {
+  const c = cache[label]; if (!c) return;
+  c.g.dispose();
+  c.lines.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); scene.remove(c.lines);
+  [...c.lineTags, ...c.spotTags].forEach(t => t.el.remove());
+  const st = swellStash[label]; if (st && st.geom && st.geom !== swellCloud.geometry) st.geom.dispose(); delete swellStash[label];
+  const L = LAYERS[label]; if (L.swellFile && L.swellFile !== SWELL.file) delete swellFiles[L.swellFile];
+  const sc = surroundCache[label]; if (sc && sc.g && sc.g !== surroundPts.geometry) sc.g.dispose(); delete surroundCache[label];
+  delete pointsP[L.file]; delete cache[label];
+}
+function touchLayer(label) {
+  const i = layerUse.indexOf(label); if (i >= 0) layerUse.splice(i, 1); layerUse.push(label);
+  for (let j = 0; j < layerUse.length && Object.keys(cache).length > LAYER_CACHE_MAX; ) {
+    const lab = layerUse[j];
+    if (lab === label || cache[lab] === cur || lab === SWELL.layer || LAYERS[lab].portugal || !cache[lab]) { j++; continue; }
+    layerUse.splice(j, 1); disposeLayer(lab);
+  }
+}
+let showSeq = 0;   // request token: only the latest showLayer call applies; a stale call builds and changes nothing
 async function showLayer(label) {
+  const mySeq = ++showSeq;
   if (!cache[label]) {
-    const d = await loadJSON(LAYERS[label].file, label);
+    const d = await loadPoints(LAYERS[label].file, label);
+    if (mySeq !== showSeq) return;                 // stale: a newer click owns the screen (nothing built yet, so nothing to dispose)
+    if (!cache[label]) {
     const N = d.depth_m.length, pos = new Float32Array(N * 3), depth = Float32Array.from(d.depth_m);
     for (let i = 0; i < N; i++) { pos[3 * i] = d.x_m[i]; pos[3 * i + 2] = -d.y_m[i]; }   // north = -z
     const shoreCells = [];
@@ -147,7 +185,7 @@ async function showLayer(label) {
     const lineNames = { 235: 'SW 235 (up the southern North Sea)', 315: 'N 315 (past Shetland)', 300: 'NW 300 (Orkney-Shetland gap)', 270: 'W 270 (wind swell, comparison)' };
     const lineTags = [];                          // { el, x, z } for the labels, placed every frame in animate()
     for (const [b, [lx, ly]] of Object.entries(d.lines || {})) {
-      const pts = lx.map((x, i) => v3(x, 0, -ly[i]));
+      const pts = Array.from(lx, (x, i) => v3(x, 0, -ly[i]));   // Array.from: lx may be a Float64Array (packed data)
       lines.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
         new THREE.LineBasicMaterial({ color: lineCols[b], transparent: true, opacity: (b === '235' || b === '315') ? 0.9 : 0.55 })));
       if (lineNames[b]) {
@@ -166,11 +204,13 @@ async function showLayer(label) {
       return { el, name, x: s.x_m, z: -s.y_m };
     });
     cache[label] = { meta: d.meta, N, pos, depth, kilde: d.kilde, aar: d.aar, shoreCells, colorAttr, g, lines, lineTags, spotTags };
+    }
   }
   const L = LAYERS[label], prevViews = cur && cur.cfg.views;
   if (cur) { cur.lines.visible = false; cur.lineTags.forEach(t => { t.el.style.display = 'none'; }); cur.spotTags.forEach(t => { t.el.style.display = 'none'; }); }
   cur = cache[label];
   cur.cfg = L;
+  touchLayer(label);
   cur.lines.visible = true;
   document.title = 'Oceany - ' + (L.title || 'how the North Sea hits the Danish coast');
   switchSwellLayer(label);
@@ -707,17 +747,56 @@ canvas.addEventListener('pointerleave', () => { mouse = null; tip.style.display 
 // tooltip can differ from what the colour under the cursor suggests wherever the bottom is steep; the tooltip
 // therefore also names the dot's position relative to Klitmoller (wide layer).
 // Nearest drawn dot to a screen point (within `maxPx`), or -1.
-function nearestDot(mx, my, maxPx = 8) {
-  const { pos, depth, N } = cur;
-  const exag = material.uniforms.uExag.value, cap = cur.cfg.landCap, w = window.innerWidth, h = window.innerHeight;
-  const v = new THREE.Vector3();
-  let best = -1, bestD = maxPx * maxPx;
+// Speed-up (same answer as scanning every dot): the dots are sorted once per layer into a coarse 2D grid of buckets
+// over the map (x, z). Each pick projects only the 8 corners of each bucket's box; a bucket whose box cannot come
+// within maxPx of the cursor is skipped. Buckets with a corner behind the camera are always scanned.
+const PICK_GRID = 48;
+function pickBuckets(c) {
+  const cap = c.cfg.landCap;
+  if (c.pickB && c.pickB.cap === cap) return c.pickB;
+  const { pos, depth, N } = c, G = PICK_GRID;
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (let i = 0; i < N; i++) { const x = pos[3 * i], z = pos[3 * i + 2]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; }
+  const sx = G / Math.max(1e-9, x1 - x0) * 0.999999, sz = G / Math.max(1e-9, z1 - z0) * 0.999999;
+  const cell = new Uint16Array(N), count = new Uint32Array(G * G + 1);
+  for (let i = 0; i < N; i++) { const k = Math.floor((pos[3 * i + 2] - z0) * sz) * G + Math.floor((pos[3 * i] - x0) * sx); cell[i] = k; count[k + 1]++; }
+  for (let k = 0; k < G * G; k++) count[k + 1] += count[k];
+  const start = count.slice(), idx = new Uint32Array(N), fill = count.slice(0, G * G);
+  for (let i = 0; i < N; i++) idx[fill[cell[i]]++] = i;                  // indices ascending within each bucket
+  const box = new Float32Array(G * G * 6).fill(NaN);                   // xmin, xmax, zmin, zmax, hmin, hmax (h = capped height above datum, -depth)
   for (let i = 0; i < N; i++) {
-    const z = depth[i] < 0 ? -Math.min(-depth[i], cap) : depth[i];   // same height rule as the shader
-    v.set(pos[3 * i], -z * exag, pos[3 * i + 2]).project(camera);
-    if (v.z > 1) continue;
-    const dx = (v.x + 1) / 2 * w - mx, dy = (1 - v.y) / 2 * h - my;
-    if (dx * dx + dy * dy < bestD) { bestD = dx * dx + dy * dy; best = i; }
+    const k = 6 * cell[i], x = pos[3 * i], z = pos[3 * i + 2], h = -(depth[i] < 0 ? -Math.min(-depth[i], cap) : depth[i]);
+    if (!(box[k] <= x)) box[k] = x; if (!(box[k + 1] >= x)) box[k + 1] = x;
+    if (!(box[k + 2] <= z)) box[k + 2] = z; if (!(box[k + 3] >= z)) box[k + 3] = z;
+    if (!(box[k + 4] <= h)) box[k + 4] = h; if (!(box[k + 5] >= h)) box[k + 5] = h;
+  }
+  return (c.pickB = { cap, start, idx, box });
+}
+// Nearest drawn dot to a screen point (within `maxPx`), or -1.
+function nearestDot(mx, my, maxPx = 8) {
+  const { pos, depth } = cur;
+  const exag = material.uniforms.uExag.value, cap = cur.cfg.landCap, w = window.innerWidth, h = window.innerHeight;
+  const B = pickBuckets(cur), v = new THREE.Vector3(), m = new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse), e = m.elements;
+  let best = -1, bestD = maxPx * maxPx;
+  for (let k = 0; k < PICK_GRID * PICK_GRID; k++) {
+    if (B.start[k] === B.start[k + 1]) continue;
+    const bx = 6 * k; let ok = true, sx0 = Infinity, sx1 = -Infinity, sy0 = Infinity, sy1 = -Infinity;
+    for (let c = 0; c < 8 && ok; c++) {
+      const x = B.box[bx + (c & 1)], y = B.box[bx + 4 + ((c >> 2) & 1)] * exag, z = B.box[bx + 2 + ((c >> 1) & 1)];
+      const cw = e[3] * x + e[7] * y + e[11] * z + e[15];
+      if (cw <= 1e-6) { ok = false; break; }                              // corner behind the camera: scan the bucket
+      const px = ((e[0] * x + e[4] * y + e[8] * z + e[12]) / cw + 1) / 2 * w, py = (1 - (e[1] * x + e[5] * y + e[9] * z + e[13]) / cw) / 2 * h;
+      if (px < sx0) sx0 = px; if (px > sx1) sx1 = px; if (py < sy0) sy0 = py; if (py > sy1) sy1 = py;
+    }
+    if (ok && (mx < sx0 - maxPx || mx > sx1 + maxPx || my < sy0 - maxPx || my > sy1 + maxPx)) continue;
+    for (let q = B.start[k]; q < B.start[k + 1]; q++) {
+      const i = B.idx[q];
+      const z = depth[i] < 0 ? -Math.min(-depth[i], cap) : depth[i];   // same height rule as the shader
+      v.set(pos[3 * i], -z * exag, pos[3 * i + 2]).project(camera);
+      if (v.z > 1) continue;
+      const dx = (v.x + 1) / 2 * w - mx, dy = (1 - v.y) / 2 * h - my, d2 = dx * dx + dy * dy;
+      if (d2 < bestD || (d2 === bestD && best >= 0 && i < best)) { bestD = d2; best = i; }   // ties: lowest index, as the full scan did
+    }
   }
   return best;
 }
@@ -793,7 +872,7 @@ function renderMarks() {
 }
 function removeMark(m) {
   const vis = markVis.get(m);
-  if (vis) { markGroup.remove(vis.grp); vis.el.remove(); }
+  if (vis) { markGroup.remove(vis.grp); vis.grp.traverse(o => { if (o.geometry) o.geometry.dispose(); }); vis.grp.children[0]?.material.dispose(); vis.el.remove(); markVis.delete(m); }
   marks.splice(marks.indexOf(m), 1);
   saveMarks(); renderMarks();
 }
@@ -841,13 +920,15 @@ const SWELL = { file: 'data/swell_sim.json', layer: null, on: false, speed: 1, d
 const SWELL_SURF_ALPHA = 0.7;      // swell surface and water fill opacity multipliers (1 = the old, denser look)
 const WATER_FILL_ALPHA = 0.5;
 const swellMat = new THREE.ShaderMaterial({
-  uniforms: { uSize: { value: 14 }, uScale: { value: 1 }, uExag: { value: 5 }, uTide: { value: 0 }, uMaxPx: { value: 8 }, uFadeFar: { value: 0 }, uLow: { value: 0 } },   // uMaxPx/uFadeFar/uLow: beach view only (defaults = the usual look)
+  uniforms: { uSize: { value: 14 }, uScale: { value: 1 }, uExag: { value: 5 }, uTide: { value: 0 }, uMaxPx: { value: 8 }, uFadeFar: { value: 0 }, uLow: { value: 0 }, uOmegaT: { value: 0 } },   // uMaxPx/uFadeFar/uLow: beach view only (defaults = the usual look)
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: `
-    uniform float uSize, uScale, uExag, uTide, uMaxPx, uFadeFar, uLow;
-    attribute vec4 aCol; attribute float aAmp; varying vec4 vCol; varying float vSq;
+    uniform float uSize, uScale, uExag, uTide, uMaxPx, uFadeFar, uLow, uOmegaT;
+    attribute vec4 aCol; attribute float aAmp, aPhase; varying vec4 vCol; varying float vSq;
     void main() {
-      vec3 p = position;
+      // Surface height = tide + (H/2) cos(phase - omega t), times the vertical stretch (was a CPU loop over every dot each frame).
+      float eta = aAmp * cos(aPhase - uOmegaT);
+      vec3 p = vec3(position.x, (uTide + eta) * uExag, position.z);
       if (uLow > 0.5) {                             // beach view: jitter each dot within its 5 m square, so the regular grid does not draw streaks toward a low camera
         vec2 h = fract(sin(vec2(dot(p.xz, vec2(12.9898, 78.233)), dot(p.xz, vec2(39.3468, 11.135)))) * 43758.5453);
         p.xz += (h - 0.5) * 4.0;
@@ -857,7 +938,7 @@ const swellMat = new THREE.ShaderMaterial({
       gl_Position = projectionMatrix * mv;
       vSq = 1.0;                                    // beach view: each dot is drawn as a flat disc lying on the water (an ellipse squashed by the viewing angle), so crests read as lines
       if (uLow > 0.5) vSq = clamp(abs(dot(normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz), normalize(mv.xyz))), 0.04, 1.0);
-      float crest = clamp((position.y / uExag - uTide) / max(aAmp, 0.01), -1.0, 1.0);   // +1 crest, -1 trough
+      float crest = clamp(eta / max(aAmp, 0.01), -1.0, 1.0);   // +1 crest, -1 trough
       float up = (crest + 1.0) / 2.0;
       // Beach view (uLow = 1): seen from eye height the rows of dots pile up, so troughs are dimmed further and crests
       // sharpened (up^4 instead of up^2), and far water fades out (uFadeFar m) instead of piling into a bright band.
@@ -957,14 +1038,18 @@ function buildAwash(reef, tide) {                    // once, from the reef clou
   const mk = (idx, pts) => {
     const pos = new Float32Array(idx.length * 3), dep = new Float32Array(idx.length);
     idx.forEach((i, j) => { pos[3 * j] = reef.pos[3 * i]; pos[3 * j + 2] = reef.pos[3 * i + 2]; dep[j] = reef.depth[i]; });
-    pts.geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    pts.geometry.setAttribute('aDepth', new THREE.BufferAttribute(dep, 1));
+    const old = pts.geometry, g = new THREE.BufferGeometry();   // a fresh geometry, the old one disposed: setAttribute alone leaks the old GPU buffers
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aDepth', new THREE.BufferAttribute(dep, 1));
+    pts.geometry = g; old.dispose();
   };
   mk(A, awashPts); mk(Ld, landPts);
   const wp = new Float32Array(Wt.length * 3), wd = new Float32Array(Wt.length);
   Wt.forEach((i, j) => { wp[3 * j] = reef.pos[3 * i]; wp[3 * j + 2] = reef.pos[3 * i + 2]; wd[j] = reef.depth[i] + tide; });
-  waterPts.geometry.setAttribute('position', new THREE.BufferAttribute(wp, 3));
-  waterPts.geometry.setAttribute('aWd', new THREE.BufferAttribute(wd, 1));
+  { const old = waterPts.geometry, g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(wp, 3));
+    g.setAttribute('aWd', new THREE.BufferAttribute(wd, 1));
+    waterPts.geometry = g; old.dispose(); }
   window.__awashCount = A.length; window.__landCount = Ld.length; window.__waterCount = Wt.length;
 }
 // Each layer with a swellFile keeps its own swell state; switching layers stashes the current one and restores the target's (or none).
@@ -972,9 +1057,9 @@ const swellStash = {};
 const swellFiles = {};                                // parsed swell JSON per file (play.js "Python file" and layer switches reuse it)
 function switchSwellLayer(label) {
   if (SWELL.layer === label) return;
-  if (SWELL.layer) swellStash[SWELL.layer] = { data: SWELL.data, file_data: SWELL.file_data, awashTide: SWELL.awashTide };
+  if (SWELL.layer) swellStash[SWELL.layer] = { data: SWELL.data, file_data: SWELL.file_data, awashTide: SWELL.awashTide, geom: SWELL.geom };
   const st = swellStash[label] || {}, L = LAYERS[label];
-  SWELL.layer = label; SWELL.data = st.data || null; SWELL.file_data = st.file_data || null; SWELL.awashTide = undefined;
+  SWELL.layer = label; SWELL.data = st.data || null; SWELL.file_data = st.file_data || null; SWELL.awashTide = undefined; SWELL.geom = st.geom || null;
   if (L.swellFile) SWELL.file = L.swellFile;
   swellCloud.visible = false;
   if (SWELL.data) { buildAwash(cache[label], SWELL.data.tide); SWELL.awashTide = SWELL.data.tide; swellCloud.geometry = SWELL.geom || swellCloud.geometry; }
@@ -998,8 +1083,7 @@ async function loadSwell() {
   const layerLabel = SWELL.layer, file = SWELL.file;
   try {
     const d = swellFiles[file] || (swellFiles[file] = await loadJSON(file, 'swell model'));
-    SWELL.file_data = d;               // the Python run as shipped; play.js resets to it
-    if (SWELL.layer === layerLabel) buildSwell(d);
+    if (SWELL.layer === layerLabel) { SWELL.file_data = d; buildSwell(d); }   // the Python run as shipped; play.js resets to it. Only if this layer is still the one on screen
   } finally { SWELL.loading = false; }
 }
 // HOOK (play.js): rebuild the swell surface from any object shaped like swell_sim.json (meta, H, broken, k, phase, state).
@@ -1061,9 +1145,10 @@ function buildSwell(d) {
   }
   swellCloud.geometry.dispose(); swellCloud.geometry = new THREE.BufferGeometry();   // fresh buffers on a redraw (play.js)
   const g = swellCloud.geometry;
-  g.setAttribute('position', new THREE.BufferAttribute(pos.slice(0, 3 * n), 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('position', new THREE.BufferAttribute(pos.slice(0, 3 * n), 3));   // static: the vertex shader moves the surface (aAmp, aPhase, uOmegaT)
   g.setAttribute('aCol', new THREE.BufferAttribute(col.slice(0, 4 * n), 4));
   g.setAttribute('aAmp', new THREE.BufferAttribute(amp.slice(0, n), 1));
+  g.setAttribute('aPhase', new THREE.BufferAttribute(ph.slice(0, n), 1));
   SWELL.geom = g;
   SWELL.data = { meta: d.meta, n, pos: g.attributes.position.array, amp: amp.slice(0, n), ph: ph.slice(0, n),
                  state: d.state, H: d.H,   // per reef point (same index as the pick), for the tooltip
@@ -1077,7 +1162,7 @@ function buildSwell(d) {
   SWELL.data.note = note;
   document.getElementById('swl-note').textContent = note;
 }
-// Every frame: surface height = tide + (H/2) cos(phase - omega t), times the vertical stretch. No allocations.
+// Every frame: uniforms only. Surface height = tide + (H/2) cos(phase - omega t), times the vertical stretch, is computed in the vertex shader.
 function updateSwell(now) {
   const show = SWELL.on && !!SWELL.data && !!cur && !!cur.cfg.swellFile;
   swellCloud.visible = show;
@@ -1101,9 +1186,8 @@ function updateSwell(now) {
     u.uSize.value = material.uniforms.uSize.value; u.uScale.value = material.uniforms.uScale.value; u.uMaxPx.value = material.uniforms.uMaxPx.value; u.uBright.value = BEACH.active ? BEACH.waterDim : 1; }
   { const u = swellMat.uniforms, on = BEACH.active; u.uMaxPx.value = on ? BEACH.swellMaxPx : 8; u.uFadeFar.value = on ? BEACH.fadeFar : 0; u.uLow.value = on ? 1 : 0; }
   awashPts.material.uniforms.uBright.value = 0.8 + 0.2 * Math.sin(2 * Math.PI * SWELL.t / (SWELL.data.period || 8));   // slow, subtle
-  const { n, pos, amp, ph, omega, tide } = SWELL.data, exag = material.uniforms.uExag.value, wt = omega * SWELL.t;
-  for (let j = 0; j < n; j++) pos[3 * j + 1] = (tide + amp[j] * Math.cos(ph[j] - wt)) * exag;
-  swellCloud.geometry.attributes.position.needsUpdate = true;
+  // omega t wrapped to one cycle here (double precision), so the shader's float cos stays exact as t grows.
+  swellMat.uniforms.uOmegaT.value = (SWELL.data.omega * SWELL.t) % (2 * Math.PI);
 }
 document.getElementById('swl-on').addEventListener('change', async e => {
   SWELL.on = e.target.checked;
@@ -1124,7 +1208,13 @@ const BW_VARIANTS = {
     { key: 'fw', fw: true, file: 'porto_batel_funwave.json', label: 'Whole reef, 2DH model (FUNWAVE), 1.45 m (not default)', fb: 136 },
   ],
 };
-const BW = { on: false, loading: false, data: null, t: 0, last: null, avail: null, byspot: {}, variant: {} };   // slices: data/<spot>_slice.json for every spot listed in data/slices.json
+const BW = { on: false, loading: false, data: null, t: 0, last: null, avail: null, byspot: {}, variant: {} };
+// At most BW_KEEP decoded slices stay in memory (oldest out; never the one drawn). A slice is 10-25 MB decoded.
+const BW_KEEP = 2;
+function trimBW() {
+  const keys = Object.keys(BW.byspot);   // insertion order = load order
+  for (const k of keys) { if (Object.keys(BW.byspot).length <= BW_KEEP) break; if (BW.data && BW.data.key === k) continue; delete BW.byspot[k]; }
+}   // slices: data/<spot>_slice.json for every spot listed in data/slices.json
 const bwGroup = new THREE.Group(); bwGroup.visible = false; scene.add(bwGroup);
 const bwMat = new THREE.ShaderMaterial({
   uniforms: { uSize: { value: 14 }, uScale: { value: 1 }, uVmax: { value: 40 } },
@@ -1207,11 +1297,17 @@ async function loadFW(spot, v, key) {
       col: new THREE.BufferAttribute(new Float32Array(P * 3), 3).setUsage(THREE.DynamicDrawUsage) });
     Object.assign(BW.byspot[key], { hx, hy, ux, uy, ax, ay });
     window.__fwFrames = n; window.__fwPoints = P;
+    trimBW();
   } finally { BW.loading = false; }
 }
-async function loadBW(spot) {
+async function loadBW(spot) {                           // one load at a time; a request that arrives meanwhile waits its turn instead of being dropped
+  while (BW.loadingP) await BW.loadingP.catch(() => {});
+  const p = loadBWOne(spot); BW.loadingP = p;
+  try { await p; } finally { if (BW.loadingP === p) BW.loadingP = null; }
+}
+async function loadBWOne(spot) {
   const v = bwVariantOf(spot), key = spot + (v ? '|' + v.key : '');
-  if (BW.byspot[key] || BW.loading) return;
+  if (BW.byspot[key]) return;
   if (v && v.fw) return loadFW(spot, v, key);
   BW.loading = true;
   try {
@@ -1239,6 +1335,7 @@ async function loadBW(spot) {
               aV: new THREE.BufferAttribute(new Float32Array(P), 1).setUsage(THREE.DynamicDrawUsage),
               surf: new THREE.BufferAttribute(new Float32Array(ns * 6), 3).setUsage(THREE.DynamicDrawUsage) };
   window.__bwFrames = n; window.__bwParticles = P;
+  trimBW();
   } finally { BW.loading = false; }
 }
 async function selectBW(spot) {                         // make the slice of this spot the one that is drawn (shared meshes, per-spot buffers)
@@ -1254,6 +1351,8 @@ async function selectBW(spot) {                         // make the slice of thi
     BW.data = D; BW.t = 0; return;
   }
   bwBed.geometry.setFromPoints(D.bed); bwMat.uniforms.uVmax.value = D.vmax;
+  // Fresh geometries per slice: dispose() frees the previous slice's GPU buffers (swapping attributes alone would keep them).
+  { const old = [bwPts.geometry, bwSurf.geometry]; bwPts.geometry = new THREE.BufferGeometry(); bwSurf.geometry = new THREE.BufferGeometry(); old.forEach(g => g.dispose()); }
   bwPts.geometry.setAttribute('position', D.pos); bwPts.geometry.setAttribute('aV', D.aV); bwSurf.geometry.setAttribute('position', D.surf);
   bwLabel.textContent = D.labelText; document.getElementById('bw-note').textContent = D.note;
   BW.data = D; BW.t = 0;
@@ -1811,6 +1910,7 @@ function keepNear(now) {                             // every frame, reef layers
 
 // ---------- 7. Loop ----------
 let frame = 0;
+let pickKey = '', pickCur = null, pickSwell = null;
 function animate(now) {
   requestAnimationFrame(animate);
   drawFrame(now);
@@ -1823,7 +1923,11 @@ function drawFrame(now) {                          // one frame (also the debug 
   zoomFrame(now);
   updateSwell(now);
   updateBW(now);
-  if (frame++ % 3 === 0) pick();                   // picking is the costly part, so not every frame
+  if (frame++ % 3 === 0) {                          // picking: only when the cursor, the camera, the layer or the swell state changed
+    const ce = camera.matrixWorld.elements, pe = camera.projectionMatrix.elements;
+    const key = mouse && cur ? [mouse.x, mouse.y, ce[0], ce[1], ce[2], ce[4], ce[5], ce[6], ce[12], ce[13], ce[14], pe[0], pe[5], material.uniforms.uExag.value, innerWidth, innerHeight, SWELL.on, !!SWELL.data, cur.cfg.landCap].join() : '';
+    if (key !== pickKey || cur !== pickCur || SWELL.data !== pickSwell) { pickKey = key; pickCur = cur; pickSwell = SWELL.data; pick(); }
+  }
   if (cur && cur.cfg.reef) {                       // reef layer: no Klitmoller labels, show the two spot labels instead
     labelShore.style.display = 'none'; labelVillage.style.display = 'none';
     cur.spotTags.forEach(t => placeLabel(t.el, t.x, 40, t.z));
@@ -1861,4 +1965,4 @@ if (wantLayer && LAYERS[wantLayer] && LAYERS[wantLayer].reef) {   // came from t
 requestAnimationFrame(animate);
 // Debug hook (lets the browser console inspect the scene and test hover; harmless to leave in).
 // gesture tour 2026-11-23 (late night): FLY and camMode for the tour's demos (tutorial.js)
-window.__viewer = { FLY, get camMode() { return camMode; }, ZB, ARRIVE, ARR, arrivalView, zoomSet, zoomMin, zoomMax, exitRange, get fly() { return fly; }, DATA_VERSION, LAYERS, tagFree, tick: drawFrame, resetView, LOST, renderer, BEACH, beachView, flySpot, setViewMode, bedHeightAt, marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell };   // loadSwell/buildSwell: hooks for play.js
+window.__viewer = { FLY, get camMode() { return camMode; }, ZB, ARRIVE, ARR, arrivalView, zoomSet, zoomMin, zoomMax, exitRange, get fly() { return fly; }, DATA_VERSION, LAYERS, tagFree, tick: drawFrame, resetView, LOST, renderer, BEACH, beachView, flySpot, setViewMode, bedHeightAt, marks, camera, scene, controls, material, canvas, pick, get cur() { return cur; }, showLayer, SWELL, swellCloud, loadSwell, buildSwell, loadPoints, get layerCache() { return Object.keys(cache); }, get bwCache() { return Object.keys(BW.byspot); } };   // loadSwell/buildSwell: hooks for play.js
