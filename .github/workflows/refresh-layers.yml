@@ -90,6 +90,13 @@ jobs:
             '12 */3 * * *')   L="hurricanes-live" ;;
             *)               L="$ASKED" ;;
           esac
+          # Every scheduled run also sweeps the other cheap checks (27 Nov 2026: GitHub started slots up to 8 h late and
+          # dropped others, so the ocean layer missed two model runs and snow went 4 days stale while each run only looked
+          # at its own slot's layer). layer_due.py asks nothing when a layer is current, so the sweep costs a few HEAD
+          # requests; whichever run comes first builds what is due. Quakes and tornadoes stay on their own slots.
+          if [ -n "$SCHED" ]; then
+            L=$(printf '%s\n' $L ocean ecmwf wavefc-gfs wavefc-ecmwf snow hurricanes-live hurricanes | awk '!seen[$0]++' | tr '\n' ' ')
+          fi
           for l in $L; do
             case "$l" in ocean|ecmwf|snow|hurricanes|tornadoes|quakes|hurricanes-live|wavefc-gfs|wavefc-ecmwf) ;; *) echo "::error::unknown layer '$l'"; exit 1 ;; esac
           done
@@ -127,7 +134,7 @@ jobs:
     needs: check
     if: always() && needs.check.outputs.due != ''
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 90   # a sweep can build several layers in one run (the two forecast builds are capped at 20 min each)
     steps:
       - uses: actions/checkout@v4
         with:

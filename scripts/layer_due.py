@@ -35,6 +35,7 @@ change both together.
 import datetime, email.utils, json, sys, time, urllib.error, urllib.request
 
 NOMADS = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/gfs/prod/"
+SNOW_BACK_DAYS = 6                 # same window as build_snow.py
 IMS = "https://noaadata.apps.nsidc.org/NOAA/G02156/24km/{y}/ims{y}{d:03d}_00UTC_24km_v1.3.asc.gz"
 IBTRACS = ("https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-"
            "ibtracs/v04r01/access/csv/ibtracs.since1980.list.v04r01.csv")
@@ -129,12 +130,16 @@ def check_wavefc_ecmwf(pub, now):
     return None, None
 
 def check_snow(pub, now):
-    d = now.date()                           # IMS posts the file for day D in the afternoon of day D (UTC)
-    if pub.get("dataTime") == iso(datetime.datetime(d.year, d.month, d.day, tzinfo=UTC)):
-        return False, None                   # already published: no request at all
-    if head(IMS.format(y=d.year, d=d.timetuple().tm_yday)):
-        return True, None
-    return None, None                        # not posted yet: the retry run asks once more
+    # IMS posts the file for day D in the afternoon of day D (UTC), and GitHub can start a scheduled run hours late, past
+    # midnight. So, like build_snow.py, walk back from today to the newest file that exists: due when it is newer than
+    # the published one. Checking today's file only made a late run look for a file that cannot exist yet (27 Nov 2026).
+    for back in range(SNOW_BACK_DAYS):
+        d = now.date() - datetime.timedelta(days=back)
+        if pub.get("dataTime") == iso(datetime.datetime(d.year, d.month, d.day, tzinfo=UTC)):
+            return False, None               # the published copy is the newest file: no (further) request
+        if head(IMS.format(y=d.year, d=d.timetuple().tm_yday)):
+            return True, None
+    return None, None                        # nothing in the last days: the source is down
 
 def check_modified(url):
     def check(pub, now):
