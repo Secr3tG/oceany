@@ -79,7 +79,7 @@ const LAYERS = {
 };
 const material = new THREE.ShaderMaterial({
   // uDim: brightness (below 1 while the swell is on, so the bed reads through the water); uHideAbove: bed higher than this (m above LAT) is not drawn (the awash/land sets draw it while the swell is on)
-  uniforms: { uExag: { value: 60 }, uSize: { value: 100 }, uScale: { value: 1 }, uLandCap: { value: 1e9 }, uDim: { value: 1 }, uHideAbove: { value: 1e9 }, uMaxPx: { value: 1e5 } },   // uMaxPx: dot size cap (px), only lowered in beach view
+  uniforms: { uExag: { value: 60 }, uSize: { value: 100 }, uScale: { value: 1 }, uLandCap: { value: 1e9 }, uDim: { value: 1 }, uHideAbove: { value: 1e9 }, uMaxPx: { value: 1e5 }, uDens: { value: 1 } },   // uMaxPx: dot size cap (px), only lowered in beach view; uDens: alpha share per point on a dense grid (see densityShare)
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
   vertexShader: `
     uniform float uExag, uSize, uScale, uLandCap, uHideAbove, uMaxPx;
@@ -96,14 +96,23 @@ const material = new THREE.ShaderMaterial({
       vColor = aColor; vShore = aShore;
     }`,
   fragmentShader: `
-    uniform float uDim; varying vec3 vColor; varying float vShore;
+    uniform float uDim, uDens; varying vec3 vColor; varying float vShore;
     void main() {
       float r = length(gl_PointCoord - 0.5) * 2.0;
       if (r > 1.0) discard;
       float glow = pow(1.0 - r, 2.0);              // soft round falloff
-      gl_FragColor = vec4(vColor * (1.0 + vShore * 1.5) * uDim, glow * 0.85);
+      gl_FragColor = vec4(vColor * (1.0 + vShore * 1.5) * uDim, glow * 0.85 * uDens);
     }`,
 });
+// Brightness per area: dots are drawn additively at a size set per layer, so a denser grid stacks more dots on the same
+// patch of screen and blows out. Reef layers on a grid finer than DENS_REF_M give each dot (ref / cell)^2 of the alpha, so
+// 4 m lidar (Guethary, Hossegor) reads like the 8 m Pipeline grid; 8 m and coarser are untouched (share 1).
+const DENS_REF_M = 8;
+function densityShare(c) {
+  const t = String(c.meta.resolution || '').split('(')[0], m = [...t.matchAll(/(\d+(?:\.\d+)?)\s*m\b/g)].map(x => +x[1]);
+  const cell = m.length ? Math.max(...m) : DENS_REF_M;
+  return Math.min(1, (cell / DENS_REF_M) ** 2);
+}
 const cloud = new THREE.Points(new THREE.BufferGeometry(), material);
 cloud.frustumCulled = false;   // the shader moves points, so the stored bounds are wrong
 scene.add(cloud);
@@ -217,6 +226,7 @@ async function showLayer(label) {
   cloud.geometry = cur.g;
   material.uniforms.uSize.value = L.size;
   material.uniforms.uLandCap.value = L.landCap;
+  material.uniforms.uDens.value = L.reef ? densityShare(cur) : 1;
   marker.scale.setScalar(L.mark); marker.visible = !L.reef;   // the gold Klitmoller marker is not drawn on the reef layer
   if (BEACH.active) setBeachActive(false);
   exagInput.value = L.exag; setExag();           // each layer starts with its own vertical stretch
@@ -1350,7 +1360,8 @@ async function selectBW(spot) {                         // make the slice of thi
     bwLabel.textContent = D.labelText; document.getElementById('bw-note').textContent = D.note;
     BW.data = D; BW.t = 0; return;
   }
-  bwBed.geometry.setFromPoints(D.bed); bwMat.uniforms.uVmax.value = D.vmax;
+  { const ob = bwBed.geometry; bwBed.geometry = new THREE.BufferGeometry().setFromPoints(D.bed); ob.dispose(); }   // fresh: setFromPoints on a smaller old geometry warns and truncates the bed line
+  bwMat.uniforms.uVmax.value = D.vmax;
   // Fresh geometries per slice: dispose() frees the previous slice's GPU buffers (swapping attributes alone would keep them).
   { const old = [bwPts.geometry, bwSurf.geometry]; bwPts.geometry = new THREE.BufferGeometry(); bwSurf.geometry = new THREE.BufferGeometry(); old.forEach(g => g.dispose()); }
   bwPts.geometry.setAttribute('position', D.pos); bwPts.geometry.setAttribute('aV', D.aV); bwSurf.geometry.setAttribute('position', D.surf);
@@ -1556,7 +1567,7 @@ function setBox(k, on) {
   setBoxVars();
 }
 const boxOpen = k => document.body.classList.contains(UIBOX[k].open);
-setBox('panel', !PHONE.matches && !fromGlobe); setBox('src', !PHONE.matches && !fromGlobe);
+setBox('panel', !PHONE.matches && !fromGlobe); setBox('src', false);   // 28 Nov: sources open only from the Sources button (the standing line stays on screen)
 document.getElementById('panel-toggle').onclick = () => { setBox('panel', !boxOpen('panel')); ctlSeen(); };   // dad 2026-11-23 night: ctlSeen
 // dad 2026-11-23 night: Controls was hard to find ("he loved it once found"). The button is the accent pill, and on a
 // first visit it is shown once: on desktop the panel opens by itself when the arrival has settled; on a phone (where the

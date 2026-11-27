@@ -17,9 +17,9 @@
 //  - everything else same-origin the viewer fetches (big lookup T*.bin files, 14 MB slice .bin files) is kept the first
 //    time it is fetched online, so a spot works offline for the parts that were used.
 //  - same-origin: network first (a normal reload is fresh), cached copy when the network is gone.
-const SHELL = 'reefviewer-shell-18', META = 'reefviewer-meta-1';   // 17: packed .bin.gz data, minified three.js, swell worker   // b57: reefviewer-tiles-3 (v1 PNGs) is deleted on activate
+const SHELL = 'reefviewer-shell-21', META = 'reefviewer-meta-1';   // 17: packed .bin.gz data, minified three.js, swell worker   // b57: reefviewer-tiles-3 (v1 PNGs) is deleted on activate
 const LIVE = ['porto_batel', 'pipeline', 'supertubos', 'guethary', 'hossegor'];
-const SHELL_FILES = ['./', './index.html', './style.css?v=z10', './main.js?v=z20', './play.js?v=c5e', './live.js?v=n4', './tutorial.js?v=c3o',
+const SHELL_FILES = ['./', './index.html', './style.css?v=z10', './main.js?v=z23', './play.js?v=c5e', './live.js?v=n4', './tutorial.js?v=c3o',
   './offline.js?v=o3', './live_core.js?v=n2', './live_lookup.js?v=l4', './swell_model.js?v=c4', './swell_client.js?v=w2', './swell_worker.js?v=w2',
   './packed.js?v=p1', './surround.js?v=s7',
   './vendor/three.module.min.js', './vendor/three.core.min.js', './vendor/addons/controls/OrbitControls.js',
